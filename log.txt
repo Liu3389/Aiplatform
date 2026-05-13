@@ -1,0 +1,132 @@
+root@localhost:/opt/Aiplatform ❯❯❯ cd /opt/Aiplatform && ./start.sh --build --tunnel
+============================================
+   凌点 AI 网关 - 部署启动
+   模式: allinone
+============================================
+
+当前配置:
+  前端端口:  80
+  后端端口:  8080
+  MySQL端口: 3307  Redis端口: 6380
+  Cloudflare: 已启用
+
+[1/4] 清理旧容器...
+[2/4] 构建并启动服务...
+[+] Building 0.4s (36/36) FINISHED                                              
+ => [internal] load local bake definitions                                 0.0s
+ => => reading from stdin 1.03kB                                           0.0s
+ => [ai-gateway-app internal] load build definition from Dockerfile        0.0s
+ => => transferring dockerfile: 1.01kB                                     0.0s
+ => [lingdian-frontend internal] load build definition from Dockerfile     0.0s
+ => => transferring dockerfile: 676B                                       0.0s
+ => [ai-gateway-app internal] load metadata for docker.io/library/amazonc  0.0s
+ => [lingdian-frontend internal] load metadata for docker.io/library/ngin  0.0s
+ => [lingdian-frontend internal] load metadata for docker.io/library/node  0.0s
+ => [lingdian-frontend internal] load .dockerignore                        0.0s
+ => => transferring context: 94B                                           0.0s
+ => [ai-gateway-app internal] load .dockerignore                           0.0s
+ => => transferring context: 2B                                            0.0s
+ => [ai-gateway-app builder 1/7] FROM docker.io/library/amazoncorretto:21  0.0s
+ => => resolve docker.io/library/amazoncorretto:21-alpine@sha256:a1734d6c  0.0s
+ => [ai-gateway-app internal] load build context                           0.0s
+ => => transferring context: 5.48kB                                        0.0s
+ => [lingdian-frontend builder 1/6] FROM docker.io/library/node:20-alpine  0.0s
+ => => resolve docker.io/library/node:20-alpine@sha256:fb4cd12c85ee03686f  0.0s
+ => [lingdian-frontend internal] load build context                        0.0s
+ => => transferring context: 2.90kB                                        0.0s
+ => [lingdian-frontend runtime 1/7] FROM docker.io/library/nginx:1.27-alp  0.0s
+ => => resolve docker.io/library/nginx:1.27-alpine@sha256:65645c7bb6a0661  0.0s
+ => CACHED [ai-gateway-app stage-1 2/3] WORKDIR /app                       0.0s
+ => CACHED [ai-gateway-app builder 2/7] RUN apk add --no-cache maven       0.0s
+ => CACHED [ai-gateway-app builder 3/7] WORKDIR /app                       0.0s
+ => CACHED [ai-gateway-app builder 4/7] COPY pom.xml .                     0.0s
+ => CACHED [ai-gateway-app builder 5/7] RUN mvn dependency:go-offline -B   0.0s
+ => CACHED [ai-gateway-app builder 6/7] COPY src ./src                     0.0s
+ => CACHED [ai-gateway-app builder 7/7] RUN MAVEN_OPTS="--add-opens jdk.c  0.0s
+ => CACHED [ai-gateway-app stage-1 3/3] COPY --from=builder /app/target/a  0.0s
+ => CACHED [lingdian-frontend runtime 2/7] RUN apk add --no-cache wget     0.0s
+ => CACHED [lingdian-frontend runtime 3/7] RUN rm -rf /usr/share/nginx/ht  0.0s
+ => CACHED [lingdian-frontend builder 2/6] WORKDIR /app                    0.0s
+ => CACHED [lingdian-frontend builder 3/6] COPY package.json package-lock  0.0s
+ => CACHED [lingdian-frontend builder 4/6] RUN npm ci --registry=https://  0.0s
+ => CACHED [lingdian-frontend builder 5/6] COPY . .                        0.0s
+ => CACHED [lingdian-frontend builder 6/6] RUN npm run build               0.0s
+ => CACHED [lingdian-frontend runtime 4/7] COPY --from=builder /app/dist   0.0s
+ => CACHED [lingdian-frontend runtime 5/7] COPY docker/nginx.conf /etc/ng  0.0s
+ => CACHED [lingdian-frontend runtime 6/7] COPY docker/docker-entrypoint.  0.0s
+ => CACHED [lingdian-frontend runtime 7/7] RUN chmod +x /docker-entrypoin  0.0s
+ => [ai-gateway-app] exporting to image                                    0.0s
+ => => exporting layers                                                    0.0s
+ => => exporting manifest sha256:f18838dda6e5d028928ff49eb414a42a27bf4095  0.0s
+ => => exporting config sha256:68b6e79ef0c859d2ba7bd7c06ddadc26dbd79917d5  0.0s
+ => => exporting attestation manifest sha256:6443c163b3e613f47bcdbf50b501  0.0s
+ => => exporting manifest list sha256:cb69fd6e9f53b8ee4ddf12e721e21fa8617  0.0s
+ => => naming to docker.io/lingdian/backend:latest                         0.0s
+ => => unpacking to docker.io/lingdian/backend:latest                      0.0s
+ => [lingdian-frontend] exporting to image                                 0.0s
+ => => exporting layers                                                    0.0s
+ => => exporting manifest sha256:69ba8ce639defe9b6b6f928ff4f7bdc2018200d0  0.0s
+ => => exporting config sha256:45894715d6194e8e2c9f28d40daffcff4cc5655a45  0.0s
+ => => exporting attestation manifest sha256:5cb4d35abd3b2921373953ad9591  0.0s
+ => => exporting manifest list sha256:45baf75157e3b7767908e30cb18d796964e  0.0s
+ => => naming to docker.io/lingdian/frontend:latest                        0.0s
+ => => unpacking to docker.io/lingdian/frontend:latest                     0.0s
+ => [ai-gateway-app] resolving provenance for metadata file                0.0s
+ => [lingdian-frontend] resolving provenance for metadata file             0.0s
+[+] up 7/8
+ ✔ Image lingdian/backend:latest   Built                                    0.4s
+ ✔ Image lingdian/frontend:latest  Built                                    0.4s
+ ✔ Network aiplatform_lingdian-net Created                                  0.1s
+ ✔ Container lingdian-mysql        Healthy                                  6.0s
+ ✔ Container lingdian-redis        Healthy                                 11.0s
+ ⠋ Container lingdian-backend      Waiting                                 13.9s
+[+] up 7/8er lingdian-frontend     Created                                  0.0s
+ ... 8 more                                                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+[+] up 7/8                                                                      
+ ... 8 more                                                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+[+] up 7/8                                                                      
+ ... 8 more                                                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+[+] up 7/8                                                                      
+ ... 8 more                                                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+[+] up 7/8                                                                      
+ ... 8 more                                                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+[+] up 7/8                                                                      
+ ✔ Image lingdian/backend:latest   Built                                    0.4s
+ ✔ Image lingdian/frontend:latest  Built                                    0.4s
+ ✔ Network aiplatform_lingdian-net Created                                  0.1s
+ ✔ Container lingdian-mysql        Healthy                                  6.0s
+ ✔ Container lingdian-redis        Healthy                                 11.0s
+[+] up 7/8er lingdian-backend      Wait
+ ✔ Image lingdian/backend:latest   Built                                    0.4s
+ ✔ Image lingdian/frontend:latest  Built                                    0.4s
+ ✔ Network aiplatform_lingdian-net Created                                  0.1s
+ ✔ Container lingdian-mysql        Healthy                                  6.0s
+ ✔ Container lingdian-redis        Healthy                                 11.0s
+ ⠹ Container lingdian-backend      Waiting                                 64.7s
+ ✔ Container lingdian-frontend     Created                                  0.0s
+ ✔ Container lingdian-tunnel       Created                                  0.0s

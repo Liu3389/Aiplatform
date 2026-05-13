@@ -1,0 +1,30 @@
+# ============================================
+# 凌点 AI 网关 - 前端服务
+# 用途: 单独部署前端（连接远程后端 API）
+#
+# 使用前请在 .env 中设置:
+#   BACKEND_HOST=你的后端地址:端口
+#   例如 BACKEND_HOST=10.211.55.10:8080
+#
+# 启动: docker compose -f docker-compose.frontend.yml up -d
+# ============================================
+
+services:
+  lingdian-frontend:
+    build:
+      context: ./Aiplatform-web
+      dockerfile: docker/Dockerfile
+    image: lingdian/frontend:latest
+    container_name: lingdian-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    environment:
+      - BACKEND_HOST=${BACKEND_HOST:-localhost:8080}
+      - TZ=Asia/Shanghai
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
