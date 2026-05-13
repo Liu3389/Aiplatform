@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useId } from 'react'
 import { chatApi, ensureApiKey } from '@/services/api'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { motion } from 'framer-motion'
 
 interface ChatMsg { role: 'user' | 'assistant'; content: string }

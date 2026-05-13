@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { chatApi, ensureApiKey, userApi, userApiKeyApi, type UserApiKeyItem } from '@/services/api'
 import MarkdownRenderer from '@/components/chat/MarkdownRenderer'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { motion } from 'framer-motion'
 import { useI18nStore } from '@/stores/i18nStore'
 
@@ -71,6 +72,8 @@ export default function ChatPage() {
   const [isMobile, setIsMobile] = useState(false)
   const [editingTitle, setEditingTitle] = useState<string | null>(null)
   const [titleInput, setTitleInput] = useState('')
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [pendingClear, setPendingClear] = useState(false)
 
   const abortRef = useRef<AbortController | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -115,14 +118,16 @@ export default function ChatPage() {
     persistConversations(updated)
   }, [conversations, currentConvId, persistConversations])
 
-  const deleteConversation = useCallback((id: string) => {
-    const filtered = conversations.filter(c => c.id !== id)
+  const doDeleteConversation = useCallback(() => {
+    if (!pendingDeleteId) return
+    const filtered = conversations.filter(c => c.id !== pendingDeleteId)
     persistConversations(filtered)
-    if (currentConvId === id) {
+    if (currentConvId === pendingDeleteId) {
       if (filtered.length > 0) selectConversation(filtered[0].id)
       else createNewConversation()
     }
-  }, [conversations, currentConvId, persistConversations, selectConversation, createNewConversation])
+    setPendingDeleteId(null)
+  }, [conversations, currentConvId, pendingDeleteId, persistConversations, selectConversation, createNewConversation])
 
   const renameConversation = useCallback((id: string, title: string) => {
     const updated = conversations.map(c => c.id === id ? { ...c, title } : c)
@@ -293,10 +298,15 @@ export default function ChatPage() {
   }
 
   const handleClear = () => {
+    setPendingClear(true)
+  }
+
+  const doClear = () => {
     abortRef.current?.abort()
     setMessages([])
     setTokenStats(null)
     setIsStreaming(false)
+    setPendingClear(false)
     if (currentConvId) {
       const updated = conversations.map(c =>
         c.id === currentConvId ? { ...c, messages: [], updatedAt: Date.now() } : c
@@ -409,7 +419,7 @@ export default function ChatPage() {
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id) }}
+                        onClick={(e) => { e.stopPropagation(); setPendingDeleteId(conv.id) }}
                         className="w-6 h-6 rounded flex items-center justify-center"
                         style={{ background: 'var(--accent-rose)' + '20', color: 'var(--accent-rose)' }}
                         title={lang === 'zh' ? '删除' : 'Delete'}
@@ -531,17 +541,17 @@ export default function ChatPage() {
       )}
 
       <div className="flex-1 flex flex-col h-full">
-        <div className="flex-shrink-0 h-14 flex items-center justify-between px-3 sm:px-4 border-b" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
-          <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex-shrink-0 h-14 flex items-center justify-between px-3 sm:px-4 border-b overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-x-auto hide-scrollbar">
             <button
               onClick={() => setShowSidebar(!showSidebar)}
-              className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors flex-shrink-0"
               style={{ color: 'var(--text-secondary)', background: 'var(--bg-surface)', touchAction: 'manipulation', minWidth: 40, minHeight: 40 }}
               title={lang === 'zh' ? '对话历史' : 'History'}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
             </button>
-            <div className="flex rounded-lg p-0.5" style={{ background: 'var(--bg-surface)' }}>
+            <div className="flex rounded-lg p-0.5 flex-shrink-0" style={{ background: 'var(--bg-surface)' }}>
               <button onClick={() => setMode('free')} className={`px-3 py-1.5 text-xs rounded-md transition-colors ${mode === 'free' ? 'text-white' : ''}`}
                 style={mode === 'free' ? { background: 'var(--accent-emerald)' } : { color: 'var(--text-dim)' }}>
                 {lang === 'zh' ? '免费' : 'Free'}
@@ -750,6 +760,24 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        title={lang === 'zh' ? '删除对话' : 'Delete Conversation'}
+        message={lang === 'zh' ? '删除后对话记录不可恢复，确定要删除吗？' : 'This conversation will be permanently deleted and cannot be recovered.'}
+        confirmLabel={lang === 'zh' ? '删除' : 'Delete'}
+        onConfirm={doDeleteConversation}
+        onCancel={() => setPendingDeleteId(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingClear}
+        title={lang === 'zh' ? '清空对话' : 'Clear Conversation'}
+        message={lang === 'zh' ? '当前对话的所有消息将被清除，确定继续吗？' : 'All messages in this conversation will be cleared.'}
+        confirmLabel={lang === 'zh' ? '清空' : 'Clear'}
+        onConfirm={doClear}
+        onCancel={() => setPendingClear(false)}
+      />
     </div>
   )
 }

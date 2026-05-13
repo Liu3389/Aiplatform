@@ -5,6 +5,7 @@ import { useI18nStore } from '@/stores/i18nStore'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useState, useEffect, useCallback } from 'react'
 import ErrorBoundary from '@/components/ErrorBoundary'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 type NavKey = 'overview' | 'dashboard' | 'tokens' | 'chat' | 'store' | 'billing' | 'wordcloud' | 'users' | 'security' | 'analytics'
 
@@ -36,6 +37,7 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [isMobile, setIsMobile] = useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
 
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN'
   const dark = theme === 'dark'
@@ -95,7 +97,7 @@ export default function AppLayout() {
           <div className={`w-full h-1 rounded-full overflow-hidden mb-2 ${dark ? 'bg-white/[0.06]' : 'bg-gray-200'}`}>
             <div className="h-full w-3/4 bg-gradient-to-r from-brand-purple to-brand-blue rounded-full" />
           </div>
-          <button onClick={logout} className={`w-full py-2 text-xs font-medium rounded-lg transition-colors ${dark ? 'text-white/60 hover:text-white bg-white/[0.04] hover:bg-white/[0.08]' : 'text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200'}`}>
+          <button onClick={() => setShowLogoutConfirm(true)} className={`w-full py-2 text-xs font-medium rounded-lg transition-colors ${dark ? 'text-white/60 hover:text-white bg-white/[0.04] hover:bg-white/[0.08]' : 'text-gray-500 hover:text-gray-900 bg-gray-100 hover:bg-gray-200'}`}>
             {lang==='zh'?'退出登录':'Logout'}
           </button>
         </div>
@@ -124,7 +126,7 @@ export default function AppLayout() {
           </NavLink>
         ))}
       </nav>
-      <button onClick={logout} className={`w-8 h-8 rounded-lg flex items-center justify-center ${dark ? 'text-neutral-500 hover:text-white' : 'text-gray-400 hover:text-gray-700'}`} title={lang==='zh'?'退出登录':'Logout'}>
+      <button onClick={() => setShowLogoutConfirm(true)} className={`w-8 h-8 rounded-lg flex items-center justify-center ${dark ? 'text-neutral-500 hover:text-white' : 'text-gray-400 hover:text-gray-700'}`} title={lang==='zh'?'退出登录':'Logout'}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </button>
     </div>
@@ -221,6 +223,16 @@ export default function AppLayout() {
           </ErrorBoundary>
         </main>
       </div>
+
+      <ConfirmDialog
+        open={showLogoutConfirm}
+        title={lang === 'zh' ? '退出登录' : 'Logout'}
+        message={lang === 'zh' ? '退出后需要重新登录才能访问平台，确定退出吗？' : 'You will need to login again to access the platform.'}
+        confirmLabel={lang === 'zh' ? '退出' : 'Logout'}
+        danger={false}
+        onConfirm={() => { setShowLogoutConfirm(false); logout() }}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
     </div>
   )
 }

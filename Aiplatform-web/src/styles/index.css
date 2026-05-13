@@ -224,6 +224,10 @@ body {
   .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
   .safe-top { padding-top: env(safe-area-inset-top); }
 }
+
+/* Hide scrollbar but keep scrolling */
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
 .border-light { border-color: var(--border-light); }
 
 .text-accent-purple { color: var(--accent-purple); }

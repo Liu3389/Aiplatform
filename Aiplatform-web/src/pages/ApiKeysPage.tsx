@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { userApiKeyApi, type UserApiKeyItem } from '@/services/api'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useI18nStore } from '@/stores/i18nStore'
 
@@ -22,6 +23,7 @@ export default function ApiKeysPage() {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
 
   const loadKeys = async () => {
     try {
@@ -73,13 +75,19 @@ export default function ApiKeysPage() {
   }
 
   const handleDelete = async (id: number) => {
+    setPendingDeleteId(id)
+  }
+
+  const doDeleteConfirmed = async () => {
+    if (!pendingDeleteId) return
     try {
-      await userApiKeyApi.delete(id)
+      await userApiKeyApi.delete(pendingDeleteId)
       showMsg('success', lang === 'zh' ? '已删除' : 'Deleted')
       loadKeys()
     } catch (err: any) {
       showMsg('error', (err.message || String(err)).replace('ApiError: ', ''))
     }
+    setPendingDeleteId(null)
   }
 
   const providerColors: Record<string, string> = {
@@ -88,8 +96,9 @@ export default function ApiKeysPage() {
   }
 
   return (
-    <div className="p-4 lg:p-6 max-w-4xl mx-auto overflow-y-auto h-full">
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+    <>
+      <div className="p-4 lg:p-6 max-w-4xl mx-auto overflow-y-auto h-full">
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -302,5 +311,15 @@ export default function ApiKeysPage() {
         </div>
       )}
     </div>
+
+    <ConfirmDialog
+      open={pendingDeleteId !== null}
+      title={lang === 'zh' ? '删除 API Key' : 'Delete API Key'}
+      message={lang === 'zh' ? '删除后该 API Key 将无法使用，相关自定义模型对话将受到影响。确定删除吗？' : 'This API key will be permanently removed and custom model chats using it will be affected.'}
+      confirmLabel={lang === 'zh' ? '删除' : 'Delete'}
+      onConfirm={doDeleteConfirmed}
+      onCancel={() => setPendingDeleteId(null)}
+    />
+    </>
   )
 }

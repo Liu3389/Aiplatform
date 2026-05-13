@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { adminApi } from '@/services/api'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 interface AdminUser {
   id: number
