@@ -143,7 +143,7 @@ export default function AppLayout() {
                 initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }}
                 transition={{ type: 'spring', damping: 30, stiffness: 300 }}
                 className="relative z-50 h-full flex-shrink-0 border-r"
-                style={{ background: dark ? '#0B1020' : '#fff', borderColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)' }}
+                style={{ background: dark ? '#0B1020' : '#fff', borderColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)', paddingTop: 'env(safe-area-inset-top, 0px)' }}
                 onClick={e => e.stopPropagation()}
               >
                 {sidebarContent}
@@ -167,12 +167,19 @@ export default function AppLayout() {
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <header className={`h-14 flex-shrink-0 flex items-center justify-between px-3 lg:px-5 border-b ${borderColor}`}
-          style={{ background: headerBg, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+          style={{
+            background: headerBg, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+            paddingTop: 'calc(0.5rem + env(safe-area-inset-top, 0px))',
+            paddingLeft: 'calc(0.75rem + env(safe-area-inset-left, 0px))',
+            paddingRight: 'calc(0.75rem + env(safe-area-inset-right, 0px))',
+            minHeight: 'calc(3.5rem + env(safe-area-inset-top, 0px))',
+          }}
         >
           <div className="flex items-center gap-2 lg:gap-3">
             {isMobile ? (
-              <button onClick={openMobileSidebar} className={`p-1.5 rounded-lg transition-colors ${dark ? 'text-neutral-400 hover:text-white hover:bg-white/[0.06]' : 'text-gray-500 hover:text-gray-900'}`}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              <button onClick={openMobileSidebar} className={`p-2.5 -ml-1 rounded-lg transition-colors ${dark ? 'text-neutral-400 hover:text-white hover:bg-white/[0.06]' : 'text-gray-500 hover:text-gray-900'}`}
+                style={{ minWidth: 44, minHeight: 44, touchAction: 'manipulation' }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
               </button>
             ) : (
               <button onClick={toggleSidebar} className={`p-1.5 rounded-lg transition-colors ${dark ? 'text-neutral-400 hover:text-white hover:bg-white/[0.06]' : 'text-gray-500 hover:text-gray-900'}`}>

@@ -41,10 +41,22 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'overview' | 'usage' | 'models' | 'realtime'>('overview')
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN'
+  const [isCompact, setIsCompact] = useState(false)
 
   const chartRefs = useRef<{ [key: string]: ECharts | null }>({})
   const colors = getChartColors(isDark)
   const chartTheme = getChartTheme(isDark)
+
+  useEffect(() => {
+    const check = () => setIsCompact(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+
+  useEffect(() => {
+    Object.values(chartRefs.current).forEach(c => { c?.resize(); c?.setOption({}, true) })
+  }, [isCompact])
 
   useEffect(() => {
     const load = async () => {
@@ -129,7 +141,7 @@ export default function DashboardPage() {
 
   const buildAreaChartOption = (data: any[], xKey: string, yKey: string, name: string, colorIndex: number): EChartsOption => ({
     backgroundColor: 'transparent',
-    grid: { top: 20, right: 20, bottom: 40, left: 60 },
+    grid: { top: 20, right: isCompact ? 8 : 20, bottom: isCompact ? 30 : 40, left: isCompact ? 40 : 60 },
     tooltip: {
       trigger: 'axis',
       backgroundColor: isDark ? 'rgba(17,24,39,0.95)' : 'rgba(255,255,255,0.95)',
@@ -144,23 +156,23 @@ export default function DashboardPage() {
       type: 'category',
       data: data.map(d => d[xKey]),
       axisLine: { lineStyle: { color: chartTheme.splitLineColor } },
-      axisLabel: { color: chartTheme.textColor, fontSize: 10 },
+      axisLabel: { color: chartTheme.textColor, fontSize: isCompact ? 8 : 10, interval: isCompact ? 'auto' : 0, rotate: isCompact ? 30 : 0 },
       axisTick: { show: false },
     },
     yAxis: {
       type: 'value',
       splitLine: { lineStyle: { color: chartTheme.splitLineColor } },
-      axisLabel: { color: chartTheme.textColor, fontSize: 10 },
+      axisLabel: { color: chartTheme.textColor, fontSize: isCompact ? 8 : 10 },
     },
     series: [{
       type: 'line',
       name,
       data: data.map(d => d[yKey]),
       smooth: true,
-      symbol: 'circle',
+      symbol: isCompact ? 'none' : 'circle',
       symbolSize: 6,
       itemStyle: { color: colors[colorIndex] },
-      lineStyle: { width: 3, color: colors[colorIndex] },
+      lineStyle: { width: isCompact ? 2 : 3, color: colors[colorIndex] },
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: colors[colorIndex] + '40' },
@@ -174,7 +186,7 @@ export default function DashboardPage() {
 
   const buildMultiBarChartOption = (data: any[], xKey: string, bars: { key: string; name: string; colorIdx: number }[]): EChartsOption => ({
     backgroundColor: 'transparent',
-    grid: { top: 20, right: 20, bottom: 40, left: 60 },
+    grid: { top: 20, right: isCompact ? 8 : 20, bottom: isCompact ? 30 : 40, left: isCompact ? 40 : 60 },
     tooltip: {
       trigger: 'axis',
       backgroundColor: isDark ? 'rgba(17,24,39,0.95)' : 'rgba(255,255,255,0.95)',
@@ -184,26 +196,28 @@ export default function DashboardPage() {
     legend: {
       data: bars.map(b => b.name),
       bottom: 0,
-      textStyle: { color: chartTheme.textColor, fontSize: 10 },
+      textStyle: { color: chartTheme.textColor, fontSize: isCompact ? 8 : 10 },
+      itemWidth: isCompact ? 10 : 14,
+      itemHeight: isCompact ? 6 : 8,
     },
     xAxis: {
       type: 'category',
       data: data.map(d => d[xKey]),
       axisLine: { lineStyle: { color: chartTheme.splitLineColor } },
-      axisLabel: { color: chartTheme.textColor, fontSize: 10 },
+      axisLabel: { color: chartTheme.textColor, fontSize: isCompact ? 8 : 10, rotate: isCompact ? 30 : 0 },
       axisTick: { show: false },
     },
     yAxis: {
       type: 'value',
       splitLine: { lineStyle: { color: chartTheme.splitLineColor } },
-      axisLabel: { color: chartTheme.textColor, fontSize: 10 },
+      axisLabel: { color: chartTheme.textColor, fontSize: isCompact ? 8 : 10 },
     },
     series: bars.map((b, i) => ({
       type: 'bar',
       name: b.name,
       data: data.map(d => d[b.key]),
       itemStyle: { color: colors[b.colorIdx], borderRadius: [4, 4, 0, 0] },
-      barMaxWidth: 12,
+      barMaxWidth: isCompact ? 8 : 12,
       animationDuration: ANIMATION_DURATION,
       animationEasing: ANIMATION_EASING,
       animationDelay: i * 100,
@@ -219,7 +233,14 @@ export default function DashboardPage() {
       textStyle: { color: chartTheme.textColor },
       formatter: '{b}: {c} ({d}%)'
     },
-    legend: {
+    legend: isCompact ? {
+      orient: 'horizontal',
+      bottom: 0,
+      left: 'center',
+      textStyle: { color: chartTheme.textColor, fontSize: 8 },
+      itemWidth: 10,
+      itemHeight: 6,
+    } : {
       orient: 'vertical',
       right: 10,
       top: 'center',
@@ -227,8 +248,8 @@ export default function DashboardPage() {
     },
     series: [{
       type: 'pie',
-      radius: ['45%', '75%'],
-      center: ['35%', '50%'],
+      radius: isCompact ? ['55%', '75%'] : ['45%', '75%'],
+      center: isCompact ? ['50%', '45%'] : ['35%', '50%'],
       avoidLabelOverlap: true,
       itemStyle: { borderRadius: 6, borderColor: isDark ? '#0B1020' : '#F8FAFC', borderWidth: 2 },
       label: { show: false },
@@ -350,18 +371,18 @@ export default function DashboardPage() {
   })
 
   return (
-    <div className="p-4 lg:p-8 max-w-7xl mx-auto overflow-y-auto h-full">
+    <div className="p-3 sm:p-4 lg:p-8 max-w-7xl mx-auto overflow-y-auto h-full">
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-4 sm:mb-8">
           <div>
-            <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+            <h1 className="text-xl sm:text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
               {lang === 'zh' ? '控制台' : 'Dashboard'}
             </h1>
-            <p className="text-sm mt-1" style={{ color: 'var(--text-dim)' }}>
+            <p className="text-xs sm:text-sm mt-1" style={{ color: 'var(--text-dim)' }}>
               {isAdmin ? (lang === 'zh' ? '平台运营概览' : 'Platform Overview') : (lang === 'zh' ? '你的用量概览' : 'Your Usage Overview')}
             </p>
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ background: 'var(--accent-emerald)' + '15', border: `1px solid ${'var(--accent-emerald)'}30` }}>
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ background: 'var(--accent-emerald)' + '15', border: `1px solid ${'var(--accent-emerald)'}30` }}>
             <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--accent-emerald)' }} />
             <span className="text-[11px] font-medium" style={{ color: 'var(--accent-emerald)' }}>
               {lang === 'zh' ? '实时更新' : 'Live'}
@@ -371,7 +392,7 @@ export default function DashboardPage() {
       </motion.div>
 
       <motion.div
-        className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
+        className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1, duration: 0.5 }}
@@ -434,12 +455,12 @@ export default function DashboardPage() {
         </motion.div>
       )}
 
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-1.5 sm:gap-2 mb-4 sm:mb-6 flex-wrap">
         {(['overview', 'usage', 'models', 'realtime'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className="px-4 py-2 rounded-xl text-sm font-medium transition-all"
+            className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-medium transition-all"
             style={{
               background: tab === t ? 'var(--accent-purple)' : 'var(--bg-surface)',
               color: tab === t ? '#fff' : 'var(--text-dim)',

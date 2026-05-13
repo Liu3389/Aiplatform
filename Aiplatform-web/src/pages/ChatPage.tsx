@@ -216,7 +216,11 @@ export default function ChatPage() {
   useEffect(() => {
     userApiKeyApi.list().then(k => setStoredKeys(k || [])).catch(() => {})
     userApi.getFreeQuota().then(q => setFreeQuota(q)).catch(() => {})
-    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768
+      setIsMobile(mobile)
+      if (mobile) setShowSidebar(false)
+    }
     checkMobile()
     window.addEventListener('resize', checkMobile)
     return () => window.removeEventListener('resize', checkMobile)
@@ -322,6 +326,7 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-full" style={{ background: 'var(--bg-primary)' }}>
+      {/* Desktop sidebar - conversation history */}
       {showSidebar && !isMobile && (
         <motion.div
           initial={{ width: 0, opacity: 0 }}
@@ -460,15 +465,81 @@ export default function ChatPage() {
         </motion.div>
       )}
 
+      {/* Mobile overlay - conversation history */}
+      {isMobile && showSidebar && (
+        <div className="fixed inset-0 z-40 flex" onClick={() => setShowSidebar(false)}>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <motion.div
+            initial={{ x: -280 }} animate={{ x: 0 }}
+            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            className="relative z-50 h-full w-[280px] flex-shrink-0 border-r flex flex-col"
+            style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)', paddingTop: 'env(safe-area-inset-top, 0px)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-color)' }}>
+              <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>对话历史</h2>
+              <button
+                onClick={createNewConversation}
+                className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
+                style={{ background: 'var(--accent-purple)', color: '#fff' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+            </div>
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder={lang === 'zh' ? '搜索对话...' : 'Search chats...'}
+              className="mx-4 mt-3 px-3 py-2 text-xs rounded-lg border outline-none"
+              style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+            />
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {filteredConversations.map(conv => (
+                <div
+                  key={conv.id}
+                  className={`group relative p-3 rounded-xl cursor-pointer transition-all ${conv.id === currentConvId ? 'border' : ''}`}
+                  style={{
+                    background: conv.id === currentConvId ? 'var(--accent-purple)' + '20' : 'transparent',
+                    borderColor: conv.id === currentConvId ? 'var(--accent-purple)' + '40' : 'transparent',
+                  }}
+                  onClick={() => { selectConversation(conv.id); setShowSidebar(false) }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{conv.title}</span>
+                    <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{new Date(conv.updatedAt).toLocaleDateString()}</span>
+                  </div>
+                  <p className="text-xs mt-1 truncate" style={{ color: 'var(--text-dim)' }}>
+                    {conv.messages[conv.messages.length - 1]?.content.slice(0, 40) || (lang === 'zh' ? '空对话' : 'Empty')}
+                  </p>
+                </div>
+              ))}
+              {filteredConversations.length === 0 && (
+                <p className="text-center text-xs py-8" style={{ color: 'var(--text-dim)' }}>
+                  {searchQuery ? (lang === 'zh' ? '无搜索结果' : 'No results') : (lang === 'zh' ? '暂无对话' : 'No conversations')}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => { createNewConversation(); setShowSidebar(false) }}
+              className="m-3 px-4 py-2.5 rounded-xl text-xs font-medium transition-colors text-white"
+              style={{ background: 'var(--accent-purple)' }}
+            >
+              {lang === 'zh' ? '新建对话' : 'New Chat'}
+            </button>
+          </motion.div>
+        </div>
+      )}
+
       <div className="flex-1 flex flex-col h-full">
-        <div className="flex-shrink-0 h-14 flex items-center justify-between px-4 border-b" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
-          <div className="flex items-center gap-3">
+        <div className="flex-shrink-0 h-14 flex items-center justify-between px-3 sm:px-4 border-b" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => setShowSidebar(!showSidebar)}
               className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-              style={{ color: 'var(--text-secondary)', background: 'var(--bg-surface)' }}
+              style={{ color: 'var(--text-secondary)', background: 'var(--bg-surface)', touchAction: 'manipulation', minWidth: 40, minHeight: 40 }}
+              title={lang === 'zh' ? '对话历史' : 'History'}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
             </button>
             <div className="flex rounded-lg p-0.5" style={{ background: 'var(--bg-surface)' }}>
               <button onClick={() => setMode('free')} className={`px-3 py-1.5 text-xs rounded-md transition-colors ${mode === 'free' ? 'text-white' : ''}`}
@@ -603,8 +674,6 @@ export default function ChatPage() {
                   <span>Input {tokenStats.inputTokens.toLocaleString()} tokens</span>
                   <span>·</span>
                   <span>Output {tokenStats.outputTokens.toLocaleString()} tokens</span>
-                  <span>·</span>
-                  <span style={{ color: 'var(--accent-amber)' }}>${tokenStats.cost.toFixed(6)}</span>
                 </motion.div>
               )}
               <div ref={el => el?.scrollIntoView({ behavior: 'smooth' })} />

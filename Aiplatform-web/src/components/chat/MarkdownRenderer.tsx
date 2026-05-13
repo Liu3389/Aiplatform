@@ -10,10 +10,26 @@ export default function MarkdownRenderer({ content, isStreaming }: Props) {
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
 
+  const doCopy = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const wrapper = (e.currentTarget as HTMLElement).closest('.code-block-wrapper')
+    const pre = wrapper?.querySelector('pre')
+    const text = pre?.textContent || ''
+    try {
+      navigator.clipboard.writeText(text)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px'
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
+    }
+    e.currentTarget.textContent = 'COPIED'
+    setTimeout(() => { e.currentTarget.textContent = 'COPY' }, 1500)
+  }
+
   const themeStyles = useMemo(() => ({
     text: isDark ? '#E2E8F0' : '#334155',
     dim: isDark ? '#94A3B8' : '#64748B',
     code: isDark ? '#1E293B' : '#F1F5F9',
+    codeText: isDark ? '#E2E8F0' : '#1E293B',
     codeBorder: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
     tableBorder: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
     tableHead: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
@@ -71,20 +87,18 @@ export default function MarkdownRenderer({ content, isStreaming }: Props) {
             }
             const language = className?.replace('language-', '') || ''
             return (
-              <div className="my-3 rounded-xl overflow-hidden border" style={{ borderColor: themeStyles.codeBorder, background: themeStyles.code }}>
-                {language && (
-                  <div className="flex items-center justify-between px-4 py-1.5" style={{ borderBottom: `1px solid ${themeStyles.codeBorder}` }}>
-                    <span className="text-[10px] font-mono uppercase tracking-wider" style={{ color: themeStyles.dim }}>{language}</span>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(String(children).replace(/\n$/, ''))}
-                      className="text-[10px] px-2 py-0.5 rounded transition-colors hover:bg-white/5"
-                      style={{ color: themeStyles.dim }}
-                    >
-                      COPY
-                    </button>
-                  </div>
-                )}
-                <pre className="p-4 overflow-x-auto text-xs font-mono leading-relaxed" style={{ color: '#E2E8F0' }}><code className={`language-${language}`}>{children}</code></pre>
+              <div className="code-block-wrapper my-3 rounded-xl overflow-hidden border" style={{ borderColor: themeStyles.codeBorder, background: themeStyles.code }}>
+                <div className="flex items-center justify-between px-4 py-1.5" style={{ borderBottom: `1px solid ${themeStyles.codeBorder}` }}>
+                  <span className="text-[10px] font-mono uppercase tracking-wider" style={{ color: themeStyles.dim }}>{language || 'code'}</span>
+                  <button
+                    onClick={doCopy}
+                    className="text-[10px] px-2 py-0.5 rounded transition-colors hover:bg-white/5 cursor-pointer select-none"
+                    style={{ color: themeStyles.dim }}
+                  >
+                    COPY
+                  </button>
+                </div>
+                <pre className="p-4 overflow-x-auto text-xs font-mono leading-relaxed" style={{ color: themeStyles.codeText }}><code className={className}>{children}</code></pre>
               </div>
             )
           },
