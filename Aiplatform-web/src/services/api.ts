@@ -248,18 +248,22 @@ export const chatApi = {
         const decoder = new TextDecoder();
         let buffer = '';
 
+        let receivedDone = false
+
         while (true) {
           const { done, value } = await reader.read();
-          if (done) {
-            onDone({ inputTokens: 0, outputTokens: 0, cost: 0 });
-            break;
-          }
-          buffer += decoder.decode(value, { stream: true });
 
+          // Always decode value if present (Streams API may return data + done=true together)
+          if (value) {
+            buffer += decoder.decode(value, { stream: !done });
+          }
+
+          // Process all complete SSE events from buffer
           const events = buffer.split('\n\n');
           buffer = events.pop() || '';
 
           for (const event of events) {
+            if (!event.trim()) continue;
             const lines = event.split('\n');
             let dataLine = '';
             let eventType = '';
@@ -276,6 +280,7 @@ export const chatApi = {
               if (eventType === 'message') {
                 if (json.content) onMessage(json.content);
               } else if (eventType === 'done') {
+                receivedDone = true;
                 onDone({
                   inputTokens: json.inputTokens || 0,
                   outputTokens: json.outputTokens || 0,
@@ -285,6 +290,30 @@ export const chatApi = {
                 onError(json.message || '发生错误');
               }
             } catch {}
+          }
+
+          if (done) {
+            // Flush any remaining incomplete data in buffer (last event without \n\n)
+            if (buffer.trim() && !receivedDone) {
+              const lines = buffer.split('\n');
+              let dataLine = '';
+              let eventType = '';
+              for (const line of lines) {
+                if (line.startsWith('event:')) eventType = line.slice(6).trim();
+                else if (line.startsWith('data:')) dataLine = line.slice(5).trim();
+              }
+              if (dataLine && dataLine !== '[DONE]') {
+                try {
+                  const json = JSON.parse(dataLine);
+                  if (eventType === 'done') {
+                    receivedDone = true;
+                    onDone({ inputTokens: json.inputTokens || 0, outputTokens: json.outputTokens || 0, cost: json.cost || 0 });
+                  }
+                } catch {}
+              }
+            }
+            if (!receivedDone) onDone({ inputTokens: 0, outputTokens: 0, cost: 0 });
+            break;
           }
         }
       } catch (err) {
