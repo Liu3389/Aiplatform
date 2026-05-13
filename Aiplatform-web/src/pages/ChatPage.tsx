@@ -68,6 +68,7 @@ export default function ChatPage() {
   const [tokenStats, setTokenStats] = useState<{ inputTokens: number; outputTokens: number; cost: number } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [showSidebar, setShowSidebar] = useState(true)
+  const [isMobile, setIsMobile] = useState(false)
   const [editingTitle, setEditingTitle] = useState<string | null>(null)
   const [titleInput, setTitleInput] = useState('')
 
@@ -215,6 +216,10 @@ export default function ChatPage() {
   useEffect(() => {
     userApiKeyApi.list().then(k => setStoredKeys(k || [])).catch(() => {})
     userApi.getFreeQuota().then(q => setFreeQuota(q)).catch(() => {})
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
   const handleSend = async (overrideInput?: string) => {
@@ -317,7 +322,7 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-full" style={{ background: 'var(--bg-primary)' }}>
-      {showSidebar && (
+      {showSidebar && !isMobile && (
         <motion.div
           initial={{ width: 0, opacity: 0 }}
           animate={{ width: 280, opacity: 1 }}
@@ -486,10 +491,10 @@ export default function ChatPage() {
               className="px-3 py-1.5 text-xs rounded-lg border outline-none"
               style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
             >
+              <option value="deepseek-chat">DeepSeek V3 Chat</option>
+              <option value="deepseek-reasoner">DeepSeek R1</option>
               <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
               <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
-              <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-              <option value="gpt-4o">GPT-4o</option>
             </select>
 
             {mode === 'free' && freeQuota && (

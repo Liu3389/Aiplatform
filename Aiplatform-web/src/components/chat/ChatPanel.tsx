@@ -55,7 +55,7 @@ export default function ChatPanel() {
     let fullContent = ''
     abortRef.current = chatApi.stream(
       apiKeyRef.current,
-      { model: 'deepseek-v4-pro', messages: newMessages, temperature: 0.7 },
+      { model: 'deepseek-v4-flash', messages: newMessages, temperature: 0.7 },
       (chunk: string) => {
         fullContent += chunk
         updateMessages([...newMessages, { role: 'assistant', content: fullContent }])

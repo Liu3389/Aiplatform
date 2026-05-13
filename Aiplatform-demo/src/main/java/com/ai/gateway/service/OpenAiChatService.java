@@ -28,6 +28,13 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 public class OpenAiChatService {
 
+    private static final Map<String, String> MODEL_NAME_MAPPING = Map.of(
+        "deepseek-chat", "deepseek-chat",
+        "deepseek-reasoner", "deepseek-chat",
+        "deepseek-v4-pro", "deepseek-chat",
+        "deepseek-v4-flash", "deepseek-chat"
+    );
+
     private final ModelConfigService modelConfigService;
     private final CallLogService callLogService;
     private final BillingService billingService;
@@ -255,7 +262,8 @@ public class OpenAiChatService {
 
     private Map<String, Object> buildRequestBody(ChatRequest request, String format) {
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("model", request.getModel());
+        String actualModel = MODEL_NAME_MAPPING.getOrDefault(request.getModel(), request.getModel());
+        requestBody.put("model", actualModel);
         requestBody.put("messages", request.getMessages());
 
         if (request.getMaxTokens() != null) {
