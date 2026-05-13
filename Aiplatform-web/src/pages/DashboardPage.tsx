@@ -109,6 +109,13 @@ export default function DashboardPage() {
     { label: lang === 'zh' ? '今日费用' : 'Today Cost', value: `$${userData?.todayCost?.toFixed(6) || '0'}`, color: colors[4], gradient: 'from-amber-500/20 to-amber-500/5' },
   ]
 
+  const adminBillingCards = isAdmin && adminData ? [
+    { label: lang === 'zh' ? '平台总收益' : 'Total Revenue', value: `$${adminData.revenueTrend?.reduce((a: number, m: any) => a + (m.revenue||0), 0).toFixed(2) || '0'}`, color: colors[3], gradient: 'from-emerald-500/20 to-emerald-500/5' },
+    { label: lang === 'zh' ? '平台总调用' : 'Total Calls', value: (adminData.systemStats?.totalCalls || 0).toLocaleString(), color: colors[0], gradient: 'from-purple-500/20 to-purple-500/5' },
+    { label: lang === 'zh' ? '活跃用户' : 'Active Users', value: (adminData.systemStats?.activeUsers || 0).toLocaleString(), color: colors[2], gradient: 'from-cyan-500/20 to-cyan-500/5' },
+    { label: lang === 'zh' ? '人均费用' : 'Avg Per User', value: `$${adminData.systemStats?.totalUsers > 0 ? (adminData.systemStats?.totalCost / adminData.systemStats?.totalUsers).toFixed(4) : '0'}`, color: colors[4], gradient: 'from-amber-500/20 to-amber-500/5' },
+  ] : []
+
   const initChart = (el: HTMLDivElement | null, key: string, option: EChartsOption) => {
     if (!el) return
     if (chartRefs.current[key]) {
@@ -394,6 +401,38 @@ export default function DashboardPage() {
           </motion.div>
         ))}
       </motion.div>
+
+      {isAdmin && adminBillingCards.length > 0 && (
+        <motion.div
+          className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.5 }}
+        >
+          {adminBillingCards.map((card, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.2 + i * 0.05, duration: 0.4 }}
+              className="relative overflow-hidden rounded-2xl p-5 border"
+              style={{
+                background: `linear-gradient(135deg, ${card.gradient.split(' ')[0].replace('/20', '/10')}, ${card.gradient.split(' ')[1]})`,
+                borderColor: card.color + '30',
+              }}
+            >
+              <div className="relative z-10">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-md" style={{ background: card.color + '15', color: card.color }}>{lang === 'zh' ? '平台' : 'Platform'}</span>
+                </div>
+                <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-dim)' }}>{card.label}</p>
+                <p className="text-xl lg:text-2xl font-bold" style={{ color: card.color }}>{card.value}</p>
+              </div>
+              <div className="absolute top-0 right-0 w-24 h-24 rounded-full blur-3xl opacity-20" style={{ background: card.color }} />
+            </motion.div>
+          ))}
+        </motion.div>
+      )}
 
       <div className="flex gap-2 mb-6">
         {(['overview', 'usage', 'models', 'realtime'] as const).map(t => (

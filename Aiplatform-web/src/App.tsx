@@ -15,6 +15,7 @@ import PretextWordCloudPage from '@/pages/PretextWordCloudPage'
 import SecurityPage from '@/pages/SecurityPage'
 import OAuthCallbackPage from '@/pages/OAuthCallbackPage'
 import ModelStorePage from '@/pages/ModelStorePage'
+import BillingPage from '@/pages/BillingPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAppStore((s) => s.token)
@@ -50,10 +51,11 @@ export default function App() {
           <Route path="api-keys" element={<ApiKeysPage />} />
           <Route path="user" element={<UserCenterPage />} />
           <Route path="wordcloud" element={<PretextWordCloudPage />} />
+          <Route path="store" element={<ModelStorePage />} />
+          <Route path="billing" element={<BillingPage />} />
+          <Route path="security" element={<SecurityPage />} />
           <Route path="analytics" element={<AdminRoute><AdminAnalyticsPage /></AdminRoute>} />
           <Route path="admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
-          <Route path="security" element={<SecurityPage />} />
-          <Route path="store" element={<ModelStorePage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
         <Route path="/oauth/callback" element={<OAuthCallbackPage />} />

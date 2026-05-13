@@ -6,12 +6,12 @@
 Aiplatform-demo/
 ├── src/main/java/com/ai/gateway/
 │   ├── common/              # 通用类（Result、ResultCode、Constants）
-│   ├── config/              # 配置类（Redis、MyBatis-Plus、Web MVC）
-│   ├── controller/          # 控制器（Auth、ApiKey、Chat）
+│   ├── config/              # 配置类（Redis、MyBatis-Plus、Web MVC、CORS）
+│   ├── controller/          # 控制器（Auth、ApiKey、Chat、User、Admin）
 │   ├── dto/                 # 请求DTO
 │   ├── entity/              # 数据库实体
 │   ├── exception/           # 异常处理
-│   ├── interceptor/         # 拦截器（API Key鉴权）
+│   ├── interceptor/         # 拦截器（API Key鉴权、IP限流）
 │   ├── mapper/              # MyBatis Mapper
 │   ├── service/             # 业务服务
 │   └── vo/                  # 响应VO
@@ -29,49 +29,108 @@ Aiplatform-demo/
 
 ## 🔑 核心接口速查
 
+> **认证方式**: 登录后获取 Token，后续请求通过 `X-User-Token` Header 传递。
+> **聊天鉴权**: 需要 `X-API-Key` Header（从 `/api/api-key/generate` 获取）。
+
 ### 用户认证
 ```bash
 # 注册
 POST /api/auth/register
+Body: { "username":"test", "password":"Abc@12345", "email":"test@test.com" }
 
-# 登录
+# 登录（返回 token）
 POST /api/auth/login
+Body: { "username":"test", "password":"Abc@12345" }
 
 # 查询用户信息
-GET /api/auth/userinfo?userId={id}
+GET /api/auth/userinfo
+Header: X-User-Token: {token}
 
 # 查询余额
-GET /api/auth/balance?userId={id}
+GET /api/auth/balance
+Header: X-User-Token: {token}
+
+# 刷新 Token
+POST /api/auth/refresh-token
+Header: X-User-Token: {token}
+
+# 退出登录
+POST /api/auth/logout
+Header: X-User-Token: {token}
 ```
 
 ### API Key管理
 ```bash
-# 生成API Key
-POST /api/api-key/generate?userId={id}
+# 生成API Key（返回明文 Key，仅此一次）
+POST /api/api-key/generate
+Header: X-User-Token: {token}
+Body: { "name":"MyKey", "rateLimit":100 }
 
-# 查询列表
-GET /api/api-key/list?userId={id}
+# 查询API Key列表（apiKey字段为null，安全隐藏）
+GET /api/api-key/list
+Header: X-User-Token: {token}
 
 # 启用/禁用
-PUT /api/api-key/{id}/enable?userId={id}
-PUT /api/api-key/{id}/disable?userId={id}
+PUT /api/api-key/{id}/enable
+PUT /api/api-key/{id}/disable
+Header: X-User-Token: {token}
 
 # 更新限流
-PUT /api/api-key/{id}/rate-limit?userId={id}&rateLimit={num}
+PUT /api/api-key/{id}/rate-limit?rateLimit={num}
+Header: X-User-Token: {token}
 
 # 删除
-DELETE /api/api-key/{id}?userId={id}
+DELETE /api/api-key/{id}
+Header: X-User-Token: {token}
 ```
 
 ### 聊天对话
-```bash
-# 非流式对话
-POST /api/chat/completions
-Headers: X-API-Key: {your_api_key}
 
-# 流式对话（SSE）
+**三种模式**:
+- `free` - 免费模式（每日30次/50K tokens，无需余额）
+- `custom` - 自定义模型（使用用户存储的第三方API Key）
+- `paid` - 付费模式（按Token从余额扣费）
+
+**可用免费模型**: deepseek-chat、deepseek-reasoner、deepseek-v4-pro、deepseek-v4-flash
+（全部代理到 DeepSeek API，免费使用）
+
+```bash
+# 免费模式 - 非流式对话
+POST /api/chat/completions
+Headers: X-API-Key: {apiKey}, X-User-Token: {token}
+Body: { "model":"deepseek-v4-flash", "messages":[{"role":"user","content":"你好"}], "mode":"free" }
+
+# 免费模式 - 流式对话（SSE）
 POST /api/chat/stream
-Headers: X-API-Key: {your_api_key}
+Headers: X-API-Key: {apiKey}, X-User-Token: {token}
+Body: { "model":"deepseek-v4-flash", "messages":[{"role":"user","content":"你好"}], "stream":true, "mode":"free" }
+
+# 自定义模型（使用存储的第三方Key）
+POST /api/chat/completions
+Headers: X-API-Key: {apiKey}, X-User-Token: {token}
+Body: { "model":"deepseek-chat", "messages":[...], "mode":"custom", "userApiKeyId":1 }
+```
+
+### 模型配置
+```bash
+# 查看可用模型列表
+GET /api/model-config/list
+```
+
+### 用户第三方API Key
+```bash
+# 添加第三方Key
+POST /api/user/api-keys
+Header: X-User-Token: {token}
+Body: { "provider":"deepseek", "displayName":"我的DeepSeek", "apiKey":"sk-xxx", "baseUrl":"https://api.deepseek.com" }
+
+# 查看列表
+GET /api/user/api-keys
+Header: X-User-Token: {token}
+
+# 删除
+DELETE /api/user/api-keys/{id}
+Header: X-User-Token: {token}
 ```
 
 ## 💡 常用命令
@@ -154,27 +213,26 @@ spring:
       password: YOUR_PASSWORD
 ```
 
-### OpenAI API Key
-文件：`src/main/resources/application.yml`
-```yaml
-openai:
-  api-key: sk-your-api-key
-```
+### 模型API Key
+数据库表 `model_config` 中配置各模型的 api_key。
+目前 DeepSeek 系列模型使用统一密钥。
 
 ### 服务器端口
 文件：`src/main/resources/application.yml`
 ```yaml
 server:
   port: 8080
+  servlet:
+    context-path: /api
 ```
 
 ## 📊 数据库表速查
 
 ### user - 用户表
-- id, username, password, email, balance, status
+- id, username, password(BCrypt), email, balance, status, role, free_api_strategy
 
 ### api_key - API Key表
-- id, api_key, user_id, name, status, rate_limit
+- id, api_key(AES加密), user_id, name, status, rate_limit
 
 ### model_config - 模型配置表
 - id, model_name, provider, base_url, api_key, input_price, output_price
@@ -200,18 +258,12 @@ java -jar target/ai-gateway-platform-1.0.0.jar 2>&1 | tail -50
 ```bash
 # 测试连接
 mysql -h YOUR_IP -u root -p
-
-# 检查服务
-sudo systemctl status mysql
 ```
 
 ### Redis连接失败
 ```bash
 # 测试连接
 redis-cli -h YOUR_IP -a YOUR_PASSWORD ping
-
-# 检查服务
-sudo systemctl status redis
 ```
 
 ### 查看限流状态
@@ -232,23 +284,34 @@ redis-cli -h YOUR_IP -a YOUR_PASSWORD
 # 1. 注册用户
 curl -X POST http://localhost:8080/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"username":"test","password":"123456","email":"test@test.com"}'
+  -d '{"username":"test","password":"Abc@12345","email":"test@test.com"}'
 
-# 2. 登录获取userId
-curl -X POST http://localhost:8080/api/auth/login \
+# 2. 登录获取Token
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"test","password":"123456"}'
+  -d '{"username":"test","password":"Abc@12345"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['token'])")
 
-# 3. 生成API Key（假设userId=1）
-curl -X POST "http://localhost:8080/api/api-key/generate?userId=1" \
+# 3. 生成API Key
+APIKEY=$(curl -s -X POST http://localhost:8080/api/api-key/generate \
   -H "Content-Type: application/json" \
-  -d '{"name":"Test Key","rateLimit":100}'
+  -H "X-User-Token: $TOKEN" \
+  -d '{"name":"Test Key","rateLimit":100}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['apiKey'])")
 
-# 4. 复制返回的apiKey，进行对话测试
-curl -X POST http://localhost:8080/api/chat/completions \
+# 4. 免费模式对话测试
+curl -s -X POST http://localhost:8080/api/chat/completions \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: sk-xxxxxxxxx" \
-  -d '{"model":"gpt-3.5-turbo","messages":[{"role":"user","content":"你好"}]}'
+  -H "X-API-Key: $APIKEY" \
+  -H "X-User-Token: $TOKEN" \
+  -d '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"你好"}],"mode":"free"}'
+
+# 5. 流式对话测试
+curl -s -N -X POST http://localhost:8080/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $APIKEY" \
+  -H "X-User-Token: $TOKEN" \
+  -d '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"你好"}],"stream":true,"mode":"free"}'
 ```
 
 ## 📝 扩展开发指南
@@ -257,7 +320,7 @@ curl -X POST http://localhost:8080/api/chat/completions \
 
 1. 在数据库添加配置
 ```sql
-INSERT INTO model_config (model_name, provider, base_url, api_key, input_price, output_price) 
+INSERT INTO model_config (model_name, provider, base_url, api_key, input_price, output_price)
 VALUES ('claude-2', 'anthropic', 'https://api.anthropic.com/v1/messages', 'YOUR_KEY', 0.008, 0.024);
 ```
 
@@ -289,7 +352,7 @@ if (modelName.startsWith("claude")) {
 - Spring Boot文档: https://spring.io/projects/spring-boot
 - MyBatis-Plus文档: https://baomidou.com/
 - Redis文档: https://redis.io/documentation
-- OpenAI API文档: https://platform.openai.com/docs
+- DeepSeek API文档: https://platform.deepseek.com/docs
 
 ## 📞 获取帮助
 

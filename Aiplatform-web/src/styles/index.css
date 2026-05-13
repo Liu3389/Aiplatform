@@ -198,6 +198,32 @@ body {
 .bg-input { background-color: var(--bg-input); }
 
 .border-default { border-color: var(--border-color); }
+
+/* Responsive Utilities */
+@media (max-width: 640px) {
+  .hide-on-mobile { display: none !important; }
+  .mobile-full { width: 100% !important; }
+}
+
+@media (min-width: 641px) {
+  .hide-on-desktop { display: none !important; }
+}
+
+/* Mobile touch improvements */
+@media (pointer: coarse) {
+  button, a, [role="button"] {
+    min-height: 40px;
+    min-width: 40px;
+    cursor: default;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Safe area for notch phones */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-top { padding-top: env(safe-area-inset-top); }
+}
 .border-light { border-color: var(--border-light); }
 
 .text-accent-purple { color: var(--accent-purple); }

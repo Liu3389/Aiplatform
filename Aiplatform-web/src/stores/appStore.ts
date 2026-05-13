@@ -7,12 +7,15 @@ interface AppState {
   user: UserInfo | null
   isLoading: boolean
   sidebarCollapsed: boolean
+  mobileSidebarOpen: boolean
 
   setToken: (token: string | null) => void
   setUserId: (uid: number) => void
   setUser: (user: UserInfo | null) => void
   logout: () => void
   toggleSidebar: () => void
+  closeMobileSidebar: () => void
+  openMobileSidebar: () => void
   fetchUserInfo: () => Promise<void>
 }
 
@@ -20,7 +23,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   token: localStorage.getItem('lingdian_token'),
   user: null,
   isLoading: false,
-  sidebarCollapsed: false,
+  sidebarCollapsed: true,
+  mobileSidebarOpen: false,
 
   setToken: (token) => {
     if (token) {
@@ -41,10 +45,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   logout: () => {
     localStorage.removeItem('lingdian_token')
     localStorage.removeItem('lingdian_uid')
+    sessionStorage.removeItem('ld_active_apikey')
     set({ token: null, user: null })
   },
 
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  closeMobileSidebar: () => set({ mobileSidebarOpen: false }),
+  openMobileSidebar: () => set({ mobileSidebarOpen: true }),
 
   fetchUserInfo: async () => {
     const { token } = get()

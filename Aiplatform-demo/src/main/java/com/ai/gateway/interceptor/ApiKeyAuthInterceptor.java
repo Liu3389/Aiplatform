@@ -24,7 +24,8 @@ import java.util.UUID;
 
 /**
  * API Key鉴权拦截器
- * 负责验证API Key、限流检查、余额预扣
+ * 负责验证API Key、限流检查
+ * 计费逻辑由 OpenAiChatService 按模式分别处理
  * 
  * @author AI Gateway Platform
  */
@@ -36,7 +37,6 @@ public class ApiKeyAuthInterceptor implements HandlerInterceptor {
     private final ApiKeyService apiKeyService;
     private final UserService userService;
     private final RateLimitService rateLimitService;
-    private final BillingService billingService;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) 
@@ -44,7 +44,6 @@ public class ApiKeyAuthInterceptor implements HandlerInterceptor {
         
         log.info("========== API Key鉴权拦截器开始 ==========");
         
-        // 获取API Key
         String apiKey = request.getHeader(Constants.HEADER_API_KEY);
         log.info("请求路径: {}, API Key: {}", request.getRequestURI(), apiKey != null ? apiKey.substring(0, Math.min(8, apiKey.length())) + "..." : "null");
         
@@ -65,7 +64,6 @@ public class ApiKeyAuthInterceptor implements HandlerInterceptor {
             User user = userService.getUserEntityById(apiKeyEntity.getUserId());
             log.info("用户信息查询成功: id={}, username={}, status={}", user.getId(), user.getUsername(), user.getStatus());
 
-            // 检查用户状态
             if (user.getStatus() == Constants.USER_STATUS_DISABLED) {
                 log.warn("用户已被禁用: userId={}", user.getId());
                 writeErrorResponse(response, ResultCode.USER_DISABLED);
@@ -81,40 +79,11 @@ public class ApiKeyAuthInterceptor implements HandlerInterceptor {
             }
             log.info("限流检查通过");
 
-            // 4. 余额检查和预扣（估算最大费用）
-            log.info("步骤4: 余额检查...");
-            BigDecimal userBalance = billingService.getUserBalance(user.getId());
-            log.info("当前余额: userId={}, balance={}", user.getId(), userBalance);
-            
-            if (userBalance.compareTo(BigDecimal.ZERO) <= 0) {
-                log.warn("余额不足: userId={}, balance={}", user.getId(), userBalance);
-                writeErrorResponse(response, ResultCode.INSUFFICIENT_BALANCE);
-                return false;
-            }
-
-            // 预扣余额（估算值，实际费用在请求结束后结算）
             String requestId = UUID.randomUUID().toString().replace("-", "");
-            BigDecimal preDeductAmount = new BigDecimal("0.1"); // 预设最大费用0.1美元
-            
-            log.info("步骤5: 开始预扣余额: userId={}, requestId={}, amount={}", user.getId(), requestId, preDeductAmount);
-            boolean preDeductSuccess = billingService.preDeductBalance(
-                    user.getId(), requestId, preDeductAmount, 300);
-            
-            log.info("预扣结果: success={}", preDeductSuccess);
-            
-            if (!preDeductSuccess) {
-                log.warn("预扣余额失败: userId={}, requestId={}", user.getId(), requestId);
-                writeErrorResponse(response, ResultCode.INSUFFICIENT_BALANCE);
-                return false;
-            }
-            
-            log.info("预扣余额成功: userId={}, requestId={}", user.getId(), requestId);
 
-            // 将用户信息和请求ID存入request属性，供后续使用
             request.setAttribute("userId", user.getId());
             request.setAttribute("apiKey", apiKey);
             request.setAttribute("requestId", requestId);
-            request.setAttribute("preDeductAmount", preDeductAmount);
 
             log.info("========== API Key鉴权通过 ==========");
             return true;

@@ -156,6 +156,10 @@ export const modelApi = {
 export async function ensureApiKey(): Promise<string | undefined> {
   const token = localStorage.getItem('lingdian_token');
   if (!token) return undefined;
+
+  const cached = sessionStorage.getItem('ld_active_apikey');
+  if (cached) return cached;
+
   const h: Record<string, string> = { 'Content-Type': 'application/json', 'X-User-Token': token };
 
   try {
@@ -164,7 +168,10 @@ export async function ensureApiKey(): Promise<string | undefined> {
       const j: ApiResult<Array<{ id: number; apiKey: string; status: string }>> = await r.json();
       if (j.code === 200 && j.data) {
         const active = j.data.find(k => k.status === 'ACTIVE' || String(k.status) === '1');
-        if (active) return active.apiKey;
+        if (active && active.apiKey) {
+          sessionStorage.setItem('ld_active_apikey', active.apiKey);
+          return active.apiKey;
+        }
       }
     }
   } catch {}
@@ -176,7 +183,10 @@ export async function ensureApiKey(): Promise<string | undefined> {
     });
     if (r.ok) {
       const j: ApiResult<{ id: number; apiKey: string }> = await r.json();
-      if (j.code === 200 && j.data) return j.data.apiKey;
+      if (j.code === 200 && j.data?.apiKey) {
+        sessionStorage.setItem('ld_active_apikey', j.data.apiKey);
+        return j.data.apiKey;
+      }
     }
   } catch {}
 

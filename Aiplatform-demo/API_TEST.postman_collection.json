@@ -1,55 +1,97 @@
 {
   "info": {
     "name": "AI Gateway Platform API",
-    "description": "AI模型调度网关与流式对话平台接口测试",
+    "description": "凌点AI模型调度网关接口测试 - 使用 X-User-Token Header 认证",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "value",
+        "value": "{{token}}",
+        "type": "string"
+      },
+      {
+        "key": "key",
+        "value": "X-User-Token",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "apiKey",
+      "value": ""
+    }
+  ],
   "item": [
     {
       "name": "用户认证",
       "item": [
         {
           "name": "用户注册",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.code === 200) console.log('注册成功, userId=' + json.data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"123456\",\n  \"email\": \"test@example.com\"\n}"
+              "raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"Test@123456\",\n  \"email\": \"test@example.com\"\n}"
             },
             "url": {
-              "raw": "http://localhost:8080/api/auth/register",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8080",
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": ["{{baseUrl}}"],
               "path": ["api", "auth", "register"]
             }
           }
         },
         {
           "name": "用户登录",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.code === 200 && json.data.token) {",
+                  "  pm.collectionVariables.set('token', json.data.token);",
+                  "  console.log('登录成功, token已保存');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"123456\"\n}"
+              "raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"Test@123456\"\n}"
             },
             "url": {
-              "raw": "http://localhost:8080/api/auth/login",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8080",
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
               "path": ["api", "auth", "login"]
             }
           }
@@ -58,19 +100,11 @@
           "name": "查询用户信息",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
             "url": {
-              "raw": "http://localhost:8080/api/auth/userinfo?userId=1",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8080",
-              "path": ["api", "auth", "userinfo"],
-              "query": [
-                {
-                  "key": "userId",
-                  "value": "1"
-                }
-              ]
+              "raw": "{{baseUrl}}/api/auth/userinfo",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "userinfo"]
             }
           }
         },
@@ -78,19 +112,35 @@
           "name": "查询余额",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
             "url": {
-              "raw": "http://localhost:8080/api/auth/balance?userId=1",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8080",
-              "path": ["api", "auth", "balance"],
-              "query": [
-                {
-                  "key": "userId",
-                  "value": "1"
-                }
-              ]
+              "raw": "{{baseUrl}}/api/auth/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "balance"]
+            }
+          }
+        },
+        {
+          "name": "刷新Token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh-token",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "refresh-token"]
+            }
+          }
+        },
+        {
+          "name": "退出登录",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "logout"]
             }
           }
         }
@@ -101,30 +151,35 @@
       "item": [
         {
           "name": "生成API Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.code === 200 && json.data.apiKey) {",
+                  "  pm.collectionVariables.set('apiKey', json.data.apiKey);",
+                  "  console.log('API Key已保存');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Token", "value": "{{token}}" }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"我的API Key\",\n  \"rateLimit\": 100\n}"
             },
             "url": {
-              "raw": "http://localhost:8080/api/api-key/generate?userId=1",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8080",
-              "path": ["api", "api-key", "generate"],
-              "query": [
-                {
-                  "key": "userId",
-                  "value": "1"
-                }
-              ]
+              "raw": "{{baseUrl}}/api/api-key/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "api-key", "generate"]
             }
           }
         },
@@ -132,39 +187,11 @@
           "name": "查询API Key列表",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
             "url": {
-              "raw": "http://localhost:8080/api/api-key/list?userId=1",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8080",
-              "path": ["api", "api-key", "list"],
-              "query": [
-                {
-                  "key": "userId",
-                  "value": "1"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "禁用API Key",
-          "request": {
-            "method": "PUT",
-            "header": [],
-            "url": {
-              "raw": "http://localhost:8080/api/api-key/1/disable?userId=1",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8080",
-              "path": ["api", "api-key", "1", "disable"],
-              "query": [
-                {
-                  "key": "userId",
-                  "value": "1"
-                }
-              ]
+              "raw": "{{baseUrl}}/api/api-key/list",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "api-key", "list"]
             }
           }
         },
@@ -172,19 +199,23 @@
           "name": "启用API Key",
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
             "url": {
-              "raw": "http://localhost:8080/api/api-key/1/enable?userId=1",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8080",
-              "path": ["api", "api-key", "1", "enable"],
-              "query": [
-                {
-                  "key": "userId",
-                  "value": "1"
-                }
-              ]
+              "raw": "{{baseUrl}}/api/api-key/1/enable",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "api-key", "1", "enable"]
+            }
+          }
+        },
+        {
+          "name": "禁用API Key",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/api-key/1/disable",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "api-key", "1", "disable"]
             }
           }
         },
@@ -192,23 +223,12 @@
           "name": "更新限流阈值",
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
             "url": {
-              "raw": "http://localhost:8080/api/api-key/1/rate-limit?userId=1&rateLimit=200",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8080",
+              "raw": "{{baseUrl}}/api/api-key/1/rate-limit?rateLimit=200",
+              "host": ["{{baseUrl}}"],
               "path": ["api", "api-key", "1", "rate-limit"],
-              "query": [
-                {
-                  "key": "userId",
-                  "value": "1"
-                },
-                {
-                  "key": "rateLimit",
-                  "value": "200"
-                }
-              ]
+              "query": [{ "key": "rateLimit", "value": "200" }]
             }
           }
         },
@@ -216,19 +236,28 @@
           "name": "删除API Key",
           "request": {
             "method": "DELETE",
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/api-key/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "api-key", "1"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "模型配置",
+      "item": [
+        {
+          "name": "模型列表",
+          "request": {
+            "method": "GET",
             "header": [],
             "url": {
-              "raw": "http://localhost:8080/api/api-key/1?userId=1",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8080",
-              "path": ["api", "api-key", "1"],
-              "query": [
-                {
-                  "key": "userId",
-                  "value": "1"
-                }
-              ]
+              "raw": "{{baseUrl}}/api/model-config/list",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "model-config", "list"]
             }
           }
         }
@@ -238,56 +267,98 @@
       "name": "聊天对话",
       "item": [
         {
-          "name": "非流式对话",
+          "name": "免费模式 - 非流式对话",
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-API-Key",
-                "value": "sk-your-api-key-here"
-              }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-User-Token", "value": "{{token}}" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"model\": \"gpt-3.5-turbo\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"你好，请介绍一下你自己\"\n    }\n  ],\n  \"maxTokens\": 1000,\n  \"temperature\": 0.7\n}"
+              "raw": "{\n  \"model\": \"deepseek-v4-flash\",\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"你好，请介绍一下你自己\"\n  }],\n  \"mode\": \"free\",\n  \"temperature\": 0.7\n}"
             },
             "url": {
-              "raw": "http://localhost:8080/api/chat/completions",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8080",
+              "raw": "{{baseUrl}}/api/chat/completions",
+              "host": ["{{baseUrl}}"],
               "path": ["api", "chat", "completions"]
             }
           }
         },
         {
-          "name": "流式对话（SSE）",
+          "name": "免费模式 - 流式对话(SSE)",
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-API-Key",
-                "value": "sk-your-api-key-here"
-              }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-User-Token", "value": "{{token}}" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"model\": \"gpt-3.5-turbo\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"请写一首关于春天的诗\"\n    }\n  ],\n  \"stream\": true,\n  \"maxTokens\": 500,\n  \"temperature\": 0.8\n}"
+              "raw": "{\n  \"model\": \"deepseek-v4-flash\",\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"写一首关于春天的诗\"\n  }],\n  \"stream\": true,\n  \"mode\": \"free\",\n  \"temperature\": 0.8\n}"
             },
             "url": {
-              "raw": "http://localhost:8080/api/chat/stream",
-              "protocol": "http",
-              "host": ["localhost"],
-              "port": "8080",
+              "raw": "{{baseUrl}}/api/chat/stream",
+              "host": ["{{baseUrl}}"],
               "path": ["api", "chat", "stream"]
+            }
+          }
+        },
+        {
+          "name": "自定义模型 - 非流式对话",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-API-Key", "value": "{{apiKey}}" },
+              { "key": "X-User-Token", "value": "{{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"deepseek-chat\",\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"你好\"\n  }],\n  \"mode\": \"custom\",\n  \"userApiKeyId\": 1,\n  \"temperature\": 0.7\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/completions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "completions"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "用户API Key(第三方)",
+      "item": [
+        {
+          "name": "添加第三方API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Token", "value": "{{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"deepseek\",\n  \"displayName\": \"我的DeepSeek\",\n  \"apiKey\": \"sk-xxx\",\n  \"baseUrl\": \"https://api.deepseek.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/user/api-keys",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "api-keys"]
+            }
+          }
+        },
+        {
+          "name": "查看第三方API Key列表",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/api-keys",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "user", "api-keys"]
             }
           }
         }
