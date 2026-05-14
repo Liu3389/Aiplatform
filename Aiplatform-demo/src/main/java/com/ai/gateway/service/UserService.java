@@ -101,6 +101,9 @@ public class UserService {
             throw new BusinessException(ResultCode.USER_DISABLED);
         }
 
+        // 登录时同步余额到Redis，确保计费系统可以正常使用
+        billingService.syncUserBalanceToRedis(user.getId(), user.getBalance());
+
         log.info("用户登录成功: username={}, userId={}", request.getUsername(), user.getId());
 
         return convertToVO(user);
@@ -121,6 +124,11 @@ public class UserService {
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
         }
         return user;
+    }
+
+    public boolean isAdmin(Long userId) {
+        User user = userMapper.selectById(userId);
+        return user != null && ("ADMIN".equals(user.getRole()) || "SUPER_ADMIN".equals(user.getRole()));
     }
 
     public BigDecimal getBalance(Long userId) {

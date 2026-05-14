@@ -102,7 +102,7 @@ export default function UserCenterPage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 rounded-xl" style={{ background: 'var(--bg-surface)' }}>
               <div className="text-[10px] mb-1" style={{ color: 'var(--text-dim)' }}>{t('user.balance')}</div>
-              <div className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>${Number(user?.balance || 0).toFixed(4)}</div>
+              <div className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>¥{Number(user?.balance || 0).toFixed(4)}</div>
             </div>
             <div className="p-4 rounded-xl" style={{ background: 'var(--bg-surface)' }}>
               <div className="text-[10px] mb-1" style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '邮箱' : 'Email'}</div>

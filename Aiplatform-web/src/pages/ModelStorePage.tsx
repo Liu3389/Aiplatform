@@ -140,16 +140,16 @@ export default function ModelStorePage() {
                 <div className="flex flex-col gap-1 text-[10px] mb-3" style={{ color: 'var(--text-dim)' }}>
                   <div className="flex items-center justify-between">
                     <span>{lang === 'zh' ? '输入/1K Token' : 'Input/1K tokens'}</span>
-                    <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>${Number(m.inputPrice).toFixed(6)}</span>
+                    <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>¥{Number(m.inputPrice).toFixed(6)}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span>{lang === 'zh' ? '输出/1K Token' : 'Output/1K tokens'}</span>
-                    <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>${Number(m.outputPrice).toFixed(6)}</span>
+                    <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>¥{Number(m.outputPrice).toFixed(6)}</span>
                   </div>
                   <div className="flex items-center justify-between pt-1 border-t" style={{ borderColor: 'var(--border-color)' }}>
                     <span style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '平均/1K调用' : 'Avg/1K call'}</span>
                     <span className="font-mono font-semibold" style={{ color: 'var(--accent-amber)' }}>
-                      ${((Number(m.inputPrice) + Number(m.outputPrice)) / 2).toFixed(6)}
+                      ¥{((Number(m.inputPrice) + Number(m.outputPrice)) / 2).toFixed(6)}
                     </span>
                   </div>
                 </div>

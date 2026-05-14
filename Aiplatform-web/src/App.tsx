@@ -11,7 +11,7 @@ const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
 const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage'))
 const UserCenterPage = lazy(() => import('@/pages/UserCenterPage'))
 const AdminPage = lazy(() => import('@/pages/AdminPage'))
-const AdminAnalyticsPage = lazy(() => import('@/pages/AdminAnalyticsPage'))
+
 const PretextWordCloudPage = lazy(() => import('@/pages/PretextWordCloudPage'))
 const SecurityPage = lazy(() => import('@/pages/SecurityPage'))
 const ModelStorePage = lazy(() => import('@/pages/ModelStorePage'))
@@ -64,7 +64,7 @@ export default function App() {
           <Route path="billing" element={<Suspense fallback={<PageLoader />}><BillingPage /></Suspense>} />
           <Route path="recharge" element={<Suspense fallback={<PageLoader />}><RechargePage /></Suspense>} />
           <Route path="security" element={<Suspense fallback={<PageLoader />}><SecurityPage /></Suspense>} />
-          <Route path="analytics" element={<AdminRoute><Suspense fallback={<PageLoader />}><AdminAnalyticsPage /></Suspense></AdminRoute>} />
+          
           <Route path="admin" element={<AdminRoute><Suspense fallback={<PageLoader />}><AdminPage /></Suspense></AdminRoute>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

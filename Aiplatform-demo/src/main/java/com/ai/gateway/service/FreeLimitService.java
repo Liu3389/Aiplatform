@@ -32,7 +32,7 @@ public class FreeLimitService {
     private static final int FREE_DAILY_TOKENS = 50000;
     private static final int PLUS_DAILY_CALLS = 500;
     private static final int PLUS_DAILY_TOKENS = 500000;
-    private static final int PRO_DAILY_CALLS = Integer.MAX_VALUE;
+    private static final int PRO_DAILY_CALLS = 999999;
     private static final int PRO_DAILY_TOKENS = 2000000;
 
     public boolean checkAndRecord(Long userId, String model) {

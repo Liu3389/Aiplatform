@@ -51,8 +51,8 @@ public class OpenAiChatService {
                 throw new BusinessException("今日免费额度已用完，请使用自定义模型或充值后使用付费模型");
             }
         } else if ("paid".equals(request.getMode())) {
-            BigDecimal cost = modelConfigService.calculateCost(config.modelConfig, 1000, 1000);
-            boolean ok = billingService.preDeductBalance(userId, requestId, cost, 300);
+            BigDecimal preDeductEstimate = modelConfigService.calculateCost(config.modelConfig, 8000, 8000);
+            boolean ok = billingService.preDeductBalance(userId, requestId, preDeductEstimate, 300);
             if (!ok) throw new BusinessException("余额不足，请充值后使用");
         }
 
@@ -112,19 +112,24 @@ public class OpenAiChatService {
         if ("free".equals(request.getMode())) {
             if (!freeLimitService.checkAndRecord(userId, config.model)) {
                 try {
-                    emitter.send(SseEmitter.event().name("error").data("今日免费额度已用完"));
+                    Map<String, Object> errData = new HashMap<>();
+                    errData.put("message", "今日免费额度已用完，请使用付费模式或等待明日重置");
+                    emitter.send(SseEmitter.event().name("error").data(errData));
                     emitter.complete();
                 } catch (IOException ignored) {}
                 return emitter;
             }
         } else if ("paid".equals(request.getMode())) {
-            BigDecimal cost = modelConfigService.calculateCost(config.modelConfig, 1000, 1000);
-            log.info("付费模式预扣: userId={}, cost={}, modelConfig={}", userId, cost, config.modelConfig.getModelName());
-            boolean ok = billingService.preDeductBalance(userId, requestId, cost, 300);
+            BigDecimal preDeductEstimate = modelConfigService.calculateCost(config.modelConfig, 8000, 8000);
+            log.info("付费模式预扣: userId={}, estimateCost={}, modelConfig={}", userId, preDeductEstimate, config.modelConfig.getModelName());
+            boolean ok = billingService.preDeductBalance(userId, requestId, preDeductEstimate, 300);
             log.info("付费模式预扣结果: userId={}, ok={}", userId, ok);
             if (!ok) {
                 try {
-                    emitter.send(SseEmitter.event().name("error").data("余额不足，请充值"));
+                    BigDecimal currentBalance = billingService.getUserBalance(userId);
+                    Map<String, Object> errData = new HashMap<>();
+                    errData.put("message", "余额不足，请充值。当前余额：¥" + currentBalance + "，预估费用：¥" + preDeductEstimate);
+                    emitter.send(SseEmitter.event().name("error").data(errData));
                     emitter.complete();
                 } catch (IOException ignored) {}
                 return emitter;
@@ -144,7 +149,9 @@ public class OpenAiChatService {
                         .executeAsync();
 
                 if (!response.isOk()) {
-                    emitter.send(SseEmitter.event().name("error").data("API调用失败: HTTP " + response.getStatus()));
+                    Map<String, Object> errData = new HashMap<>();
+                    errData.put("message", "API调用失败: HTTP " + response.getStatus());
+                    emitter.send(SseEmitter.event().name("error").data(errData));
                     if ("paid".equals(request.getMode())) billingService.settleBalance(userId, requestId, BigDecimal.ZERO);
                     emitter.complete();
                     return;
@@ -205,7 +212,9 @@ public class OpenAiChatService {
             } catch (Exception e) {
                 log.error("流式对话失败: userId={}", userId, e);
                 try {
-                    emitter.send(SseEmitter.event().name("error").data(e.getMessage()));
+                    Map<String, Object> errData = new HashMap<>();
+                    errData.put("message", e.getMessage() != null ? e.getMessage() : "对话服务异常");
+                    emitter.send(SseEmitter.event().name("error").data(errData));
                     if ("paid".equals(request.getMode())) billingService.settleBalance(userId, requestId, BigDecimal.ZERO);
                 } catch (IOException ignored) {}
                 emitter.completeWithError(e);

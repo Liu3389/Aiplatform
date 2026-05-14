@@ -31,7 +31,7 @@ const FAQ_ITEMS = [
   { q: '免费额度如何计算？', a: '每个用户每天享有 30 次免费调用次数和 50,000 免费 Token，每日零点重置。调用 DeepSeek 系列模型不消耗余额。' },
   { q: '余额如何扣费？', a: '付费模式下，系统采用"预扣余额 + 实际结算"两阶段机制。请求前按最大预估费用预扣，完成后按实际用量多退少补。' },
   { q: '如何保证计费不丢钱？', a: '所有余额操作均使用 Redis Lua 脚本，在单线程中原子执行，杜绝并发超扣。计费记录与调用日志一一关联，可追溯。' },
-  { q: '欠费了怎么办？', a: '余额不足时请求会被即时拦截（402），不会产生欠费。充值后即可恢复使用，最小充值金额为 $1.00。' },
+  { q: '欠费了怎么办？', a: '余额不足时请求会被即时拦截（402），不会产生欠费。充值后即可恢复使用，最小充值金额为 ¥1.00。' },
   { q: '自定义 API Key 怎么收费？', a: '使用自定义第三方 API Key（如你自己的 DeepSeek/OpenAI Key）时，平台不收取任何费用，完全免费。' },
   { q: 'Token 是怎么计算的？', a: '输入 Token 基于消息总字数 / 4 估算，输出 Token 基于 AI 回复字数 / 4 估算，实际以模型厂商返回为准。' },
 ]
@@ -207,7 +207,7 @@ export default function BillingPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span style={{ color: 'var(--accent-amber)' }}>◆</span>
-                  <span>{lang === 'zh' ? `最小充值金额：$${BILLING_RULES.minTopUp}` : `Min top-up: $${BILLING_RULES.minTopUp}`}</span>
+                  <span>{lang === 'zh' ? `最小充值金额：¥${BILLING_RULES.minTopUp}` : `Min top-up: ¥${BILLING_RULES.minTopUp}`}</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span style={{ color: 'var(--accent-amber)' }}>◆</span>
@@ -225,10 +225,10 @@ export default function BillingPage() {
             </h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
-                { label: lang === 'zh' ? '当前余额' : 'Balance', value: `$${balance.toFixed(4)}`, color: colors[3] },
+                { label: lang === 'zh' ? '当前余额' : 'Balance', value: `¥${balance.toFixed(4)}`, color: colors[3] },
                 { label: lang === 'zh' ? '今日调用' : 'Today Calls', value: `${freeQuota?.usedCalls || 0} / ${BILLING_RULES.freeModelCallLimit}`, color: colors[0] },
                 { label: lang === 'zh' ? '今日Token' : 'Today Tokens', value: `${((freeQuota?.usedTokens || 0) / 1000).toFixed(1)}K / ${(BILLING_RULES.freeModelTokenLimit / 1000).toFixed(0)}K`, color: colors[1] },
-                { label: lang === 'zh' ? '总费用' : 'Total Cost', value: `$${(userStats?.totalCost || 0).toFixed(4)}`, color: colors[4] },
+                { label: lang === 'zh' ? '总费用' : 'Total Cost', value: `¥${(userStats?.totalCost || 0).toFixed(4)}`, color: colors[4] },
               ].map((s, i) => (
                 <div key={i} className="rounded-xl p-4" style={{ background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'}` }}>
                   <div className="text-[10px] mb-1" style={{ color: 'var(--text-dim)' }}>{s.label}</div>
@@ -247,9 +247,9 @@ export default function BillingPage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {[
                   { label: lang === 'zh' ? '总调用次数' : 'Total Calls', value: (platformStats.totalCalls || 0).toLocaleString(), color: colors[0] },
-                  { label: lang === 'zh' ? '总收益' : 'Total Revenue', value: `$${(platformStats.totalCost || 0).toFixed(2)}`, color: colors[3] },
+                  { label: lang === 'zh' ? '总收益' : 'Total Revenue', value: `¥${(platformStats.totalCost || 0).toFixed(2)}`, color: colors[3] },
                   { label: lang === 'zh' ? '今日调用' : 'Today Calls', value: (platformStats.todayCalls || 0).toLocaleString(), color: colors[1] },
-                  { label: lang === 'zh' ? '今日收益' : 'Today Revenue', value: `$${(platformStats.todayCost || 0).toFixed(2)}`, color: colors[4] },
+                  { label: lang === 'zh' ? '今日收益' : 'Today Revenue', value: `¥${(platformStats.todayCost || 0).toFixed(2)}`, color: colors[4] },
                 ].map((s, i) => (
                   <div key={i} className="rounded-xl p-4" style={{ background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'}` }}>
                     <div className="text-[10px] mb-1" style={{ color: 'var(--text-dim)' }}>{s.label}</div>
@@ -308,8 +308,8 @@ export default function BillingPage() {
                     <tr key={m.id} style={{ borderBottom: `1px solid var(--border-color)` }}>
                       <td className="py-3 px-4 font-medium" style={{ color: 'var(--text-primary)' }}>{m.modelName}</td>
                       <td className="py-3 px-4" style={{ color: 'var(--text-dim)' }}>{m.provider}</td>
-                      <td className="py-3 px-4 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>${Number(m.inputPrice).toFixed(6)}</td>
-                      <td className="py-3 px-4 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>${Number(m.outputPrice).toFixed(6)}</td>
+                      <td className="py-3 px-4 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>¥{Number(m.inputPrice).toFixed(6)}</td>
+                      <td className="py-3 px-4 text-right font-mono" style={{ color: 'var(--text-secondary)' }}>¥{Number(m.outputPrice).toFixed(6)}</td>
                       <td className="py-3 px-4 text-right">
                         <span className="px-2 py-0.5 rounded-md text-[10px]" style={{ background: 'var(--accent-amber)' + '15', color: 'var(--accent-amber)' }}>
                           {lang === 'zh' ? '按Token' : 'Per-Token'}

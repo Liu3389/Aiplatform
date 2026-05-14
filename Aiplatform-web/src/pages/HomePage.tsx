@@ -87,11 +87,11 @@ export default function HomePage() {
   const quickActions = [
     { label: lang === 'zh' ? 'AI 对话' : 'AI Chat', desc: lang === 'zh' ? '免费使用 DeepSeek 模型' : 'Free DeepSeek models', path: '/chat', color: colors[0], icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' },
     { label: lang === 'zh' ? '令牌管理' : 'API Keys', desc: lang === 'zh' ? '管理 API 访问密钥' : 'Manage API keys', path: '/api-keys', color: colors[3], icon: 'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z' },
-    { label: lang === 'zh' ? '控制台' : 'Dashboard', desc: lang === 'zh' ? '查看用量数据分析' : 'Usage analytics', path: '/dashboard', color: colors[1], icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+    { label: lang === 'zh' ? '用量信息' : 'Usage', desc: lang === 'zh' ? '查看用量数据分析' : 'Usage analytics', path: '/dashboard', color: colors[1], icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
   ]
 
   const statCards = [
-    { label: lang === 'zh' ? '账户余额' : 'Balance', value: `$${stats.balance.toFixed(2)}`, color: colors[3] },
+    { label: lang === 'zh' ? '账户余额' : 'Balance', value: `¥${stats.balance.toFixed(2)}`, color: colors[3] },
     { label: lang === 'zh' ? '今日已用' : 'Today Used', value: `${stats.todayCalls}/${30} ${lang==='zh'?'次':'calls'}`, color: colors[0] },
     { label: lang === 'zh' ? 'Token消耗' : 'Tokens', value: `${(stats.todayTokens/1000).toFixed(1)}K`, color: colors[1] },
   ]
@@ -138,7 +138,7 @@ export default function HomePage() {
                 { label: lang === 'zh' ? '总用户' : 'Total Users', value: (systemStats.totalUsers||0).toLocaleString(), color: colors[0] },
                 { label: lang === 'zh' ? '今日调用' : 'Today Calls', value: (systemStats.todayCalls||0).toLocaleString(), color: colors[1] },
                 { label: lang === 'zh' ? '活跃用户' : 'Active Users', value: (systemStats.activeUsers||0).toLocaleString(), color: colors[3] },
-                { label: lang === 'zh' ? '总收益' : 'Total Revenue', value: `$${(systemStats.totalCost||0).toFixed(2)}`, color: colors[4] },
+                { label: lang === 'zh' ? '总收益' : 'Total Revenue', value: `¥${(systemStats.totalCost||0).toFixed(2)}`, color: colors[4] },
               ].map((s, i) => (
                 <div key={i} className="rounded-xl p-3" style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'}` }}>
                   <div className="text-[10px] mb-0.5" style={{ color: 'var(--text-dim)' }}>{s.label}</div>

@@ -34,6 +34,10 @@ local difference = preDeductAmount - actualCost
 
 -- 退还差额到余额
 local newBalance = currentBalance + difference
+-- 如果余额为负数，置为0（防止异常情况导致负余额）
+if newBalance < 0 then
+    newBalance = 0
+end
 -- 保留6位小数，避免浮点数精度问题
 newBalance = string.format("%.6f", newBalance)
 redis.call('SET', balanceKey, newBalance)

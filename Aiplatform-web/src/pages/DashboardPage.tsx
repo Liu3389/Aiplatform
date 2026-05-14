@@ -115,17 +115,17 @@ export default function DashboardPage() {
   )
 
   const statCards = [
-    { label: lang === 'zh' ? '账户余额' : 'Balance', value: `$${(balance ?? user?.balance ?? 0).toFixed(4)}`, color: colors[3], gradient: 'from-emerald-500/20 to-emerald-500/5' },
+    { label: lang === 'zh' ? '账户余额' : 'Balance', value: `¥${(balance ?? user?.balance ?? 0).toFixed(4)}`, color: colors[3], gradient: 'from-emerald-500/20 to-emerald-500/5' },
     { label: lang === 'zh' ? '今日调用' : 'Today Calls', value: (userData?.todayCalls || 0).toLocaleString(), suffix: lang === 'zh' ? '次' : '', color: colors[1], gradient: 'from-blue-500/20 to-blue-500/5' },
     { label: lang === 'zh' ? '今日Token' : 'Today Tokens', value: (userData?.todayTokens || 0).toLocaleString(), color: colors[0], gradient: 'from-purple-500/20 to-purple-500/5' },
-    { label: lang === 'zh' ? '今日费用' : 'Today Cost', value: `$${userData?.todayCost?.toFixed(6) || '0'}`, color: colors[4], gradient: 'from-amber-500/20 to-amber-500/5' },
+    { label: lang === 'zh' ? '今日费用' : 'Today Cost', value: `¥${userData?.todayCost?.toFixed(6) || '0'}`, color: colors[4], gradient: 'from-amber-500/20 to-amber-500/5' },
   ]
 
   const adminBillingCards = isAdmin && adminData ? [
-    { label: lang === 'zh' ? '平台总收益' : 'Total Revenue', value: `$${adminData.revenueTrend?.reduce((a: number, m: any) => a + (m.revenue||0), 0).toFixed(2) || '0'}`, color: colors[3], gradient: 'from-emerald-500/20 to-emerald-500/5' },
+    { label: lang === 'zh' ? '平台总收益' : 'Total Revenue', value: `¥${adminData.revenueTrend?.reduce((a: number, m: any) => a + (m.revenue||0), 0).toFixed(2) || '0'}`, color: colors[3], gradient: 'from-emerald-500/20 to-emerald-500/5' },
     { label: lang === 'zh' ? '平台总调用' : 'Total Calls', value: (adminData.systemStats?.totalCalls || 0).toLocaleString(), color: colors[0], gradient: 'from-purple-500/20 to-purple-500/5' },
     { label: lang === 'zh' ? '活跃用户' : 'Active Users', value: (adminData.systemStats?.activeUsers || 0).toLocaleString(), color: colors[2], gradient: 'from-cyan-500/20 to-cyan-500/5' },
-    { label: lang === 'zh' ? '人均费用' : 'Avg Per User', value: `$${adminData.systemStats?.totalUsers > 0 ? (adminData.systemStats?.totalCost / adminData.systemStats?.totalUsers).toFixed(4) : '0'}`, color: colors[4], gradient: 'from-amber-500/20 to-amber-500/5' },
+    { label: lang === 'zh' ? '人均费用' : 'Avg Per User', value: `¥${adminData.systemStats?.totalUsers > 0 ? (adminData.systemStats?.totalCost / adminData.systemStats?.totalUsers).toFixed(4) : '0'}`, color: colors[4], gradient: 'from-amber-500/20 to-amber-500/5' },
   ] : []
 
   const initChart = (el: HTMLDivElement | null, key: string, option: EChartsOption) => {
@@ -376,7 +376,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between mb-4 sm:mb-8">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-              {lang === 'zh' ? '控制台' : 'Dashboard'}
+              {lang === 'zh' ? '用量信息' : 'Usage'}
             </h1>
             <p className="text-xs sm:text-sm mt-1" style={{ color: 'var(--text-dim)' }}>
               {isAdmin ? (lang === 'zh' ? '平台运营概览' : 'Platform Overview') : (lang === 'zh' ? '你的用量概览' : 'Your Usage Overview')}
@@ -500,7 +500,7 @@ export default function DashboardPage() {
                 </h3>
                 <div ref={el => initChart(el, 'tokenCost', buildMultiBarChartOption(userData.dailyUsage.slice(-14), 'date', [
                   { key: 'tokens', name: lang === 'zh' ? 'Token数' : 'Tokens', colorIdx: 2 },
-                  { key: 'cost', name: lang === 'zh' ? '费用($)' : 'Cost ($)', colorIdx: 4 },
+                  { key: 'cost', name: lang === 'zh' ? '费用(¥)' : 'Cost (¥)', colorIdx: 4 },
                 ]))} className="w-full h-60" />
               </div>
               <div className="rounded-2xl p-6 border" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
@@ -591,7 +591,7 @@ export default function DashboardPage() {
                       </div>
                       <div className="flex items-center gap-4 text-xs">
                         <span style={{ color: 'var(--text-dim)' }}>{u.calls.toLocaleString()} {lang === 'zh' ? '次' : 'calls'}</span>
-                        <span style={{ color: 'var(--accent-amber)' }}>${u.cost.toFixed(2)}</span>
+                        <span style={{ color: 'var(--accent-amber)' }}>¥{u.cost.toFixed(2)}</span>
                       </div>
                     </div>
                   ))}
@@ -647,7 +647,7 @@ export default function DashboardPage() {
                       </div>
                       <div className="flex justify-between text-xs">
                         <span style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '费用' : 'Cost'}</span>
-                        <span style={{ color: colors[4] }}>${m.cost.toFixed(4)}</span>
+                        <span style={{ color: colors[4] }}>¥{m.cost.toFixed(4)}</span>
                       </div>
                       <div className="h-2 rounded-full overflow-hidden mt-2" style={{ background: 'var(--bg-primary)' }}>
                         <motion.div
@@ -674,7 +674,7 @@ export default function DashboardPage() {
                     <div key={i} className="space-y-1.5">
                       <div className="flex justify-between text-xs">
                         <span style={{ color: 'var(--text-secondary)' }}>{m.model}</span>
-                        <span style={{ color: 'var(--text-dim)' }}>{m.calls.toLocaleString()} {lang === 'zh' ? '次' : 'calls'} · ${m.cost.toFixed(2)}</span>
+                        <span style={{ color: 'var(--text-dim)' }}>{m.calls.toLocaleString()} {lang === 'zh' ? '次' : 'calls'} · ¥{m.cost.toFixed(2)}</span>
                       </div>
                       <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg-surface)' }}>
                         <motion.div

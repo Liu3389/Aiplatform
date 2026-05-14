@@ -559,7 +559,7 @@ export default function SecurityPage() {
                   {rechargeRecords.map((record, i) => (
                     <div key={i} className="flex justify-between p-3 rounded-xl text-sm" style={{ background: 'var(--bg-surface)' }}>
                       <span style={{ color: 'var(--text-dim)' }}>{record.time || ''}</span>
-                      <span style={{ color: 'var(--accent-emerald)' }}>${record.amount || 0}</span>
+                      <span style={{ color: 'var(--accent-emerald)' }}>¥{record.amount || 0}</span>
                     </div>
                   ))}
                 </div>
