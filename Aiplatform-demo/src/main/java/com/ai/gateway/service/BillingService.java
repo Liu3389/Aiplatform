@@ -17,9 +17,15 @@ import java.util.List;
 public class BillingService {
 
     private final StringRedisTemplate stringRedisTemplate;
+    private final PointsService pointsService;
+    private final CacheService cacheService;
 
-    public BillingService(StringRedisTemplate stringRedisTemplate) {
+    public BillingService(StringRedisTemplate stringRedisTemplate, 
+                         PointsService pointsService,
+                         CacheService cacheService) {
         this.stringRedisTemplate = stringRedisTemplate;
+        this.pointsService = pointsService;
+        this.cacheService = cacheService;
     }
 
     private DefaultRedisScript<List> billingScript;
@@ -123,5 +129,105 @@ public class BillingService {
         } catch (Exception e) {
             log.error("同步余额失败: userId={}", userId, e);
         }
+    }
+
+    /**
+     * 根据模型配置计算点数消耗
+     * @param modelName 模型名称
+     * @return 点数消耗（保留三位小数）
+     */
+    public BigDecimal calculatePointsCost(String modelName) {
+        com.ai.gateway.entity.ModelConfig config = cacheService.getModelConfig(modelName);
+        
+        if (config == null) {
+            log.warn("模型配置不存在: modelName={}", modelName);
+            return java.math.BigDecimal.ONE; // 默认1点
+        }
+        
+        // 如果配置了点每次消耗，直接使用
+        if (config.getPointsPerRequest() != null) {
+            return config.getPointsPerRequest();
+        }
+        
+        // 否则根据pointsMode判断
+        String pointsMode = config.getPointsMode();
+        if (pointsMode == null) {
+            pointsMode = "STANDARD"; // 默认中端模型
+        }
+        
+        switch (pointsMode.toUpperCase()) {
+            case "FREE":
+                return java.math.BigDecimal.ZERO;
+            case "STANDARD":
+                return java.math.BigDecimal.ONE; // 1点/次
+            case "PREMIUM":
+                return new java.math.BigDecimal("3.000"); // 3点/次
+            default:
+                return java.math.BigDecimal.ONE;
+        }
+    }
+
+    /**
+     * 使用点数进行预扣（对话前检查）
+     * @param userId 用户ID
+     * @param requestId 请求ID
+     * @param modelName 模型名称
+     * @return 是否成功
+     */
+    public boolean preDeductPoints(Long userId, String requestId, String modelName) {
+        BigDecimal pointsCost = calculatePointsCost(modelName);
+        
+        // 免费模型不需要扣费
+        if (pointsCost.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            return true;
+        }
+        
+        // 检查用户点数是否充足
+        BigDecimal currentPoints = pointsService.getUserPoints(userId);
+        if (currentPoints.compareTo(pointsCost) < 0) {
+            log.warn("点数不足: userId={}, current={}, need={}, model={}", 
+                    userId, currentPoints, pointsCost, modelName);
+            return false;
+        }
+        
+        log.info("点数预扣检查通过: userId={}, cost={}, model={}", userId, pointsCost, modelName);
+        return true;
+    }
+
+    /**
+     * 结算点数消耗（对话后扣除）
+     * @param userId 用户ID
+     * @param requestId 请求ID
+     * @param modelName 模型名称
+     * @return 是否成功
+     */
+    public boolean settlePoints(Long userId, String requestId, String modelName) {
+        BigDecimal pointsCost = calculatePointsCost(modelName);
+        
+        // 免费模型不需要扣费
+        if (pointsCost.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            return true;
+        }
+        
+        // 扣除点数
+        boolean success = pointsService.deductPoints(userId, pointsCost, requestId, modelName);
+        
+        if (success) {
+            // 更新缓存
+            BigDecimal newBalance = pointsService.getUserPoints(userId);
+            cacheService.updateUserBalanceCache(userId, newBalance);
+        }
+        
+        return success;
+    }
+
+    /**
+     * 获取用户点数（格式化用于前端展示）
+     * @param userId 用户ID
+     * @return 点数（保留两位小数）
+     */
+    public java.math.BigDecimal getUserPoints(Long userId) {
+        BigDecimal points = pointsService.getUserPoints(userId);
+        return pointsService.formatPointsForFrontend(points);
     }
 }

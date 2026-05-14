@@ -40,6 +40,8 @@ public class User implements Serializable {
 
     private String membership;
 
+    private Integer userPoints;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

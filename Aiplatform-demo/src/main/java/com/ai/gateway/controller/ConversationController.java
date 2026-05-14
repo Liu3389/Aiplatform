@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 @Slf4j
 @RestController
@@ -22,30 +23,50 @@ public class ConversationController {
         this.tokenService = tokenService;
     }
 
+    private Long resolveUserId(String token) {
+        Long userId = tokenService.getUserIdFromToken(token);
+        if (userId == null) throw new RuntimeException("Token无效或已过期");
+        return userId;
+    }
+
     @PostMapping("/sync")
-    public Result<Void> syncConversations(
+    public Result<Map<String, Object>> syncConversations(
             @RequestHeader("X-User-Token") String token,
             @RequestBody List<Map<String, Object>> conversations) {
-        Long userId = tokenService.getUserIdFromToken(token);
-        if (userId == null) return Result.error(401, "Token无效或已过期");
-        userService.syncConversations(userId, conversations);
-        return Result.success("同步成功", null);
+        Long userId = resolveUserId(token);
+        long version = userService.syncConversations(userId, conversations);
+        Map<String, Object> result = new HashMap<>();
+        result.put("version", version);
+        result.put("count", conversations.size());
+        return Result.success(result);
     }
 
     @GetMapping("/fetch")
-    public Result<List<Map<String, Object>>> fetchConversations(
+    public Result<Map<String, Object>> fetchConversations(
             @RequestHeader("X-User-Token") String token) {
-        Long userId = tokenService.getUserIdFromToken(token);
-        if (userId == null) return Result.error(401, "Token无效或已过期");
+        Long userId = resolveUserId(token);
         List<Map<String, Object>> conversations = userService.fetchConversations(userId);
-        return Result.success(conversations);
+        long version = userService.getConversationVersion(userId);
+        Map<String, Object> result = new HashMap<>();
+        result.put("conversations", conversations);
+        result.put("version", version);
+        return Result.success(result);
+    }
+
+    @GetMapping("/version")
+    public Result<Map<String, Object>> getVersion(
+            @RequestHeader("X-User-Token") String token) {
+        Long userId = resolveUserId(token);
+        long version = userService.getConversationVersion(userId);
+        Map<String, Object> result = new HashMap<>();
+        result.put("version", version);
+        return Result.success(result);
     }
 
     @DeleteMapping("/clear")
     public Result<Void> clearConversations(
             @RequestHeader("X-User-Token") String token) {
-        Long userId = tokenService.getUserIdFromToken(token);
-        if (userId == null) return Result.error(401, "Token无效或已过期");
+        Long userId = resolveUserId(token);
         userService.syncConversations(userId, List.of());
         return Result.success("清除成功", null);
     }

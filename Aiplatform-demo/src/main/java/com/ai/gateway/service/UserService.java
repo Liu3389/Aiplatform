@@ -31,6 +31,8 @@ public class UserService {
     private final BillingService billingService;
     private final StringRedisTemplate redisTemplate;
     private final FreeLimitService freeLimitService;
+    private final SessionService sessionService;
+    private final ConversationVersionService conversationVersionService;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private static final String BIND_CODE_PREFIX = "bind:code:";
     private static final String TFA_SECRET_PREFIX = "2fa:secret:";
@@ -107,6 +109,16 @@ public class UserService {
         log.info("用户登录成功: username={}, userId={}", request.getUsername(), user.getId());
 
         return convertToVO(user);
+    }
+
+    /**
+     * 创建用户会话
+     * @param userId 用户ID
+     * @param deviceId 设备ID
+     * @param token 用户Token
+     */
+    public void createSession(Long userId, String deviceId, String token) {
+        sessionService.createSession(userId, deviceId, token);
     }
 
     public UserInfoVO getUserInfo(Long userId) {
@@ -623,28 +635,47 @@ public class UserService {
 
     // ========== 对话历史云端同步 ==========
 
-    public void syncConversations(Long userId, List<Map<String, Object>> conversations) {
-        if (conversations == null) return;
-        String key = "conversations:" + userId;
+    private static final String CONVERSATIONS_KEY = "conversations:";
+    private static final String CONVERSATIONS_VERSION_KEY = "conversations:version:";
+
+    public long syncConversations(Long userId, List<Map<String, Object>> conversations) {
+        if (conversations == null) return 0;
+        String dataKey = CONVERSATIONS_KEY + userId;
+        String versionKey = CONVERSATIONS_VERSION_KEY + userId;
         String json;
         try {
             json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(conversations);
         } catch (Exception e) {
             log.error("序列化对话失败", e);
-            return;
+            return 0;
         }
-        redisTemplate.opsForValue().set(key, json, 90, TimeUnit.DAYS);
-        log.info("对话同步成功: userId={}, count={}", userId, conversations.size());
+        long version = System.currentTimeMillis();
+        redisTemplate.opsForValue().set(dataKey, json, 90, TimeUnit.DAYS);
+        redisTemplate.opsForValue().set(versionKey, String.valueOf(version), 90, TimeUnit.DAYS);
+        log.info("对话同步成功: userId={}, count={}, version={}", userId, conversations.size(), version);
+        return version;
     }
 
     public List<Map<String, Object>> fetchConversations(Long userId) {
-        String key = "conversations:" + userId;
+        String key = CONVERSATIONS_KEY + userId;
         String json = redisTemplate.opsForValue().get(key);
-        if (json == null) return new ArrayList<>();
+        if (json == null || json.isEmpty()) return new ArrayList<>();
         try {
             return new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, List.class);
         } catch (Exception e) {
+            log.error("反序列化对话失败: userId={}", userId, e);
             return new ArrayList<>();
+        }
+    }
+
+    public long getConversationVersion(Long userId) {
+        String versionKey = CONVERSATIONS_VERSION_KEY + userId;
+        String val = redisTemplate.opsForValue().get(versionKey);
+        if (val == null) return 0;
+        try {
+            return Long.parseLong(val);
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 

@@ -5,6 +5,7 @@ import { useI18nStore } from '@/stores/i18nStore'
 import { MEMBERSHIP_QUOTAS } from '@/types'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useState, useEffect, useCallback } from 'react'
+import PointsIcon from '@/components/PointsIcon'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import ToastContainer from '@/components/ToastContainer'
@@ -103,9 +104,20 @@ export default function AppLayout() {
             </span>
             {isAdmin && <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium" style={{ background: 'rgba(245,158,11,0.15)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.25)' }}>Admin</span>}
           </div>
-          <div className={`text-[10px] uppercase tracking-wider mb-0.5 ${dark ? 'text-neutral-500' : 'text-gray-400'}`}>{lang==='zh'?'余额':'Balance'}</div>
-          <div className={`text-sm font-bold ${dark ? 'text-white' : 'text-gray-900'}`}>¥{balanceInYuan}</div>
-          <button onClick={() => navigate('/user')} className={`w-full mt-2 py-2 text-xs font-medium rounded-lg transition-colors ${dark ? 'text-white/70 hover:text-white bg-white/[0.04] hover:bg-white/[0.08]' : 'text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200'}`}>
+          {membership.monthlyPoints > 0 && (
+            <div className="mb-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] flex items-center gap-1" style={{ color: 'var(--text-dim)' }}>
+                  <PointsIcon size={10} color={membership.color} /> {lang === 'zh' ? '点数' : 'Points'}
+                </span>
+                <span className="text-[10px] font-bold" style={{ color: membership.color }}>{balanceInYuan} / {membership.monthlyPoints}</span>
+              </div>
+              <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--bg-surface)' }}>
+                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, (Number(user?.balance || 0) / membership.monthlyPoints) * 100)}%`, background: `linear-gradient(90deg, ${membership.color}, ${membership.color}80)` }} />
+              </div>
+            </div>
+          )}
+          <button onClick={() => navigate('/user')} className={`w-full py-2 text-xs font-medium rounded-lg transition-colors ${dark ? 'text-white/70 hover:text-white bg-white/[0.04] hover:bg-white/[0.08]' : 'text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200'}`}>
             {lang==='zh'?'个人中心':'Profile'}
           </button>
         </div>
@@ -219,7 +231,7 @@ export default function AppLayout() {
 
         <main className={`flex-1 overflow-y-auto ${dark ? 'bg-aurora' : 'bg-gradient-to-br from-gray-50 via-white to-gray-50'}`}>
           <ErrorBoundary>
-            <AnimatePresence mode="sync">
+            <AnimatePresence mode="wait">
               <motion.div key={location.pathname} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }} className="h-full">
                 <Outlet />
               </motion.div>

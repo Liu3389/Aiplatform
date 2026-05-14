@@ -1,5 +1,8 @@
 # 项目启动检查清单
 
+> **最新更新**: 2026年5月14日 - 已完成全面性能优化
+> 详见 [OPTIMIZATION_SUMMARY.md](OPTIMIZATION_SUMMARY.md)
+
 ## 📋 启动前检查
 
 ### 1. 环境检查
@@ -316,6 +319,19 @@ SHOW VARIABLES LIKE 'slow_query_log';
 SHOW VARIABLES LIKE 'long_query_time';
 ```
 
+### 4. **检查线程池状态** ⭐ 新增
+```bash
+# 使用JMX工具或添加监控端点
+# 线程池名称: chat-async-
+# 核心线程数: 10, 最大线程数: 50
+```
+
+### 5. **检查日志级别** ⭐ 新增
+```bash
+# 确认生产环境日志级别为WARN
+grep "logging.level" src/main/resources/application.yml
+```
+
 ## 🔐 安全检查
 
 - [ ] 修改默认密码
@@ -338,11 +354,13 @@ SHOW VARIABLES LIKE 'long_query_time';
 接下来可以：
 1. 导入Postman测试集合进行完整测试
 2. 阅读README.md了解详细API文档
-3. 根据业务需求进行定制开发
+3. **查看OPTIMIZATION_SUMMARY.md了解最新优化** ⭐ 新增
+4. 根据业务需求进行定制开发
 
 ---
 
 **需要帮助？**
 - 查看 README.md
 - 查看 DEPLOYMENT.md
-- 查看应用日志: tail -f app.log
+- **查看 OPTIMIZATION_SUMMARY.md** ⭐ 新增
+- 查看应用日志: tail -f logs/ai-gateway.log

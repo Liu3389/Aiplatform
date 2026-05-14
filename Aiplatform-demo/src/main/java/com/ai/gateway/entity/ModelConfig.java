@@ -57,6 +57,16 @@ public class ModelConfig implements Serializable {
     private BigDecimal outputPrice;
 
     /**
+     * 点数消耗模式：FREE-免费模型(0点), STANDARD-中端模型(1点/次), PREMIUM-高端模型(3点/次)
+     */
+    private String pointsMode;
+
+    /**
+     * 每次对话消耗的点数（保留三位小数精度）
+     */
+    private BigDecimal pointsPerRequest;
+
+    /**
      * 状态：0-禁用，1-启用
      */
     private Integer status;

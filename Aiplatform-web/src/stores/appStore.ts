@@ -46,6 +46,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     localStorage.removeItem('lingdian_token')
     localStorage.removeItem('lingdian_uid')
     sessionStorage.removeItem('ld_active_apikey')
+    sessionStorage.removeItem('lingdian_chat_version')
+    const uid = get().user?.id
+    if (uid) {
+      localStorage.removeItem('lingdian_chat_conversations_' + uid)
+      localStorage.removeItem('lingdian_chat_current_' + uid)
+    }
     set({ token: null, user: null })
   },
 

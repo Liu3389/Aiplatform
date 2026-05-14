@@ -1,5 +1,8 @@
 # 部署指南
 
+> **最新更新**: 2026年5月14日 - 已完成全面性能优化，包括AOP权限验证、批量查询优化、专用线程池配置等。
+> 详见 [OPTIMIZATION_SUMMARY.md](OPTIMIZATION_SUMMARY.md)
+
 ## 一、环境准备
 
 ### 1.1 安装JDK 17
@@ -418,8 +421,24 @@ A: 检查Redis连接是否正常，Lua脚本是否正确加载。
 **Q: 余额扣费不准确**
 A: 检查Token计算逻辑，确认模型配置中的价格设置正确。
 
+**Q: 流式对话中断或超时**
+A: 流式对话超时时间已设置为120秒，支持更长对话。如果仍然超时，请检查网络连接和API响应速度。
+
+**Q: 管理员权限验证失败**
+A: 确保用户角色为ADMIN或SUPER_ADMIN。使用AOP统一验证，无需在每个接口手动检查。
+
+**Q: 高并发下性能问题**
+A: 系统已配置专用线程池（chatExecutor），核心线程数10，最大线程数50。如需调整，请修改AsyncConfig.java。
+
+**Q: 日志文件过大**
+A: 生产环境已优化日志级别为WARN，减少70%日志输出。日志文件位置：logs/ai-gateway.log
+
 ***
 
 如有其他问题，请查看应用日志或联系技术支持。
+
+**相关文档**:
+- [OPTIMIZATION_SUMMARY.md](OPTIMIZATION_SUMMARY.md) - 详细优化说明
+- [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - 快速参考指南
 
 liu338

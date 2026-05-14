@@ -65,8 +65,13 @@ public class FreeLimitService {
         int tokens = tokenUsed != null ? Integer.parseInt(tokenUsed) : 0;
         if (tokens >= maxTokens) return false;
 
+        // 同时增加调用次数和预估token数（基础估算）
         redisTemplate.opsForValue().increment(callKey);
         redisTemplate.expire(callKey, 25, TimeUnit.HOURS);
+        
+        // 为每次调用预设一个基础token数（实际token数在响应后更新）
+        redisTemplate.opsForValue().increment(tokenKey, 100); // 预设100 tokens作为基础消耗
+        redisTemplate.expire(tokenKey, 25, TimeUnit.HOURS);
 
         return true;
     }
@@ -106,6 +111,13 @@ public class FreeLimitService {
         quota.put("maxCalls", maxCalls);
         quota.put("usedTokens", tokenUsed != null ? Integer.parseInt(tokenUsed) : 0);
         quota.put("maxTokens", maxTokens);
+
+        int monthlyPoints = 0;
+        switch (membership) {
+            case "plus": monthlyPoints = 300; break;
+            case "pro": monthlyPoints = 1000; break;
+        }
+        quota.put("monthlyPoints", monthlyPoints);
         return quota;
     }
 

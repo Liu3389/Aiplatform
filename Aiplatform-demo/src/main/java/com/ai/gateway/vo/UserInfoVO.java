@@ -30,6 +30,8 @@ public class UserInfoVO {
 
     private String membership;
 
+    private Integer userPoints;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

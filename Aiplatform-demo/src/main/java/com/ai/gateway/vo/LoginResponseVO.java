@@ -23,4 +23,14 @@ public class LoginResponseVO {
      * 用户信息
      */
     private UserInfoVO userInfo;
+    
+    /**
+     * 设备ID（用于会话管理）
+     */
+    private String deviceId;
+    
+    public LoginResponseVO(String token, UserInfoVO userInfo) {
+        this.token = token;
+        this.userInfo = userInfo;
+    }
 }

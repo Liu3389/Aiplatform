@@ -12,6 +12,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -22,6 +24,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 @Slf4j
 @Service
@@ -41,6 +44,10 @@ public class OpenAiChatService {
     private final UserApiKeyService userApiKeyService;
     private final FreeLimitService freeLimitService;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    
+    @Autowired
+    @Qualifier("chatExecutor")
+    private Executor chatExecutor;
 
     public String chat(String apiKey, Long userId, ChatRequest request, String requestId) {
         long startTime = System.currentTimeMillis();
@@ -48,12 +55,18 @@ public class OpenAiChatService {
 
         if ("free".equals(request.getMode())) {
             if (!freeLimitService.checkAndRecord(userId, config.model)) {
-                throw new BusinessException("今日免费额度已用完，请使用自定义模型或充值后使用付费模型");
+                Map<String, Integer> quota = freeLimitService.getUserFreeQuota(userId);
+                throw new BusinessException("今日免费额度已用完（已用" + quota.get("usedCalls") + "/" + quota.get("maxCalls") + "次调用，" + quota.get("usedTokens") + "/" + quota.get("maxTokens") + " tokens）。请使用自定义模型或充值后使用付费模型，或等待明日重置");
             }
         } else if ("paid".equals(request.getMode())) {
-            BigDecimal preDeductEstimate = modelConfigService.calculateCost(config.modelConfig, 8000, 8000);
-            boolean ok = billingService.preDeductBalance(userId, requestId, preDeductEstimate, 300);
-            if (!ok) throw new BusinessException("余额不足，请充值后使用");
+            // 使用点数计费
+            boolean ok = billingService.preDeductPoints(userId, requestId, request.getModel());
+            log.info("付费模式点数预扣检查: userId={}, model={}, ok={}", userId, request.getModel(), ok);
+            if (!ok) {
+                BigDecimal currentPoints = billingService.getUserPoints(userId);
+                BigDecimal pointsCost = billingService.calculatePointsCost(request.getModel());
+                throw new BusinessException("点数不足（当前点数：" + currentPoints + "），请充值后使用付费模型或使用免费模式。需要点数：" + pointsCost);
+            }
         }
 
         try {
@@ -80,8 +93,9 @@ public class OpenAiChatService {
             if ("free".equals(request.getMode())) {
                 freeLimitService.addTokens(userId, inputTokens + outputTokens);
             } else if ("paid".equals(request.getMode())) {
-                billingService.settleBalance(userId, requestId, cost);
-                log.info("结算完成: userId={}, requestId={}, cost={}", userId, requestId, cost);
+                // 使用点数结算
+                billingService.settlePoints(userId, requestId, request.getModel());
+                log.info("点数结算完成: userId={}, requestId={}, model={}", userId, requestId, request.getModel());
             }
 
             saveCallLog(apiKey, userId, request.getModel(), inputTokens, outputTokens,
@@ -105,30 +119,51 @@ public class OpenAiChatService {
 
     public SseEmitter streamChat(String apiKey, Long userId, ChatRequest request, String requestId) {
         long startTime = System.currentTimeMillis();
-        SseEmitter emitter = new SseEmitter(60000L);
+        // 增加超时时间到120秒，支持更长的对话
+        SseEmitter emitter = new SseEmitter(120000L);
+
+        // 设置完成和错误回调，防止内存泄漏
+        emitter.onCompletion(() -> {
+            log.info("SSE连接完成: userId={}, requestId={}", userId, requestId);
+        });
+        
+        emitter.onTimeout(() -> {
+            log.warn("SSE连接超时: userId={}, requestId={}", userId, requestId);
+            if ("paid".equals(request.getMode())) {
+                billingService.settleBalance(userId, requestId, BigDecimal.ZERO);
+            }
+        });
+        
+        emitter.onError((ex) -> {
+            log.error("SSE连接错误: userId={}, requestId={}", userId, requestId, ex);
+            if ("paid".equals(request.getMode())) {
+                billingService.settleBalance(userId, requestId, BigDecimal.ZERO);
+            }
+        });
 
         ChatConfig config = resolveChatConfig(request, userId);
 
         if ("free".equals(request.getMode())) {
             if (!freeLimitService.checkAndRecord(userId, config.model)) {
                 try {
+                    Map<String, Integer> quota = freeLimitService.getUserFreeQuota(userId);
                     Map<String, Object> errData = new HashMap<>();
-                    errData.put("message", "今日免费额度已用完，请使用付费模式或等待明日重置");
+                    errData.put("message", "今日免费额度已用完（已用" + quota.get("usedCalls") + "/" + quota.get("maxCalls") + "次调用）。请使用付费模式或等待明日重置");
                     emitter.send(SseEmitter.event().name("error").data(errData));
                     emitter.complete();
                 } catch (IOException ignored) {}
                 return emitter;
             }
         } else if ("paid".equals(request.getMode())) {
-            BigDecimal preDeductEstimate = modelConfigService.calculateCost(config.modelConfig, 8000, 8000);
-            log.info("付费模式预扣: userId={}, estimateCost={}, modelConfig={}", userId, preDeductEstimate, config.modelConfig.getModelName());
-            boolean ok = billingService.preDeductBalance(userId, requestId, preDeductEstimate, 300);
-            log.info("付费模式预扣结果: userId={}, ok={}", userId, ok);
+            // 使用点数计费
+            boolean ok = billingService.preDeductPoints(userId, requestId, request.getModel());
+            log.info("付费模式点数预扣检查: userId={}, model={}, ok={}", userId, request.getModel(), ok);
             if (!ok) {
                 try {
-                    BigDecimal currentBalance = billingService.getUserBalance(userId);
+                    BigDecimal currentPoints = billingService.getUserPoints(userId);
+                    BigDecimal pointsCost = billingService.calculatePointsCost(request.getModel());
                     Map<String, Object> errData = new HashMap<>();
-                    errData.put("message", "余额不足，请充值。当前余额：¥" + currentBalance + "，预估费用：¥" + preDeductEstimate);
+                    errData.put("message", "点数不足（当前点数：" + currentPoints + "），请充值后使用付费模型或使用免费模式。需要点数：" + pointsCost);
                     emitter.send(SseEmitter.event().name("error").data(errData));
                     emitter.complete();
                 } catch (IOException ignored) {}
@@ -184,18 +219,20 @@ public class OpenAiChatService {
                     }
                 }
 
+                // 更准确的token估算方法
                 String promptText = request.getMessages().stream()
                         .map(msg -> msg.getContent() != null ? msg.getContent() : "")
                         .reduce("", String::concat);
-                inputTokens = promptText.length() / 4;
-                outputTokens = fullContent.length() / 4;
+                inputTokens = estimateTokens(promptText);
+                outputTokens = estimateTokens(fullContent.toString());
 
                 BigDecimal cost = resolveCost(config, inputTokens, outputTokens);
 
                 if ("free".equals(request.getMode())) {
                     freeLimitService.addTokens(userId, inputTokens + outputTokens);
                 } else if ("paid".equals(request.getMode())) {
-                    billingService.settleBalance(userId, requestId, cost);
+                    // 使用点数结算
+                    billingService.settlePoints(userId, requestId, request.getModel());
                 }
 
                 saveCallLog(apiKey, userId, request.getModel(), inputTokens, outputTokens,
@@ -219,7 +256,7 @@ public class OpenAiChatService {
                 } catch (IOException ignored) {}
                 emitter.completeWithError(e);
             }
-        });
+        }, chatExecutor);
 
         return emitter;
     }
@@ -300,6 +337,42 @@ public class OpenAiChatService {
         callLog.setStatus(success ? Constants.CALL_STATUS_SUCCESS : Constants.CALL_STATUS_FAILED);
         callLog.setErrorMessage(errorMessage);
         callLogService.saveCallLog(callLog);
+    }
+
+    /**
+     * 估算文本的token数量
+     * 使用更精确的估算方法：英文单词按空格分割，中文按字符计算
+     */
+    private int estimateTokens(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        
+        // 简单但相对准确的估算：
+        // - 英文单词平均1.3 tokens per word
+        // - 中文字符约1 token per character
+        // - 混合文本取平均值
+        
+        int englishWords = 0;
+        int chineseChars = 0;
+        int otherChars = 0;
+        
+        for (char c : text.toCharArray()) {
+            if (Character.isLetter(c) && c < 128) {
+                englishWords++;
+            } else if (c >= 0x4E00 && c <= 0x9FFF) { // CJK统一汉字
+                chineseChars++;
+            } else if (!Character.isWhitespace(c)) {
+                otherChars++;
+            }
+        }
+        
+        // 英文单词数（通过空格分割估算）
+        String[] words = text.split("\\s+");
+        int wordCount = words.length;
+        
+        // 综合估算：英文单词 * 1.3 + 中文字符 * 1 + 其他字符 * 0.5
+        return (int) Math.ceil(wordCount * 1.3 + chineseChars + otherChars * 0.5);
     }
 
     private static class ChatConfig {

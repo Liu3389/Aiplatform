@@ -5,8 +5,10 @@
 ```
 Aiplatform-demo/
 ├── src/main/java/com/ai/gateway/
+│   ├── annotation/          # 自定义注解（RequireAdmin）
+│   ├── aspect/              # AOP切面（AdminAuthAspect）
 │   ├── common/              # 通用类（Result、ResultCode、Constants）
-│   ├── config/              # 配置类（Redis、MyBatis-Plus、Web MVC、CORS）
+│   ├── config/              # 配置类（Redis、MyBatis-Plus、Web MVC、CORS、AsyncConfig）
 │   ├── controller/          # 控制器（Auth、ApiKey、Chat、User、Admin）
 │   ├── dto/                 # 请求DTO
 │   ├── entity/              # 数据库实体
@@ -20,6 +22,7 @@ Aiplatform-demo/
 │   ├── sql/                 # 数据库脚本
 │   └── application.yml      # 配置文件
 ├── API_TEST.postman_collection.json  # Postman测试
+├── OPTIMIZATION_SUMMARY.md  # 优化总结
 ├── README.md                # 项目说明
 ├── DEPLOYMENT.md            # 部署指南
 ├── CHECKLIST.md             # 检查清单
@@ -93,6 +96,10 @@ Header: X-User-Token: {token}
 
 **可用免费模型**: deepseek-chat、deepseek-reasoner、deepseek-v4-pro、deepseek-v4-flash
 （全部代理到 DeepSeek API，免费使用）
+
+**超时设置**:
+- 非流式对话: 30秒
+- 流式对话: 120秒（支持更长对话）
 
 ```bash
 # 免费模式 - 非流式对话
@@ -278,6 +285,19 @@ redis-cli -h YOUR_IP -a YOUR_PASSWORD
 > GET ai_gateway:user_balance:{userId}
 ```
 
+### 查看免费额度使用情况
+```bash
+redis-cli -h YOUR_IP -a YOUR_PASSWORD
+> GET free:calls:{userId}:{date}
+> GET free:tokens:{userId}:{date}
+```
+
+### 查看线程池状态
+```bash
+# 在应用中添加监控端点或使用JMX工具
+# 线程池名称: chat-async-
+```
+
 ## 🚀 快速测试流程
 
 ```bash
@@ -359,8 +379,19 @@ if (modelName.startsWith("claude")) {
 1. 查看完整文档: README.md
 2. 查看部署指南: DEPLOYMENT.md
 3. 查看检查清单: CHECKLIST.md
-4. 查看应用日志: tail -f app.log
+4. **查看优化总结: OPTIMIZATION_SUMMARY.md** ⭐ 新增
+5. 查看应用日志: tail -f logs/ai-gateway.log
 
 ---
 
 **提示**: 将此文件加入书签，方便快速查阅！
+
+**最新更新**: 
+- ✅ 免费额度逻辑修复
+- ✅ Token计算优化（更精确的估算）
+- ✅ 管理员权限AOP统一处理
+- ✅ 数据库查询性能优化（批量查询）
+- ✅ SSE连接内存泄漏修复
+- ✅ 专用线程池配置
+- ✅ 日志级别优化
+- ✅ 错误提示优化

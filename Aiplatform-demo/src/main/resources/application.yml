@@ -58,10 +58,11 @@ billing:
 
 logging:
   level:
-    root: INFO
+    root: WARN
     com.ai.gateway: INFO
     com.ai.gateway.mapper: WARN
-    org.springframework.web: INFO
+    org.springframework.web: WARN
+    org.springframework.security: WARN
   file:
     name: logs/ai-gateway.log
   logback:

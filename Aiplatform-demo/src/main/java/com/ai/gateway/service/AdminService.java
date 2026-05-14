@@ -4,8 +4,10 @@ import com.ai.gateway.entity.ApiKey;
 import com.ai.gateway.entity.User;
 import com.ai.gateway.mapper.ApiKeyMapper;
 import com.ai.gateway.mapper.CallLogMapper;
+import com.ai.gateway.mapper.UserMapper;
 import com.ai.gateway.vo.SystemStatsVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,7 @@ public class AdminService {
     private final UserService userService;
     private final ApiKeyMapper apiKeyMapper;
     private final CallLogMapper callLogMapper;
+    private final UserMapper userMapper;
 
     public SystemStatsVO getSystemStats() {
         SystemStatsVO stats = new SystemStatsVO();
@@ -34,7 +37,21 @@ public class AdminService {
         Long totalApiKeys = apiKeyMapper.selectCount(null);
         stats.setTotalApiKeys(totalApiKeys);
 
+        // 优化：使用批量查询而不是为每个用户单独查询
         List<User> users = userService.listAllUsers();
+        
+        // 批量获取所有用户的API Key数量
+        Map<Long, Integer> apiKeyCountMap = new HashMap<>();
+        if (!users.isEmpty()) {
+            List<Long> userIds = users.stream().map(User::getId).collect(Collectors.toList());
+            List<Map<String, Object>> apiKeyCounts = apiKeyMapper.countApiKeysByUserIds(userIds);
+            for (Map<String, Object> row : apiKeyCounts) {
+                Long userId = ((Number) row.get("user_id")).longValue();
+                Integer count = ((Number) row.get("count")).intValue();
+                apiKeyCountMap.put(userId, count);
+            }
+        }
+        
         List<SystemStatsVO.UserStatVO> userStats = users.stream().map(user -> {
             SystemStatsVO.UserStatVO vo = new SystemStatsVO.UserStatVO();
             vo.setId(user.getId());
@@ -44,9 +61,8 @@ public class AdminService {
             vo.setRole(user.getRole());
             vo.setStatus(user.getStatus() == 1 ? "ACTIVE" : "DISABLED");
 
-            LambdaQueryWrapper<ApiKey> keyWrapper = new LambdaQueryWrapper<>();
-            keyWrapper.eq(ApiKey::getUserId, user.getId());
-            vo.setApiKeyCount(apiKeyMapper.selectCount(keyWrapper).intValue());
+            // 使用批量查询的结果
+            vo.setApiKeyCount(apiKeyCountMap.getOrDefault(user.getId(), 0));
 
             vo.setTotalCalls(0L);
             vo.setTotalCost(BigDecimal.ZERO);
@@ -84,10 +100,10 @@ public class AdminService {
         return vo;
     }
 
-    public List<Map<String, Object>> getDailyUsage() {
+    public List<Map<String, Object>> getDailyUsage(int days) {
         List<Map<String, Object>> result = new ArrayList<>();
         LocalDate today = LocalDate.now();
-        for (int i = 6; i >= 0; i--) {
+        for (int i = days - 1; i >= 0; i--) {
             Map<String, Object> item = new HashMap<>();
             item.put("date", today.minusDays(i).toString());
             item.put("calls", new Random().nextInt(500) + 100);
@@ -96,6 +112,10 @@ public class AdminService {
             result.add(item);
         }
         return result;
+    }
+
+    public List<Map<String, Object>> getDailyUsage() {
+        return getDailyUsage(7);
     }
 
     public List<Map<String, Object>> getModelUsage() {
@@ -141,9 +161,9 @@ public class AdminService {
         return result;
     }
 
-    public List<Map<String, Object>> getRevenueTrend() {
+    public List<Map<String, Object>> getRevenueTrend(int months) {
         List<Map<String, Object>> result = new ArrayList<>();
-        for (int m = 4; m >= 0; m--) {
+        for (int m = months - 1; m >= 0; m--) {
             Map<String, Object> item = new HashMap<>();
             item.put("month", LocalDate.now().minusMonths(m).format(DateTimeFormatter.ofPattern("yyyy-MM")));
             item.put("revenue", Math.round((Math.random() * 1000 + 200) * 100.0) / 100.0);
@@ -153,10 +173,14 @@ public class AdminService {
         return result;
     }
 
-    public List<Map<String, Object>> getUserGrowth() {
+    public List<Map<String, Object>> getRevenueTrend() {
+        return getRevenueTrend(6);
+    }
+
+    public List<Map<String, Object>> getUserGrowth(int months) {
         List<Map<String, Object>> result = new ArrayList<>();
-        for (int m = 4; m >= 0; m--) {
-            int total = 10 + (5 - m) * new Random().nextInt(20);
+        for (int m = months - 1; m >= 0; m--) {
+            int total = 10 + (months - m) * new Random().nextInt(20);
             Map<String, Object> item = new HashMap<>();
             item.put("month", LocalDate.now().minusMonths(m).format(DateTimeFormatter.ofPattern("yyyy-MM")));
             item.put("total", total);
@@ -165,5 +189,49 @@ public class AdminService {
             result.add(item);
         }
         return result;
+    }
+
+    public List<Map<String, Object>> getUserGrowth() {
+        return getUserGrowth(6);
+    }
+
+    public Map<String, Object> getUserPage(int page, int size, String search, String membership, String status) {
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+        if (search != null && !search.isEmpty()) {
+            wrapper.and(w -> w.like(User::getUsername, search).or().eq(User::getId, tryParseLong(search)));
+        }
+        if (membership != null && !membership.isEmpty()) {
+            wrapper.eq(User::getMembership, membership);
+        }
+        wrapper.orderByDesc(User::getId);
+
+        Page<User> userPage = new Page<>(page, size);
+        Page<User> result = userMapper.selectPage(userPage, wrapper);
+
+        List<Map<String, Object>> users = result.getRecords().stream().map(user -> {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", user.getId());
+            item.put("username", user.getUsername());
+            item.put("email", user.getEmail());
+            item.put("balance", user.getBalance());
+            item.put("role", user.getRole());
+            item.put("status", user.getStatus() == 1 ? "ACTIVE" : "DISABLED");
+            item.put("membership", user.getMembership() != null ? user.getMembership() : "free");
+            item.put("totalCalls", 0L);
+            item.put("totalCost", BigDecimal.ZERO);
+            item.put("createTime", user.getCreateTime() != null ? user.getCreateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
+            return item;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> pageResult = new HashMap<>();
+        pageResult.put("records", users);
+        pageResult.put("total", result.getTotal());
+        pageResult.put("page", page);
+        pageResult.put("size", size);
+        return pageResult;
+    }
+
+    private Long tryParseLong(String s) {
+        try { return Long.parseLong(s); } catch (NumberFormatException e) { return -1L; }
     }
 }

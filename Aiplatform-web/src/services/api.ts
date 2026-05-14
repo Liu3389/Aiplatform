@@ -115,11 +115,12 @@ export const userApi = {
     request<T>(opts.url, { method: opts.method || 'GET', headers: opts.headers, body: opts.data ? JSON.stringify(opts.data) : undefined }),
   getInfo: () => request<{ id: number; username: string; email: string | null; balance: number; role: string; status: string; membership: string; freeApiStrategy: string; freeQuota: number; dailyCallLimit: number; monthlyCallLimit: number; createTime: string }>('/user/info'),
   getBalance: () => request<number>('/user/balance'),
-  getFreeQuota: () => request<{ usedCalls: number; maxCalls: number; usedTokens: number; maxTokens: number }>('/user/free-quota'),
+  getFreeQuota: () => request<{ usedCalls: number; maxCalls: number; usedTokens: number; maxTokens: number; monthlyPoints: number }>('/user/free-quota'),
   recharge: (amount: number, paymentMethod?: string) => request<null>('/user/recharge?amount=' + amount + (paymentMethod ? '&paymentMethod=' + paymentMethod : ''), { method: 'POST' }),
   changePassword: (oldPassword: string, newPassword: string) => request<null>('/user/change-password', { method: 'POST', body: JSON.stringify({ oldPassword, newPassword }) }),
-  syncConversations: (conversations: any[]) => request<null>('/user/conversations/sync', { method: 'POST', body: JSON.stringify(conversations) }),
-  fetchConversations: () => request<any[]>('/user/conversations/fetch'),
+  syncConversations: (conversations: any[]) => request<{ version: number; count: number }>('/user/conversations/sync', { method: 'POST', body: JSON.stringify(conversations) }),
+  fetchConversations: () => request<{ conversations: any[]; version: number }>('/user/conversations/fetch'),
+  getConversationVersion: () => request<{ version: number }>('/user/conversations/version'),
   clearCloudConversations: () => request<null>('/user/conversations/clear', { method: 'DELETE' }),
 };
 
@@ -346,31 +347,38 @@ export const chatApi = {
 
 export type AdminUserInfo = {
   id: number; username: string; email: string | null; balance: number;
-  role: string; status: string; apiKeyCount: number; totalCalls: number;
+  role: string; status: string; membership: string; apiKeyCount: number; totalCalls: number;
   totalCost: number; createTime: string;
 };
 
 export const adminApi = {
   getStats: () => request<{ totalUsers: number; activeUsers: number; totalApiKeys: number; totalCalls: number; totalCost: number; todayCalls: number; todayCost: number }>('/admin/stats'),
-  getUsers: () =>
-    request<{ users: AdminUserInfo[] }>('/admin/users').then(r => (Array.isArray(r) ? r : (r as unknown as { users: AdminUserInfo[] }).users || [])),
+  getUsers: (params?: { page?: number; size?: number; search?: string; membership?: string; status?: string }) => {
+    const qs = new URLSearchParams()
+    if (params?.page) qs.set('page', String(params.page))
+    if (params?.size) qs.set('size', String(params.size))
+    if (params?.search) qs.set('search', params.search)
+    if (params?.membership) qs.set('membership', params.membership)
+    if (params?.status) qs.set('status', params.status)
+    const q = qs.toString()
+    return request<{ records: AdminUserInfo[]; total: number; page: number; size: number }>('/admin/users' + (q ? '?' + q : ''))
+  },
   getAdmins: () =>
-    request<{ users: AdminUserInfo[] }>('/admin/users').then(r =>
-      ((Array.isArray(r) ? r : (r as unknown as { users: AdminUserInfo[] }).users) || [])
-        .filter(u => u.role === 'ADMIN' || u.role === 'SUPER_ADMIN')
+    adminApi.getUsers({ size: 100 }).then(r =>
+      (r.records || []).filter(u => u.role === 'ADMIN' || u.role === 'SUPER_ADMIN')
     ),
   getUserDetail: (userId: number) => request<AdminUserInfo>('/admin/user/' + userId),
   toggleUserStatus: (userId: number, status: 'ACTIVE' | 'DISABLED') => request<null>('/admin/user/status', { method: 'POST', body: JSON.stringify({ userId, status }) }),
   revokeAdminRole: (userId: number) => request<null>('/admin/revoke-role', { method: 'POST', body: JSON.stringify({ userId }) }),
   assignAdminRole: (userId: number, role: 'ADMIN' | 'SUPER_ADMIN') => request<null>('/admin/assign-role', { method: 'POST', body: JSON.stringify({ userId, role }) }),
-  getAnalytics: () => request<{
+  getAnalytics: (days = 7, months = 6) => request<{
     dailyUsage: Array<{ date: string; calls: number; tokens: number; cost: number }>;
     modelUsage: Array<{ model: string; calls: number; tokens: number; cost: number; color: string }>;
     hourlyTraffic: Array<{ hour: string; calls: number }>;
     topUsers: Array<{ rank: number; username: string; userId: number; calls: number; cost: number }>;
     revenueTrend: Array<{ month: string; revenue: number; costs: number }>;
     userGrowth: Array<{ month: string; total: number; active: number; new: number }>;
-  }>('/admin/analytics/full'),
+  }>(`/admin/analytics/full?days=${days}&months=${months}`),
 };
 
 export { request, ApiError };

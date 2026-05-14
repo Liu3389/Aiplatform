@@ -86,12 +86,17 @@ CREATE TABLE IF NOT EXISTS `billing_record` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='计费记录表';
 
 -- ============================================
--- 模型配置：免费 DeepSeek 模型
+-- 模型配置：免费 DeepSeek 模型 + 点数模型
+-- 点数标准: free=免费, medium=1点/次, premium=3点/次
+-- 所有模型当前均使用 DeepSeek API 后端
 -- ============================================
 INSERT INTO `model_config` (`model_name`, `provider`, `base_url`, `api_key`, `input_price`, `output_price`, `status`) VALUES
 ('deepseek-chat',     'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000000, 0.000000, 1),
 ('deepseek-reasoner', 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000000, 0.000000, 1),
-('deepseek-v4-pro',   'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000000, 0.000000, 1),
+('deepseek-v4-pro',   'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000100, 0.000100, 1),
 ('deepseek-v4-flash', 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000000, 0.000000, 1),
 ('gpt-3.5-turbo',     'openai',   'https://api.openai.com/v1/chat/completions',   'sk-your-openai-api-key',                   0.001000, 0.002000, 1),
-('gpt-4o',            'openai',   'https://api.openai.com/v1/chat/completions',   'sk-your-openai-api-key',                   0.005000, 0.015000, 1);
+('gpt-4o',            'openai',   'https://api.openai.com/v1/chat/completions',   'sk-your-openai-api-key',                   0.005000, 0.015000, 1),
+('chatgpt-5.5',       'openai',   'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.003000, 0.003000, 1),
+('gemini-3.1-pro',    'google',   'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.001000, 0.001000, 1),
+('claude-opus-4.7',   'anthropic','https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.003000, 0.003000, 1);

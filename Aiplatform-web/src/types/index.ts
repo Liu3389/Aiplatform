@@ -58,9 +58,9 @@ export interface ApiResult<T = unknown> {
 }
 
 export const MEMBERSHIP_QUOTAS = {
-  free: { dailyCalls: 30, dailyTokens: 50000, label: '普通用户', labelEn: 'Free', color: '#94A3B8' },
-  plus: { dailyCalls: 500, dailyTokens: 500000, label: '畅享用户', labelEn: 'Plus', color: '#3B82F6' },
-  pro: { dailyCalls: 999999, dailyTokens: 2000000, label: '尊享用户', labelEn: 'Pro', color: '#8B5CF6' },
+  free: { dailyCalls: 30, dailyTokens: 50000, monthlyPoints: 0, label: '普通用户', labelEn: 'Free', color: '#94A3B8' },
+  plus: { dailyCalls: 500, dailyTokens: 500000, monthlyPoints: 300, label: '畅享用户', labelEn: 'Plus', color: '#3B82F6' },
+  pro: { dailyCalls: 999999, dailyTokens: 2000000, monthlyPoints: 1000, label: '尊享用户', labelEn: 'Pro', color: '#8B5CF6' },
 } as const
 
 export const MEMBERSHIP_PRICES = {

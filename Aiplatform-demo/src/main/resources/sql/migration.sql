@@ -11,3 +11,15 @@ CREATE TABLE IF NOT EXISTS `user_api_key` (
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户自定义API Key表';
+
+-- 性能优化索引
+ALTER TABLE `user` ADD INDEX IF NOT EXISTS `idx_user_membership` (`membership`);
+ALTER TABLE `user` ADD INDEX IF NOT EXISTS `idx_user_status` (`status`);
+ALTER TABLE `user` ADD INDEX IF NOT EXISTS `idx_user_create_time` (`create_time`);
+ALTER TABLE `call_log` ADD INDEX IF NOT EXISTS `idx_call_user_model` (`user_id`, `model`);
+ALTER TABLE `call_log` ADD INDEX IF NOT EXISTS `idx_call_status` (`status`);
+ALTER TABLE `model_config` ADD INDEX IF NOT EXISTS `idx_model_status` (`status`);
+
+-- 用户点数字段
+ALTER TABLE `user` ADD COLUMN IF NOT EXISTS `user_points` int NOT NULL DEFAULT 0 COMMENT '用户点数余额';
+

@@ -5,6 +5,7 @@ import { MEMBERSHIP_QUOTAS, MEMBERSHIP_PRICES } from '@/types'
 import { motion } from 'framer-motion'
 import { useI18nStore } from '@/stores/i18nStore'
 import { useThemeStore } from '@/stores/themeStore'
+import PointsIcon from '@/components/PointsIcon'
 
 export default function RechargePage() {
   const { user, fetchUserInfo } = useAppStore()
@@ -24,6 +25,7 @@ export default function RechargePage() {
       name: lang === 'zh' ? '普通用户' : 'Free',
       price: '¥0',
       period: lang === 'zh' ? '永久' : 'Forever',
+      monthlyPoints: MEMBERSHIP_QUOTAS.free.monthlyPoints,
       features: [
         lang === 'zh' ? '每日 30 次免费调用' : '30 free calls/day',
         lang === 'zh' ? '每日 50K Token 额度' : '50K tokens/day',
@@ -38,12 +40,13 @@ export default function RechargePage() {
       price: `¥${MEMBERSHIP_PRICES.plus.monthly}`,
       yearly: lang === 'zh' ? `¥${MEMBERSHIP_PRICES.plus.yearly}/年` : `¥${MEMBERSHIP_PRICES.plus.yearly}/yr`,
       period: lang === 'zh' ? '/月' : '/mo',
+      monthlyPoints: MEMBERSHIP_QUOTAS.plus.monthlyPoints,
       features: [
+        lang === 'zh' ? `每月 ${MEMBERSHIP_QUOTAS.plus.monthlyPoints} 点数` : `${MEMBERSHIP_QUOTAS.plus.monthlyPoints} pts/month`,
         lang === 'zh' ? '每日 500 次调用' : '500 calls/day',
         lang === 'zh' ? '每日 500K Token 额度' : '500K tokens/day',
         lang === 'zh' ? '使用全平台模型' : 'All model access',
         lang === 'zh' ? '优先响应队列' : 'Priority queue',
-        lang === 'zh' ? 'API 调用权限' : 'API access',
       ],
       color: '#3B82F6',
       current: currentMembership === 'plus',
@@ -55,12 +58,13 @@ export default function RechargePage() {
       price: `¥${MEMBERSHIP_PRICES.pro.monthly}`,
       yearly: lang === 'zh' ? `¥${MEMBERSHIP_PRICES.pro.yearly}/年` : `¥${MEMBERSHIP_PRICES.pro.yearly}/yr`,
       period: lang === 'zh' ? '/月' : '/mo',
+      monthlyPoints: MEMBERSHIP_QUOTAS.pro.monthlyPoints,
       features: [
+        lang === 'zh' ? `每月 ${MEMBERSHIP_QUOTAS.pro.monthlyPoints} 点数` : `${MEMBERSHIP_QUOTAS.pro.monthlyPoints} pts/month`,
         lang === 'zh' ? '每日无限次调用' : 'Unlimited calls',
         lang === 'zh' ? '每日 2M Token 额度' : '2M tokens/day',
         lang === 'zh' ? '使用全平台模型' : 'All model access',
         lang === 'zh' ? '最高优先响应队列' : 'Top priority queue',
-        lang === 'zh' ? 'API 调用权限' : 'API access',
         lang === 'zh' ? '专属技术支持' : 'Dedicated support',
       ],
       color: '#8B5CF6',

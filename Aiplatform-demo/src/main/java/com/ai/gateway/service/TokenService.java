@@ -30,6 +30,7 @@ public class TokenService {
 
     private final RedisTemplate<String, String> redisTemplate;
     private final UserService userService;
+    private final SessionService sessionService;
 
     // === Token Management ===
 

@@ -33,7 +33,8 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public Result<LoginResponseVO> login(@Valid @RequestBody UserLoginRequest request) {
+    public Result<LoginResponseVO> login(@Valid @RequestBody UserLoginRequest request, 
+                                         @RequestHeader(value = "X-Device-Id", required = false) String deviceId) {
         if (tokenService.isAccountLocked(request.getUsername())) {
             long count = tokenService.getLoginFailCount(request.getUsername());
             return Result.error(423, "账户已被临时锁定（登录失败" + count + "次），请15分钟后再试");
@@ -41,10 +42,23 @@ public class AuthController {
 
         try {
             UserInfoVO userInfo = userService.login(request);
+            
+            // 如果没有提供设备ID，生成一个
+            if (deviceId == null || deviceId.isEmpty()) {
+                deviceId = java.util.UUID.randomUUID().toString();
+            }
+            
+            // 创建会话（会检查并踢掉旧设备）
             String token = tokenService.generateToken(userInfo.getId());
+            userService.createSession(userInfo.getId(), deviceId, token);
+            
             tokenService.clearLoginFailures(request.getUsername());
-            log.info("登录成功: username={}", request.getUsername());
-            return Result.success("登录成功", new LoginResponseVO(token, userInfo));
+            log.info("登录成功: username={}, deviceId={}", request.getUsername(), deviceId);
+            
+            LoginResponseVO response = new LoginResponseVO(token, userInfo);
+            response.setDeviceId(deviceId); // 返回设备ID给前端
+            
+            return Result.success("登录成功", response);
         } catch (Exception e) {
             tokenService.recordLoginFailure(request.getUsername());
             throw e;
