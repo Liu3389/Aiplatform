@@ -155,14 +155,15 @@ export default function RechargePage() {
         <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
           {lang === 'zh' ? '快速充值' : 'Quick Recharge'}
         </h3>
-        <div className="flex flex-wrap gap-2 mb-4">
+        <div className="flex flex-wrap justify-center gap-2 mb-4">
           {[10, 50, 100, 200, 500].map(v => (
             <button key={v} onClick={() => setAmount(String(v))}
-              className="px-4 py-2 rounded-xl text-xs font-medium transition-all border"
+              className="w-[64px] py-2.5 rounded-xl text-xs font-bold transition-all border"
               style={{
-                background: amount === String(v) ? 'var(--accent-purple)' + '15' : 'transparent',
+                background: amount === String(v) ? 'var(--accent-purple)' : 'transparent',
                 borderColor: amount === String(v) ? 'var(--accent-purple)' : 'var(--border-color)',
-                color: amount === String(v) ? 'var(--accent-purple)' : 'var(--text-dim)',
+                color: amount === String(v) ? '#fff' : 'var(--text-dim)',
+                borderWidth: amount === String(v) ? '2px' : '1px',
               }}
             >
               ¥{v}

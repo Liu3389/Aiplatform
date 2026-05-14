@@ -4,6 +4,7 @@ import MarkdownRenderer from '@/components/chat/MarkdownRenderer'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { motion } from 'framer-motion'
 import { useI18nStore } from '@/stores/i18nStore'
+import { useToastStore } from '@/stores/toastStore'
 
 export interface ChatConversation {
   id: string
@@ -277,6 +278,7 @@ export default function ChatPage() {
       (err: string) => {
         setIsStreaming(false)
         setError(err)
+        useToastStore.getState().showToast({ title: '对话失败', message: err, type: 'error' })
       }
     )
   }
@@ -561,9 +563,13 @@ export default function ChatPage() {
 
             {mode === 'free' && freeQuota && (
               <div className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-dim)' }}>
-                <span style={{ color: 'var(--accent-emerald)' }}>{freeQuota.maxCalls - freeQuota.usedCalls}</span>
-                <span>/ {freeQuota.maxCalls}</span>
-                <span className="opacity-40">{lang === 'zh' ? '次' : 'calls'}</span>
+                <span style={{ color: 'var(--accent-emerald)' }}>
+                  {freeQuota.maxCalls > 9999 ? (lang === 'zh' ? '≈∞' : '∞') : (freeQuota.maxCalls - freeQuota.usedCalls)}
+                </span>
+                {freeQuota.maxCalls <= 9999 && (
+                  <><span>/ {freeQuota.maxCalls}</span>
+                  <span className="opacity-40">{lang === 'zh' ? '次' : 'calls'}</span></>
+                )}
               </div>
             )}
 

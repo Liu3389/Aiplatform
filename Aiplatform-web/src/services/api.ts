@@ -153,6 +153,24 @@ export const modelApi = {
   list: () => request<Array<{ id: number; modelName: string; provider: string; baseUrl: string; inputPrice: number; outputPrice: number; status: number }>>('/model-config/list'),
 };
 
+export const notificationApi = {
+  list: (unreadOnly = false) => request<any[]>('/user/notifications?unreadOnly=' + unreadOnly),
+  unreadCount: () => request<{ count: number }>('/user/notifications/unread-count'),
+  markRead: (id: number) => request<null>('/user/notifications/' + id + '/read', { method: 'PUT' }),
+  markAllRead: () => request<null>('/user/notifications/read-all', { method: 'PUT' }),
+};
+
+export const couponApi = {
+  list: () => request<any[]>('/user/my-coupons'),
+};
+
+export const adminApiNew = {
+  sendNotification: (data: { title: string; content: string; type?: string; target: string; membership?: string; days?: number }) =>
+    request<{ sent: number }>('/admin/notifications/send', { method: 'POST', body: JSON.stringify(data) }),
+  sendCoupons: (data: { amount: number; thresholdAmount?: number; applicablePlan?: string; expireTime?: string; target: string; membership?: string; days?: number }) =>
+    request<{ sent: number; amount: number }>('/admin/coupons/send', { method: 'POST', body: JSON.stringify(data) }),
+};
+
 export async function ensureApiKey(): Promise<string | undefined> {
   const token = localStorage.getItem('lingdian_token');
   if (!token) return undefined;
