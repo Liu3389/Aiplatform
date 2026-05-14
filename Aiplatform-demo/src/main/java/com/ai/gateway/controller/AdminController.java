@@ -64,6 +64,11 @@ public class AdminController {
             @RequestBody Map<String, Object> body) {
         Long userId = Long.valueOf(body.get("userId").toString());
         String status = (String) body.get("status");
+        
+        if (userId == null || status == null) {
+            return Result.error(400, "参数不完整");
+        }
+        
         userService.toggleUserStatus(userId, status);
         return Result.success("操作成功", null);
     }
@@ -75,6 +80,15 @@ public class AdminController {
             @RequestBody Map<String, Object> body) {
         Long userId = Long.valueOf(body.get("userId").toString());
         BigDecimal amount = new BigDecimal(body.get("amount").toString());
+        
+        if (userId == null || amount == null) {
+            return Result.error(400, "参数不完整");
+        }
+        
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return Result.error(400, "充值金额必须大于0");
+        }
+        
         userService.recharge(userId, amount);
         return Result.success("充值成功", null);
     }
@@ -501,6 +515,13 @@ public class AdminController {
             jakarta.servlet.http.HttpServletResponse response) {
         
         try {
+            // 验证参数
+            if (!"user".equals(type) && !"revenue".equals(type) && !"business".equals(type)) {
+                response.setStatus(400);
+                response.getWriter().write("{\"code\":400,\"message\":\"无效的报表类型\"}");
+                return;
+            }
+            
             String csvData = statisticsService.exportStatsToCsv(
                 java.time.LocalDate.parse(startDate),
                 java.time.LocalDate.parse(endDate),
@@ -515,6 +536,12 @@ public class AdminController {
             
         } catch (Exception e) {
             log.error("导出统计报表失败", e);
+            try {
+                response.setStatus(500);
+                response.getWriter().write("{\"code\":500,\"message\":\"导出失败：" + e.getMessage() + "\"}");
+            } catch (Exception ex) {
+                log.error("写入错误响应失败", ex);
+            }
         }
     }
 
