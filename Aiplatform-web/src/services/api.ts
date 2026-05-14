@@ -113,7 +113,7 @@ export const authApi = {
 export const userApi = {
   request: <T>(opts: { method?: string; url: string; headers?: Record<string, string>; data?: any; params?: Record<string, any> }): Promise<T> =>
     request<T>(opts.url, { method: opts.method || 'GET', headers: opts.headers, body: opts.data ? JSON.stringify(opts.data) : undefined }),
-  getInfo: () => request<{ id: number; username: string; email: string | null; balance: number; role: string; status: string; freeApiStrategy: string; freeQuota: number; dailyCallLimit: number; monthlyCallLimit: number; createTime: string }>('/user/info'),
+  getInfo: () => request<{ id: number; username: string; email: string | null; balance: number; role: string; status: string; membership: string; freeApiStrategy: string; freeQuota: number; dailyCallLimit: number; monthlyCallLimit: number; createTime: string }>('/user/info'),
   getBalance: () => request<number>('/user/balance'),
   getFreeQuota: () => request<{ usedCalls: number; maxCalls: number; usedTokens: number; maxTokens: number }>('/user/free-quota'),
   recharge: (amount: number, paymentMethod?: string) => request<null>('/user/recharge?amount=' + amount + (paymentMethod ? '&paymentMethod=' + paymentMethod : ''), { method: 'POST' }),

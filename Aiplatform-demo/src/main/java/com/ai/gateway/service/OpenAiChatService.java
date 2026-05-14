@@ -119,7 +119,9 @@ public class OpenAiChatService {
             }
         } else if ("paid".equals(request.getMode())) {
             BigDecimal cost = modelConfigService.calculateCost(config.modelConfig, 1000, 1000);
+            log.info("付费模式预扣: userId={}, cost={}, modelConfig={}", userId, cost, config.modelConfig.getModelName());
             boolean ok = billingService.preDeductBalance(userId, requestId, cost, 300);
+            log.info("付费模式预扣结果: userId={}, ok={}", userId, ok);
             if (!ok) {
                 try {
                     emitter.send(SseEmitter.event().name("error").data("余额不足，请充值"));

@@ -23,7 +23,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   token: localStorage.getItem('lingdian_token'),
   user: null,
   isLoading: false,
-  sidebarCollapsed: true,
+  sidebarCollapsed: false,
   mobileSidebarOpen: false,
 
   setToken: (token) => {
@@ -67,6 +67,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           balance: info.balance,
           role: info.role as UserInfo['role'],
           status: info.status as UserInfo['status'],
+          membership: (info.membership || 'free') as UserInfo['membership'],
           freeApiStrategy: (info.freeApiStrategy || 'NONE') as UserInfo['freeApiStrategy'],
           freeQuota: 0,
           dailyCallLimit: 0,

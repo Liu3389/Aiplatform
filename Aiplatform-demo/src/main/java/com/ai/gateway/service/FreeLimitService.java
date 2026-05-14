@@ -1,7 +1,10 @@
 package com.ai.gateway.service;
 
+import com.ai.gateway.entity.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -12,19 +15,43 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class FreeLimitService {
 
-    private final org.springframework.data.redis.core.StringRedisTemplate redisTemplate;
+    private final StringRedisTemplate redisTemplate;
+    private final UserService userService;
+
+    public FreeLimitService(StringRedisTemplate redisTemplate, @Lazy UserService userService) {
+        this.redisTemplate = redisTemplate;
+        this.userService = userService;
+    }
 
     private static final String FREE_CALLS_PREFIX = "free:calls:";
     private static final String FREE_TOKENS_PREFIX = "free:tokens:";
 
-    private static final int DAILY_FREE_CALLS = 30;
-    private static final int DAILY_FREE_TOKENS = 50000;
-    private static final int DAILY_UPLOAD_LIMIT = 5 * 1024 * 1024;
+    private static final int FREE_DAILY_CALLS = 30;
+    private static final int FREE_DAILY_TOKENS = 50000;
+    private static final int PLUS_DAILY_CALLS = 500;
+    private static final int PLUS_DAILY_TOKENS = 500000;
+    private static final int PRO_DAILY_CALLS = Integer.MAX_VALUE;
+    private static final int PRO_DAILY_TOKENS = 2000000;
 
     public boolean checkAndRecord(Long userId, String model) {
+        String membership = getMembership(userId);
+
+        int maxCalls = FREE_DAILY_CALLS;
+        int maxTokens = FREE_DAILY_TOKENS;
+
+        switch (membership) {
+            case "plus":
+                maxCalls = PLUS_DAILY_CALLS;
+                maxTokens = PLUS_DAILY_TOKENS;
+                break;
+            case "pro":
+                maxCalls = PRO_DAILY_CALLS;
+                maxTokens = PRO_DAILY_TOKENS;
+                break;
+        }
+
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
         String callKey = FREE_CALLS_PREFIX + userId + ":" + today;
         String tokenKey = FREE_TOKENS_PREFIX + userId + ":" + today;
@@ -32,11 +59,11 @@ public class FreeLimitService {
         String callCount = redisTemplate.opsForValue().get(callKey);
         int calls = callCount != null ? Integer.parseInt(callCount) : 0;
 
-        if (calls >= DAILY_FREE_CALLS) return false;
+        if (calls >= maxCalls) return false;
 
         String tokenUsed = redisTemplate.opsForValue().get(tokenKey);
         int tokens = tokenUsed != null ? Integer.parseInt(tokenUsed) : 0;
-        if (tokens >= DAILY_FREE_TOKENS) return false;
+        if (tokens >= maxTokens) return false;
 
         redisTemplate.opsForValue().increment(callKey);
         redisTemplate.expire(callKey, 25, TimeUnit.HOURS);
@@ -52,6 +79,21 @@ public class FreeLimitService {
     }
 
     public Map<String, Integer> getUserFreeQuota(Long userId) {
+        String membership = getMembership(userId);
+        int maxCalls = FREE_DAILY_CALLS;
+        int maxTokens = FREE_DAILY_TOKENS;
+
+        switch (membership) {
+            case "plus":
+                maxCalls = PLUS_DAILY_CALLS;
+                maxTokens = PLUS_DAILY_TOKENS;
+                break;
+            case "pro":
+                maxCalls = PRO_DAILY_CALLS;
+                maxTokens = PRO_DAILY_TOKENS;
+                break;
+        }
+
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
         String callKey = FREE_CALLS_PREFIX + userId + ":" + today;
         String tokenKey = FREE_TOKENS_PREFIX + userId + ":" + today;
@@ -59,11 +101,20 @@ public class FreeLimitService {
         String callCount = redisTemplate.opsForValue().get(callKey);
         String tokenUsed = redisTemplate.opsForValue().get(tokenKey);
 
-        Map<String, Integer> quota = new java.util.HashMap<>();
+        Map<String, Integer> quota = new HashMap<>();
         quota.put("usedCalls", callCount != null ? Integer.parseInt(callCount) : 0);
-        quota.put("maxCalls", DAILY_FREE_CALLS);
+        quota.put("maxCalls", maxCalls);
         quota.put("usedTokens", tokenUsed != null ? Integer.parseInt(tokenUsed) : 0);
-        quota.put("maxTokens", DAILY_FREE_TOKENS);
+        quota.put("maxTokens", maxTokens);
         return quota;
+    }
+
+    private String getMembership(Long userId) {
+        try {
+            User user = userService.getUserEntityById(userId);
+            return user != null && user.getMembership() != null ? user.getMembership() : "free";
+        } catch (Exception e) {
+            return "free";
+        }
     }
 }

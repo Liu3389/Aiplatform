@@ -1,7 +1,6 @@
 package com.ai.gateway.service;
 
 import com.ai.gateway.common.Constants;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -14,18 +13,17 @@ import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.util.List;
 
-/**
- * 计费服务 - 基于Redis Lua脚本实现分布式原子性计费
- * 
- * @author AI Gateway Platform
- */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class BillingService {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final StringRedisTemplate stringRedisTemplate;
+
+    public BillingService(RedisTemplate<String, Object> redisTemplate, StringRedisTemplate stringRedisTemplate) {
+        this.redisTemplate = redisTemplate;
+        this.stringRedisTemplate = stringRedisTemplate;
+    }
 
     private DefaultRedisScript<List> billingScript;
     private DefaultRedisScript<List> settlementScript;
@@ -58,6 +56,10 @@ public class BillingService {
      * @return true-预扣成功，false-余额不足
      */
     public boolean preDeductBalance(Long userId, String requestId, BigDecimal preDeductAmount, int expireTime) {
+        // Zero cost = always allow
+        if (preDeductAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return true;
+        }
         try {
             String balanceKey = Constants.REDIS_USER_BALANCE_PREFIX + userId;
             String preDeductKey = Constants.REDIS_BILLING_PRE_DEDUCT_PREFIX + requestId;
@@ -76,10 +78,9 @@ public class BillingService {
             );
 
             if (result != null && !result.isEmpty()) {
-                // Lua脚本返回的是数字，需要转换
                 Object successObj = result.get(0);
                 Long success = successObj instanceof Long ? (Long) successObj : Long.parseLong(successObj.toString());
-                log.debug("预扣余额结果: userId={}, success={}, result={}", userId, success, result);
+                log.info("预扣余额: userId={}, amount={}, result={}", userId, preDeductAmount, result);
                 return success == 1;
             }
 

@@ -28,6 +28,8 @@ public class UserInfoVO {
 
     private Integer monthlyCallLimit;
 
+    private String membership;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

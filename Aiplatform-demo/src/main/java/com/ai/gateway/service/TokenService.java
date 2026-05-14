@@ -26,7 +26,7 @@ public class TokenService {
     private static final long LOGIN_LOCK_MINUTES = 15;
 
     // AES encryption for API Keys
-    private static final String AES_KEY = "AiGateway2026Key!";
+    private static final String AES_KEY = "AiGateway2026Key";
 
     private final RedisTemplate<String, String> redisTemplate;
     private final UserService userService;

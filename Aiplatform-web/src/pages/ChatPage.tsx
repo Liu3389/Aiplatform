@@ -54,9 +54,9 @@ export default function ChatPage() {
   const { lang } = useI18nStore()
 
   const [freeModel, setFreeModel] = useState(() => localStorage.getItem('ld_free_model') || 'deepseek-v4-flash')
+  const [paidModel, setPaidModel] = useState(() => localStorage.getItem('ld_paid_model') || 'deepseek-v4-flash')
   const [temperature] = useState(0.7)
-  const [mode, setMode] = useState<'free' | 'custom' | 'paid'>('free')
-  const [selectedKeyId, setSelectedKeyId] = useState<number | null>(null)
+  const [mode, setMode] = useState<'free' | 'paid'>('free')
   const [storedKeys, setStoredKeys] = useState<UserApiKeyItem[]>([])
   const [freeQuota, setFreeQuota] = useState<{ usedCalls: number; maxCalls: number; usedTokens: number; maxTokens: number } | null>(null)
 
@@ -74,6 +74,7 @@ export default function ChatPage() {
   const [titleInput, setTitleInput] = useState('')
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [pendingClear, setPendingClear] = useState(false)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
   const abortRef = useRef<AbortController | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -172,16 +173,7 @@ export default function ChatPage() {
     persistConversations(updated)
   }, [conversations, persistConversations])
 
-  const cloudSync = useCallback(async () => {
-    try {
-      await userApi.syncConversations(conversations)
-      alert(lang === 'zh' ? '同步成功' : 'Sync successful')
-    } catch {
-      alert(lang === 'zh' ? '同步失败' : 'Sync failed')
-    }
-  }, [conversations, lang])
-
-  const cloudFetch = useCallback(async () => {
+  const cloudRestore = useCallback(async () => {
     try {
       const cloud = await userApi.fetchConversations()
       if (cloud && cloud.length > 0) {
@@ -189,10 +181,10 @@ export default function ChatPage() {
           c => !cloud.find((cl: any) => cl.id === c.id)
         )]
         persistConversations(merged)
-        alert(lang === 'zh' ? '已同步云端数据' : 'Synced from cloud')
+        alert(lang === 'zh' ? '已从云端恢复对话' : 'Restored from cloud')
       }
     } catch {
-      alert(lang === 'zh' ? '获取云端数据失败' : 'Failed to fetch')
+      alert(lang === 'zh' ? '云端恢复失败' : 'Restore failed')
     }
   }, [conversations, persistConversations, lang])
 
@@ -246,11 +238,8 @@ export default function ChatPage() {
     updateCurrentConversation(newMessages)
     setIsStreaming(true)
 
-    const model = mode === 'free' ? freeModel : (mode === 'paid' ? freeModel : (storedKeys.find(k => k.id === selectedKeyId)?.displayName || 'custom'))
+    const model = mode === 'free' ? freeModel : paidModel
     const extra: any = { mode }
-    if (mode === 'custom' && selectedKeyId) {
-      extra.userApiKeyId = selectedKeyId
-    }
 
     const apiKey = apiKeyRef.current
     if (!apiKey) {
@@ -393,40 +382,44 @@ export default function ChatPage() {
                 ) : (
                   <>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{conv.title}</span>
-                      <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
-                        {new Date(conv.updatedAt).toLocaleDateString()}
-                      </span>
+                      <span className="text-sm font-medium truncate pr-6" style={{ color: 'var(--text-primary)' }}>{conv.title}</span>
+                      <div className="absolute top-2 right-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === conv.id ? null : conv.id) }}
+                          className="w-6 h-6 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          style={{ background: 'var(--bg-surface)' }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'var(--text-dim)' }}><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+                        </button>
+                        {openMenuId === conv.id && (
+                          <div className="absolute right-0 top-8 z-50 w-32 rounded-xl border shadow-xl py-1" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
+                            onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => { setEditingTitle(conv.id); setTitleInput(conv.title); setOpenMenuId(null) }}
+                              className="w-full px-3 py-2 text-xs text-left transition-colors hover:bg-white/5 flex items-center gap-2"
+                              style={{ color: 'var(--text-primary)' }}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              {lang === 'zh' ? '重命名' : 'Rename'}
+                            </button>
+                            <button
+                              onClick={() => { setPendingDeleteId(conv.id); setOpenMenuId(null) }}
+                              className="w-full px-3 py-2 text-xs text-left transition-colors hover:bg-white/5 flex items-center gap-2"
+                              style={{ color: 'var(--accent-rose)' }}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                              {lang === 'zh' ? '删除' : 'Delete'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-xs mt-1 truncate" style={{ color: 'var(--text-dim)' }}>
+                    <p className="text-xs mt-1 truncate pr-6" style={{ color: 'var(--text-dim)' }}>
                       {conv.messages[conv.messages.length - 1]?.content.slice(0, 40) || (lang === 'zh' ? '空对话' : 'Empty')}
                     </p>
-                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleFavorite(conv.id) }}
-                        className="w-6 h-6 rounded flex items-center justify-center"
-                        style={{ background: 'var(--bg-surface)', color: conv.favorited ? '#F59E0B' : 'var(--text-dim)' }}
-                        title={lang === 'zh' ? '收藏' : 'Favorite'}
-                      >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill={conv.favorited ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setEditingTitle(conv.id); setTitleInput(conv.title) }}
-                        className="w-6 h-6 rounded flex items-center justify-center"
-                        style={{ background: 'var(--bg-surface)' }}
-                        title={lang === 'zh' ? '重命名' : 'Rename'}
-                      >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setPendingDeleteId(conv.id) }}
-                        className="w-6 h-6 rounded flex items-center justify-center"
-                        style={{ background: 'var(--accent-rose)' + '20', color: 'var(--accent-rose)' }}
-                        title={lang === 'zh' ? '删除' : 'Delete'}
-                      >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                      </button>
-                    </div>
+                    <span className="absolute bottom-2 right-2 text-[10px]" style={{ color: 'var(--text-dim)', opacity: 0.6 }}>
+                      {new Date(conv.updatedAt).toLocaleDateString()}
+                    </span>
                   </>
                 )}
               </div>
@@ -440,15 +433,7 @@ export default function ChatPage() {
 
           <div className="p-3 border-t space-y-2" style={{ borderColor: 'var(--border-color)' }}>
             <button
-              onClick={cloudSync}
-              className="w-full px-3 py-2 text-xs rounded-lg flex items-center gap-2 transition-colors"
-              style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              {lang === 'zh' ? '云端备份' : 'Cloud Backup'}
-            </button>
-            <button
-              onClick={cloudFetch}
+              onClick={cloudRestore}
               className="w-full px-3 py-2 text-xs rounded-lg flex items-center gap-2 transition-colors"
               style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}
             >
@@ -460,7 +445,7 @@ export default function ChatPage() {
               className="w-full px-3 py-2 text-xs rounded-lg flex items-center gap-2 transition-colors"
               style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               {lang === 'zh' ? '导出 MD' : 'Export MD'}
             </button>
             <button
@@ -556,10 +541,6 @@ export default function ChatPage() {
                 style={mode === 'free' ? { background: 'var(--accent-emerald)' } : { color: 'var(--text-dim)' }}>
                 {lang === 'zh' ? '免费' : 'Free'}
               </button>
-              <button onClick={() => setMode('custom')} className={`px-3 py-1.5 text-xs rounded-md transition-colors ${mode === 'custom' ? 'text-white' : ''}`}
-                style={mode === 'custom' ? { background: 'var(--accent-purple)' } : { color: 'var(--text-dim)' }}>
-                {lang === 'zh' ? '自定义' : 'Custom'}
-              </button>
               <button onClick={() => setMode('paid')} className={`px-3 py-1.5 text-xs rounded-md transition-colors ${mode === 'paid' ? 'text-white' : ''}`}
                 style={mode === 'paid' ? { background: 'var(--accent-amber)' } : { color: 'var(--text-dim)' }}>
                 {lang === 'zh' ? '付费' : 'Paid'}
@@ -567,8 +548,8 @@ export default function ChatPage() {
             </div>
 
             <select
-              value={freeModel}
-              onChange={e => setFreeModel(e.target.value)}
+              value={mode === 'free' ? freeModel : paidModel}
+              onChange={e => mode === 'free' ? setFreeModel(e.target.value) : setPaidModel(e.target.value)}
               className="px-3 py-1.5 text-xs rounded-lg border outline-none"
               style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
             >
@@ -584,20 +565,6 @@ export default function ChatPage() {
                 <span>/ {freeQuota.maxCalls}</span>
                 <span className="opacity-40">{lang === 'zh' ? '次' : 'calls'}</span>
               </div>
-            )}
-
-            {mode === 'custom' && (
-              <select
-                value={selectedKeyId || ''}
-                onChange={e => setSelectedKeyId(e.target.value ? Number(e.target.value) : null)}
-                className="px-3 py-1.5 text-xs rounded-lg border outline-none max-w-[160px]"
-                style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-              >
-                <option value="">{lang === 'zh' ? '选择 Key...' : 'Select Key...'}</option>
-                {storedKeys.map(k => (
-                  <option key={k.id} value={k.id}>{k.displayName || k.provider}</option>
-                ))}
-              </select>
             )}
 
             {mode === 'paid' && (
@@ -621,8 +588,7 @@ export default function ChatPage() {
               </h2>
               <p className="text-sm mb-8" style={{ color: 'var(--text-dim)' }}>
                 {mode === 'free' ? (lang === 'zh' ? `免费模型 (${freeModel}) · 每日${freeQuota?.maxCalls||30}次/50K tokens` : `Free (${freeModel}) · ${freeQuota?.maxCalls||30} calls/day`)
-                : mode === 'custom' ? (lang === 'zh' ? '自定义模型 · 使用你存储的 API Key' : 'Custom model · Your stored API key')
-                : (lang === 'zh' ? `付费模型 · 按量扣余额` : 'Paid model · Balance deducted')}
+                : (lang === 'zh' ? `付费模型 · ¥按量扣余额` : 'Paid model · ¥ Balance deducted')}
               </p>
               <div className="grid grid-cols-2 gap-3 w-full max-w-lg">
                 {WELCOME_SUGGESTIONS.map((s, i) => (
@@ -684,6 +650,12 @@ export default function ChatPage() {
                   <span>Input {tokenStats.inputTokens.toLocaleString()} tokens</span>
                   <span>·</span>
                   <span>Output {tokenStats.outputTokens.toLocaleString()} tokens</span>
+                  {tokenStats.cost > 0 && (
+                    <>
+                      <span>·</span>
+                      <span style={{ color: 'var(--accent-amber)' }}>¥{tokenStats.cost.toFixed(4)}</span>
+                    </>
+                  )}
                 </motion.div>
               )}
               <div ref={el => el?.scrollIntoView({ behavior: 'smooth' })} />

@@ -29,8 +29,11 @@ import java.util.concurrent.TimeUnit;
 public class ModelConfigService {
 
     private final ModelConfigMapper modelConfigMapper;
-    private final RedisTemplate<String, String> redisTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final RedisTemplate<String, Object> redisTemplate;
+
+    private final ObjectMapper objectMapper = new ObjectMapper()
+        .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+        .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     private static final String MODEL_LIST_CACHE_KEY = "ai_gateway:model_list";
     private static final String MODEL_CACHE_PREFIX = "ai_gateway:model:";
@@ -46,7 +49,7 @@ public class ModelConfigService {
     public ModelConfig getModelByName(String modelName) {
         String cacheKey = MODEL_CACHE_PREFIX + modelName;
         try {
-            String cached = redisTemplate.opsForValue().get(cacheKey);
+            String cached = (String) redisTemplate.opsForValue().get(cacheKey);
             if (cached != null && !cached.isEmpty()) {
                 return objectMapper.readValue(cached, ModelConfig.class);
             }
@@ -118,7 +121,7 @@ public class ModelConfigService {
      */
     public List<ModelConfig> listEnabledModels() {
         try {
-            String cached = redisTemplate.opsForValue().get(MODEL_LIST_CACHE_KEY);
+            String cached = (String) redisTemplate.opsForValue().get(MODEL_LIST_CACHE_KEY);
             if (cached != null && !cached.isEmpty()) {
                 return objectMapper.readValue(cached, new TypeReference<List<ModelConfig>>() {});
             }
