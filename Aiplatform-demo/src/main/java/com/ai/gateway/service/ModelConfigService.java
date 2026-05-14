@@ -105,11 +105,11 @@ public class ModelConfigService {
     public BigDecimal calculateCost(ModelConfig modelConfig, int inputTokens, int outputTokens) {
         BigDecimal inputCost = modelConfig.getInputPrice()
                 .multiply(new BigDecimal(inputTokens))
-                .divide(new BigDecimal(Constants.TOKEN_PRICE_BASE), 6, BigDecimal.ROUND_HALF_UP);
+                .divide(new BigDecimal(Constants.TOKEN_PRICE_BASE), 6, java.math.RoundingMode.HALF_UP);
         
         BigDecimal outputCost = modelConfig.getOutputPrice()
                 .multiply(new BigDecimal(outputTokens))
-                .divide(new BigDecimal(Constants.TOKEN_PRICE_BASE), 6, BigDecimal.ROUND_HALF_UP);
+                .divide(new BigDecimal(Constants.TOKEN_PRICE_BASE), 6, java.math.RoundingMode.HALF_UP);
 
         return inputCost.add(outputCost);
     }

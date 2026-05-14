@@ -5,7 +5,7 @@
 
 ## 一、环境准备
 
-### 1.1 安装JDK 17
+### 1.1 安装JDK 1
 
 ```bash
 # Ubuntu/Debian

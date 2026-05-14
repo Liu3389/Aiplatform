@@ -72,6 +72,12 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
         
+        <!-- Spring AOP (用于@Aspect切面) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+        
         <!-- Actuator Health -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -1,0 +1,747 @@
+# 管理员后台API接口文档
+
+## 📋 目录
+- [认证说明](#认证说明)
+- [系统统计](#系统统计)
+- [用户管理](#用户管理)
+- [批量操作](#批量操作)
+- [点数管理](#点数管理)
+- [会员管理](#会员管理)
+- [操作日志](#操作日志)
+- [通知管理](#通知管理)
+- [统计分析](#统计分析)
+
+---
+
+## 🔐 认证说明
+
+所有管理员接口需要在Header中携带：
+```
+X-User-Token: {管理员Token}
+```
+
+权限要求：
+- `ADMIN` - 普通管理员
+- `SUPER_ADMIN` - 超级管理员（拥有所有权限）
+
+---
+
+## 📊 系统统计
+
+### 1. 获取系统统计数据
+
+**接口**: `GET /admin/stats`
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "totalUsers": 1000,
+    "activeUsers": 800,
+    "totalApiKeys": 1500,
+    "users": [...],
+    "totalCalls": 50000,
+    "totalCost": 5000.00,
+    "todayCalls": 1000,
+    "todayCost": 100.00
+  }
+}
+```
+
+---
+
+### 2. 获取完整分析数据
+
+**接口**: `GET /admin/analytics/full`
+
+**参数**:
+- `days`: 天数（默认7）
+- `months`: 月数（默认6）
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**响应包含**:
+- 系统基础统计
+- 每日使用趋势
+- 模型使用分布
+- 小时流量分布
+- Top用户排行
+- 营收趋势
+- 用户增长
+
+---
+
+## 👥 用户管理
+
+### 3. 分页查询用户（基础版）
+
+**接口**: `GET /admin/users`
+
+**参数**:
+- `page`: 页码（默认1）
+- `size`: 每页大小（默认20）
+- `search`: 搜索关键词（可选，用户名或ID）
+- `membership`: 会员等级（可选，free/vip/svip）
+- `status`: 状态（可选，ACTIVE/DISABLED）
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "data": {
+    "records": [
+      {
+        "id": 1,
+        "username": "testuser",
+        "email": "test@example.com",
+        "balance": 100.00,
+        "role": "USER",
+        "status": "ACTIVE",
+        "membership": "free",
+        "createTime": "2026-05-01T10:00:00"
+      }
+    ],
+    "total": 100,
+    "page": 1,
+    "size": 20
+  }
+}
+```
+
+---
+
+### 4. 分页查询用户（高级版）⭐
+
+**接口**: `GET /admin/users/advanced`
+
+**参数**:
+- `page`: 页码（默认1）
+- `size`: 每页大小（默认20）
+- `search`: 搜索关键词（可选）
+- `membership`: 会员等级（可选）
+- `status`: 状态（可选）
+- `minBalance`: 最小余额（可选）
+- `maxBalance`: 最大余额（可选）
+- `startDate`: 注册开始日期（可选，格式：yyyy-MM-dd）
+- `endDate`: 注册结束日期（可选，格式：yyyy-MM-dd）
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**使用示例**:
+```bash
+# 查询VIP会员，余额在100-500之间，最近7天注册
+GET /admin/users/advanced?page=1&size=20&membership=vip&minBalance=100&maxBalance=500&startDate=2026-05-07&endDate=2026-05-14
+```
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "data": {
+    "records": [
+      {
+        "id": 1,
+        "username": "testuser",
+        "email": "test@example.com",
+        "balance": 250.00,
+        "points": 100.000,
+        "role": "USER",
+        "status": "ACTIVE",
+        "membership": "vip",
+        "dailyFreeCount": 20,
+        "membershipExpireTime": "2026-12-31T23:59:59",
+        "createTime": "2026-05-10T10:00:00"
+      }
+    ],
+    "total": 50,
+    "page": 1,
+    "size": 20
+  }
+}
+```
+
+---
+
+### 5. 获取用户详情
+
+**接口**: `GET /admin/user/{userId}`
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "data": {
+    "id": 1,
+    "username": "testuser",
+    "email": "test@example.com",
+    "balance": 100.00,
+    "role": "USER",
+    "status": "ACTIVE",
+    "apiKeyCount": 3,
+    "totalCalls": 500,
+    "totalCost": 50.00,
+    "createTime": "2026-05-01T10:00:00"
+  }
+}
+```
+
+---
+
+### 6. 切换用户状态
+
+**接口**: `POST /admin/user/status`
+
+**Body**:
+```json
+{
+  "userId": 1,
+  "status": "DISABLED"
+}
+```
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+### 7. 给用户充值
+
+**接口**: `POST /admin/user/recharge`
+
+**Body**:
+```json
+{
+  "userId": 1,
+  "amount": 100.00
+}
+```
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+### 8. 分配管理员角色
+
+**接口**: `POST /admin/assign-role`
+
+**Body**:
+```json
+{
+  "userId": 1,
+  "role": "ADMIN"
+}
+```
+
+**权限**: SUPER_ADMIN
+
+---
+
+### 9. 撤销管理员角色
+
+**接口**: `POST /admin/revoke-role`
+
+**Body**:
+```json
+{
+  "userId": 1
+}
+```
+
+**权限**: SUPER_ADMIN
+
+---
+
+### 10. 重置用户密码
+
+**接口**: `POST /admin/reset-password`
+
+**Body**:
+```json
+{
+  "userId": 1,
+  "password": "NewPassword@123"
+}
+```
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+## 🔄 批量操作
+
+### 11. 批量封禁/解封用户 ⭐
+
+**接口**: `POST /admin/batch/update-status`
+
+**Body**:
+```json
+{
+  "userIds": [1, 2, 3, 4, 5],
+  "status": 0
+}
+```
+
+**参数说明**:
+- `userIds`: 用户ID列表
+- `status`: 0=封禁，1=激活
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "message": "批量更新成功",
+  "data": {
+    "successCount": 5,
+    "totalCount": 5
+  }
+}
+```
+
+---
+
+### 12. 批量发放点数 ⭐
+
+**接口**: `POST /admin/batch/grant-points`
+
+**Body**:
+```json
+{
+  "userIds": [1, 2, 3],
+  "points": 100.000
+}
+```
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "message": "批量发放成功",
+  "data": {
+    "successCount": 3,
+    "totalCount": 3,
+    "points": 100.000
+  }
+}
+```
+
+---
+
+### 13. 批量开通会员 ⭐
+
+**接口**: `POST /admin/batch/activate-membership`
+
+**Body**:
+```json
+{
+  "userIds": [1, 2, 3],
+  "membership": "vip",
+  "days": 30
+}
+```
+
+**参数说明**:
+- `userIds`: 用户ID列表
+- `membership`: 会员等级（free/vip/svip）
+- `days`: 开通天数
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "message": "批量开通成功",
+  "data": {
+    "successCount": 3,
+    "totalCount": 3,
+    "membership": "vip",
+    "days": 30
+  }
+}
+```
+
+---
+
+## 💰 点数管理
+
+### 14. 手动增减用户点数 ⭐
+
+**接口**: `POST /admin/points/adjust`
+
+**Body**:
+```json
+{
+  "userId": 1,
+  "points": 50.000,
+  "reason": "活动奖励"
+}
+```
+
+**参数说明**:
+- `userId`: 用户ID
+- `points`: 调整数量（正数=增加，负数=减少）
+- `reason`: 调整原因（可选，默认"管理员手动调整"）
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**安全机制**:
+- ✅ 事务保证数据一致性
+- ✅ 防止点数为负数
+- ✅ 记录调整原因
+- ✅ 完整日志记录
+
+**使用示例**:
+```bash
+# 增加50点
+curl -X POST "http://localhost:8080/admin/points/adjust" \
+  -H "X-User-Token: YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"userId":1,"points":50.000,"reason":"活动奖励"}'
+
+# 减少30点
+curl -X POST "http://localhost:8080/admin/points/adjust" \
+  -H "X-User-Token: YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"userId":1,"points":-30.000,"reason":"违规扣除"}'
+```
+
+---
+
+### 15. 设置每日免费次数 ⭐
+
+**接口**: `POST /admin/points/set-free-count`
+
+**Body**:
+```json
+{
+  "userId": 1,
+  "count": 20
+}
+```
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+## 👑 会员管理
+
+### 16. 调整会员等级 ⭐
+
+**接口**: `POST /admin/membership/update`
+
+**Body**:
+```json
+{
+  "userId": 1,
+  "membership": "vip"
+}
+```
+
+**参数说明**:
+- `membership`: free/vip/svip
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+### 17. 设置会员有效期 ⭐
+
+**接口**: `POST /admin/membership/set-expire-time`
+
+**Body**:
+```json
+{
+  "userId": 1,
+  "expireTime": "2026-12-31T23:59:59"
+}
+```
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+## 📝 操作日志
+
+### 18. 查询操作日志 ⭐
+
+**接口**: `GET /admin/logs`
+
+**参数**:
+- `page`: 页码（默认1）
+- `size`: 每页大小（默认50）
+- `adminId`: 管理员ID（可选）
+- `operationType`: 操作类型（可选，USER_MANAGE/POINTS_MANAGE/MEMBERSHIP_MANAGE/BATCH_OPERATION/SYSTEM_CONFIG）
+- `startDate`: 开始日期（可选，格式：yyyy-MM-dd）
+- `endDate`: 结束日期（可选，格式：yyyy-MM-dd）
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "data": {
+    "records": [
+      {
+        "id": 1,
+        "adminId": 1,
+        "adminUsername": "admin01",
+        "operationType": "POINTS_MANAGE",
+        "operationAction": "ADJUST",
+        "targetUserIds": "[1]",
+        "operationDetail": "{\"points\":50.000,\"reason\":\"活动奖励\"}",
+        "ipAddress": "192.168.1.100",
+        "result": "SUCCESS",
+        "createTime": "2026-05-14T10:00:00"
+      }
+    ],
+    "total": 100,
+    "page": 1,
+    "size": 50
+  }
+}
+```
+
+---
+
+## 🔔 通知管理
+
+### 19. 获取未读通知数量
+
+**接口**: `GET /admin/notifications/unread-count`
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "data": {
+    "unreadCount": 5
+  }
+}
+```
+
+---
+
+### 20. 获取通知列表
+
+**接口**: `GET /admin/notifications`
+
+**参数**:
+- `page`: 页码（默认1）
+- `size`: 每页大小（默认20）
+- `isRead`: 是否已读（可选，0=未读，1=已读，null=全部）
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "data": {
+    "records": [
+      {
+        "id": 1,
+        "title": "充值到账通知",
+        "content": "您的账户已充值100元",
+        "type": "RECHARGE",
+        "isRead": 0,
+        "createTime": "2026-05-14T10:00:00"
+      }
+    ],
+    "total": 10,
+    "page": 1,
+    "size": 20,
+    "unreadCount": 5
+  }
+}
+```
+
+---
+
+### 21. 标记通知为已读
+
+**接口**: `POST /admin/notifications/{id}/read`
+
+---
+
+### 22. 标记所有通知为已读
+
+**接口**: `POST /admin/notifications/read-all`
+
+---
+
+### 23. 删除通知
+
+**接口**: `DELETE /admin/notifications/{id}`
+
+---
+
+### 24. 获取最新未读通知
+
+**接口**: `GET /admin/notifications/latest`
+
+**参数**:
+- `limit`: 数量限制（默认5）
+
+---
+
+## 📈 统计分析
+
+### 25. 按日查询统计数据 ⭐
+
+**接口**: `GET /admin/statistics/daily`
+
+**参数**:
+- `startDate`: 开始日期（格式：yyyy-MM-dd）
+- `endDate`: 结束日期（格式：yyyy-MM-dd）
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "data": [
+    {
+      "statDate": "2026-05-01",
+      "totalUsers": 1000,
+      "newUsers": 50,
+      "activeUsers": 800,
+      "retainedUsers": 750,
+      "totalCalls": 10000,
+      "totalTokens": 5000000,
+      "totalPointsConsumed": 1000.000,
+      "rechargeAmount": 5000.00,
+      "packageSales": 100,
+      "avgOrderValue": 50.00
+    }
+  ]
+}
+```
+
+---
+
+### 26. 按周查询统计数据 ⭐
+
+**接口**: `GET /admin/statistics/weekly`
+
+**参数**:
+- `weeks`: 周数（默认4）
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+### 27. 按月查询统计数据 ⭐
+
+**接口**: `GET /admin/statistics/monthly`
+
+**参数**:
+- `months`: 月数（默认6）
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+### 28. 导出统计报表（CSV）⭐
+
+**接口**: `GET /admin/statistics/export`
+
+**参数**:
+- `type`: 报表类型（user/revenue/business）
+- `startDate`: 开始日期
+- `endDate`: 结束日期
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**使用示例**:
+```bash
+# 导出用户数据报表
+curl -X GET "http://localhost:8080/admin/statistics/export?type=user&startDate=2026-05-01&endDate=2026-05-14" \
+  -H "X-User-Token: YOUR_TOKEN" \
+  --output user_report.csv
+
+# 导出营收数据报表
+curl -X GET "http://localhost:8080/admin/statistics/export?type=revenue&startDate=2026-05-01&endDate=2026-05-14" \
+  -H "X-User-Token: YOUR_TOKEN" \
+  --output revenue_report.csv
+```
+
+**CSV格式示例**:
+
+用户数据报表:
+```csv
+日期,总用户数,新增用户,活跃用户,留存用户
+2026-05-01,1000,50,800,750
+2026-05-02,1050,60,820,770
+```
+
+营收数据报表:
+```csv
+日期,充值金额,套餐销量,平均客单价
+2026-05-01,5000.00,100,50.00
+2026-05-02,5500.00,110,50.00
+```
+
+业务数据报表:
+```csv
+日期,对话次数,Token消耗,点数消耗
+2026-05-01,10000,5000000,1000.000
+2026-05-02,11000,5500000,1100.000
+```
+
+---
+
+## 🎯 接口分类总结
+
+### 核心功能接口（⭐标记）
+
+1. **用户管理增强**
+   - GET `/admin/users/advanced` - 多条件筛选查询
+
+2. **批量操作**
+   - POST `/admin/batch/update-status` - 批量封禁/解封
+   - POST `/admin/batch/grant-points` - 批量发放点数
+   - POST `/admin/batch/activate-membership` - 批量开通会员
+
+3. **点数管理**
+   - POST `/admin/points/adjust` - 手动增减点数
+   - POST `/admin/points/set-free-count` - 设置免费次数
+
+4. **会员管理**
+   - POST `/admin/membership/update` - 调整会员等级
+   - POST `/admin/membership/set-expire-time` - 设置有效期
+
+5. **操作日志**
+   - GET `/admin/logs` - 查询操作日志
+
+6. **统计分析**
+   - GET `/admin/statistics/daily` - 按日查询
+   - GET `/admin/statistics/weekly` - 按周查询
+   - GET `/admin/statistics/monthly` - 按月查询
+   - GET `/admin/statistics/export` - 导出CSV报表
+
+---
+
+## 📌 注意事项
+
+1. **所有管理员接口都需要携带 `X-User-Token` Header**
+2. **部分接口需要 `SUPER_ADMIN` 权限**（如角色分配）
+3. **批量操作和点数调整都有事务保护**，确保数据一致性
+4. **统计报表导出返回CSV文件**，可直接用Excel打开
+5. **操作日志会自动记录**所有管理员操作，包括IP地址和操作详情
+
+---
+
+**文档版本**: v2.0  
+**更新日期**: 2026-05-14  
+**接口总数**: 28个（其中9个为新增核心功能）

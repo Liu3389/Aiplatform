@@ -1,7 +1,9 @@
 package com.ai.gateway.service;
 
 import com.ai.gateway.entity.PointsBill;
+import com.ai.gateway.entity.User;
 import com.ai.gateway.mapper.PointsBillMapper;
+import com.ai.gateway.mapper.UserMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +26,7 @@ public class PointsService {
 
     private final PointsBillMapper pointsBillMapper;
     private final StringRedisTemplate redisTemplate;
+    private final UserMapper userMapper;
     
     private static final String USER_POINTS_PREFIX = "points:user:";
     private static final String POINTS_PRECISION_KEY = "points:precision";
@@ -141,15 +144,18 @@ public class PointsService {
      * @return 点数
      */
     private BigDecimal syncUserPointsFromDB(Long userId) {
-        // TODO: 从数据库查询用户点数表
-        // 这里暂时返回0，实际应该从user_points表查询
-        BigDecimal defaultPoints = BigDecimal.ZERO;
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            log.warn("用户不存在: userId={}", userId);
+            return BigDecimal.ZERO;
+        }
         
+        BigDecimal points = user.getPoints() != null ? user.getPoints() : BigDecimal.ZERO;
         String key = USER_POINTS_PREFIX + userId;
-        redisTemplate.opsForValue().set(key, defaultPoints.toString());
+        redisTemplate.opsForValue().set(key, points.toString());
         
-        log.info("同步用户点数到Redis: userId={}, points={}", userId, defaultPoints);
-        return defaultPoints;
+        log.info("同步用户点数到Redis: userId={}, points={}", userId, points);
+        return points;
     }
 
     /**
@@ -243,11 +249,41 @@ public class PointsService {
      */
     @Transactional
     public BigDecimal cleanExpiredPoints(Long userId) {
-        // TODO: 实现过期点数清理逻辑
-        // 需要查询points_bill表中已过期的GRANT记录，然后扣除相应点数
+        LocalDateTime now = LocalDateTime.now();
         
-        log.info("清理过期点数: userId={}", userId);
-        return BigDecimal.ZERO;
+        // 查询已过期的GRANT记录
+        LambdaQueryWrapper<PointsBill> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PointsBill::getUserId, userId)
+               .eq(PointsBill::getChangeType, "GRANT")
+               .isNotNull(PointsBill::getExpireTime)
+               .lt(PointsBill::getExpireTime, now)
+               .gt(PointsBill::getPointsChange, 0); // 只处理正数（增加的点数）
+        
+        List<PointsBill> expiredBills = pointsBillMapper.selectList(wrapper);
+        
+        if (expiredBills.isEmpty()) {
+            log.debug("无过期点数需要清理: userId={}", userId);
+            return BigDecimal.ZERO;
+        }
+        
+        // 计算需要扣除的总点数
+        BigDecimal totalExpired = expiredBills.stream()
+                .map(PointsBill::getPointsChange)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        
+        // 扣除过期点数
+        if (totalExpired.compareTo(BigDecimal.ZERO) > 0) {
+            deductPoints(userId, totalExpired, "expire_clean_" + now, "点数过期清理");
+            
+            // 标记这些账单为已处理
+            for (PointsBill bill : expiredBills) {
+                bill.setDescription(bill.getDescription() + " [已过期清理]");
+                pointsBillMapper.updateById(bill);
+            }
+        }
+        
+        log.info("清理过期点数完成: userId={}, expired={}", userId, totalExpired);
+        return totalExpired;
     }
 
     /**

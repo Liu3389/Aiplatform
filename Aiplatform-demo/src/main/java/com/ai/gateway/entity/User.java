@@ -40,7 +40,25 @@ public class User implements Serializable {
 
     private String membership;
 
-    private Integer userPoints;
+    /**
+     * 点数余额（保留三位小数）
+     */
+    private BigDecimal points;
+
+    /**
+     * 每日免费次数
+     */
+    private Integer dailyFreeCount;
+
+    /**
+     * 会员过期时间
+     */
+    private LocalDateTime membershipExpireTime;
+
+    /**
+     * 最后登录时间
+     */
+    private LocalDateTime lastLoginTime;
 
     private LocalDateTime createTime;
 

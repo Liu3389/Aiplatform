@@ -11,9 +11,11 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -233,5 +235,217 @@ public class AdminService {
 
     private Long tryParseLong(String s) {
         try { return Long.parseLong(s); } catch (NumberFormatException e) { return -1L; }
+    }
+
+    // ==================== 用户管理增强 ====================
+
+    /**
+     * 分页查询用户（支持多条件筛选）
+     */
+    public Map<String, Object> getUserPageAdvanced(int page, int size, String search, 
+                                                    String membership, String status,
+                                                    BigDecimal minBalance, BigDecimal maxBalance,
+                                                    String startDate, String endDate) {
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+        
+        // 搜索条件（用户名或ID）
+        if (search != null && !search.isEmpty()) {
+            wrapper.and(w -> w.like(User::getUsername, search)
+                             .or()
+                             .eq(User::getId, tryParseLong(search)));
+        }
+        
+        // 会员等级筛选
+        if (membership != null && !membership.isEmpty()) {
+            wrapper.eq(User::getMembership, membership);
+        }
+        
+        // 状态筛选
+        if (status != null && !status.isEmpty()) {
+            if ("ACTIVE".equals(status)) {
+                wrapper.eq(User::getStatus, 1);
+            } else if ("DISABLED".equals(status)) {
+                wrapper.eq(User::getStatus, 0);
+            }
+        }
+        
+        // 点数余额范围筛选
+        if (minBalance != null) {
+            wrapper.ge(User::getBalance, minBalance);
+        }
+        if (maxBalance != null) {
+            wrapper.le(User::getBalance, maxBalance);
+        }
+        
+        // 注册时间范围筛选
+        if (startDate != null && !startDate.isEmpty()) {
+            wrapper.ge(User::getCreateTime, LocalDate.parse(startDate).atStartOfDay());
+        }
+        if (endDate != null && !endDate.isEmpty()) {
+            wrapper.lt(User::getCreateTime, LocalDate.parse(endDate).plusDays(1).atStartOfDay());
+        }
+        
+        wrapper.orderByDesc(User::getId);
+
+        Page<User> userPage = new Page<>(page, size);
+        Page<User> result = userMapper.selectPage(userPage, wrapper);
+
+        List<Map<String, Object>> users = result.getRecords().stream().map(user -> {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", user.getId());
+            item.put("username", user.getUsername());
+            item.put("email", user.getEmail());
+            item.put("balance", user.getBalance());
+            item.put("points", user.getPoints());
+            item.put("role", user.getRole());
+            item.put("status", user.getStatus() == 1 ? "ACTIVE" : "DISABLED");
+            item.put("membership", user.getMembership() != null ? user.getMembership() : "free");
+            item.put("dailyFreeCount", user.getDailyFreeCount());
+            item.put("membershipExpireTime", user.getMembershipExpireTime());
+            item.put("createTime", user.getCreateTime() != null ? user.getCreateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
+            return item;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> pageResult = new HashMap<>();
+        pageResult.put("records", users);
+        pageResult.put("total", result.getTotal());
+        pageResult.put("page", page);
+        pageResult.put("size", size);
+        return pageResult;
+    }
+
+    // ==================== 批量操作 ====================
+
+    /**
+     * 批量封禁/解封用户
+     */
+    @Transactional
+    public int batchUpdateStatus(List<Long> userIds, int status) {
+        int successCount = 0;
+        for (Long userId : userIds) {
+            User user = userMapper.selectById(userId);
+            if (user != null) {
+                user.setStatus(status);
+                userMapper.updateById(user);
+                successCount++;
+            }
+        }
+        log.info("批量更新用户状态: 总数={}, 成功={}, 新状态={}", userIds.size(), successCount, status);
+        return successCount;
+    }
+
+    /**
+     * 批量发放点数
+     */
+    @Transactional
+    public int batchGrantPoints(List<Long> userIds, BigDecimal points) {
+        int successCount = 0;
+        for (Long userId : userIds) {
+            User user = userMapper.selectById(userId);
+            if (user != null) {
+                user.setPoints(user.getPoints().add(points));
+                userMapper.updateById(user);
+                successCount++;
+            }
+        }
+        log.info("批量发放点数: 总数={}, 成功={}, 点数={}", userIds.size(), successCount, points);
+        return successCount;
+    }
+
+    // ==================== 点数管理 ====================
+
+    /**
+     * 手动增减用户点数
+     */
+    @Transactional
+    public void adjustUserPoints(Long userId, BigDecimal points, String reason) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+        
+        BigDecimal newPoints = user.getPoints().add(points);
+        if (newPoints.compareTo(BigDecimal.ZERO) < 0) {
+            throw new RuntimeException("点数不能为负数");
+        }
+        
+        user.setPoints(newPoints);
+        userMapper.updateById(user);
+        
+        log.info("调整用户点数: userId={}, 调整={}, 原因={}, 新余额={}", 
+                userId, points, reason, newPoints);
+    }
+
+    /**
+     * 设置用户每日免费次数
+     */
+    @Transactional
+    public void setDailyFreeCount(Long userId, int count) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+        
+        user.setDailyFreeCount(count);
+        userMapper.updateById(user);
+        
+        log.info("设置用户每日免费次数: userId={}, count={}", userId, count);
+    }
+
+    // ==================== 会员管理 ====================
+
+    /**
+     * 调整用户会员等级
+     */
+    @Transactional
+    public void updateMembership(Long userId, String membership) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+        
+        user.setMembership(membership);
+        userMapper.updateById(user);
+        
+        log.info("调整用户会员等级: userId={}, membership={}", userId, membership);
+    }
+
+    /**
+     * 设置会员有效期
+     */
+    @Transactional
+    public void setMembershipExpireTime(Long userId, LocalDateTime expireTime) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+        
+        user.setMembershipExpireTime(expireTime);
+        userMapper.updateById(user);
+        
+        log.info("设置会员有效期: userId={}, expireTime={}", userId, expireTime);
+    }
+
+    /**
+     * 批量开通会员
+     */
+    @Transactional
+    public int batchActivateMembership(List<Long> userIds, String membership, int days) {
+        LocalDateTime expireTime = LocalDateTime.now().plusDays(days);
+        int successCount = 0;
+        
+        for (Long userId : userIds) {
+            User user = userMapper.selectById(userId);
+            if (user != null) {
+                user.setMembership(membership);
+                user.setMembershipExpireTime(expireTime);
+                userMapper.updateById(user);
+                successCount++;
+            }
+        }
+        
+        log.info("批量开通会员: 总数={}, 成功={}, 等级={}, 天数={}", 
+                userIds.size(), successCount, membership, days);
+        return successCount;
     }
 }

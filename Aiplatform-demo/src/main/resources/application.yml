@@ -56,6 +56,10 @@ billing:
   lua-script: classpath:lua/billing.lua
   pre-deduct-ratio: 1.2
 
+# 应用配置
+app:
+  init-test-data: false  # 是否每次启动时重置数据库并生成测试数据（默认false，开发时可设为true）
+
 logging:
   level:
     root: WARN

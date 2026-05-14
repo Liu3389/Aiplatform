@@ -1,0 +1,579 @@
+{
+  "info": {
+    "name": "AI Gateway - Admin API",
+    "description": "管理员后台接口测试集合\n\n**包含功能**:\n- ✅ 用户管理（多条件筛选）\n- ✅ 批量操作（封禁/解封、发放点数、开通会员）\n- ✅ 点数管理（增减点数、设置免费次数）\n- ✅ 会员管理（等级调整、有效期设置）\n- ✅ 操作日志查询\n- ✅ 通知管理\n- ✅ 统计分析（日/周/月查询、CSV导出）\n\n**权限要求**: ADMIN 或 SUPER_ADMIN",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "value",
+        "value": "{{adminToken}}",
+        "type": "string"
+      },
+      {
+        "key": "key",
+        "value": "X-User-Token",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "系统统计",
+      "item": [
+        {
+          "name": "获取系统统计数据",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "stats"]
+            }
+          }
+        },
+        {
+          "name": "获取完整分析数据",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/analytics/full?days=7&months=6",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "analytics", "full"],
+              "query": [
+                { "key": "days", "value": "7" },
+                { "key": "months", "value": "6" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "用户管理",
+      "item": [
+        {
+          "name": "分页查询用户（基础版）",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users?page=1&size=20&search=&membership=&status=",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "users"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "20" },
+                { "key": "search", "value": "" },
+                { "key": "membership", "value": "" },
+                { "key": "status", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "分页查询用户（高级版）⭐",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/advanced?page=1&size=20&membership=vip&minBalance=100&maxBalance=500&startDate=2026-05-07&endDate=2026-05-14",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "users", "advanced"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "20" },
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "membership", "value": "vip" },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "minBalance", "value": "100" },
+                { "key": "maxBalance", "value": "500" },
+                { "key": "startDate", "value": "2026-05-07" },
+                { "key": "endDate", "value": "2026-05-14" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "获取用户详情",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/user/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "user", "1"]
+            }
+          }
+        },
+        {
+          "name": "切换用户状态",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": 1,\n  \"status\": \"DISABLED\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/user/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "user", "status"]
+            }
+          }
+        },
+        {
+          "name": "给用户充值",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": 1,\n  \"amount\": 100.00\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/user/recharge",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "user", "recharge"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "批量操作 ⭐",
+      "item": [
+        {
+          "name": "批量封禁/解封用户",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userIds\": [1, 2, 3],\n  \"status\": 0\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/batch/update-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "batch", "update-status"]
+            }
+          }
+        },
+        {
+          "name": "批量发放点数",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userIds\": [1, 2, 3],\n  \"points\": 100.000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/batch/grant-points",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "batch", "grant-points"]
+            }
+          }
+        },
+        {
+          "name": "批量开通会员",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userIds\": [1, 2, 3],\n  \"membership\": \"vip\",\n  \"days\": 30\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/batch/activate-membership",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "batch", "activate-membership"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "点数管理 ⭐",
+      "item": [
+        {
+          "name": "手动增减用户点数",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": 1,\n  \"points\": 50.000,\n  \"reason\": \"活动奖励\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/points/adjust",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "points", "adjust"]
+            }
+          }
+        },
+        {
+          "name": "减少用户点数",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": 1,\n  \"points\": -30.000,\n  \"reason\": \"违规扣除\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/points/adjust",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "points", "adjust"]
+            }
+          }
+        },
+        {
+          "name": "设置每日免费次数",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": 1,\n  \"count\": 20\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/points/set-free-count",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "points", "set-free-count"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "会员管理 ⭐",
+      "item": [
+        {
+          "name": "调整会员等级",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": 1,\n  \"membership\": \"vip\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/membership/update",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "membership", "update"]
+            }
+          }
+        },
+        {
+          "name": "设置会员有效期",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": 1,\n  \"expireTime\": \"2026-12-31T23:59:59\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/membership/set-expire-time",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "membership", "set-expire-time"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "操作日志 ⭐",
+      "item": [
+        {
+          "name": "查询操作日志",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/logs?page=1&size=50&operationType=&startDate=&endDate=",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "logs"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "50" },
+                { "key": "adminId", "value": "", "disabled": true },
+                { "key": "operationType", "value": "" },
+                { "key": "startDate", "value": "" },
+                { "key": "endDate", "value": "" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "通知管理",
+      "item": [
+        {
+          "name": "获取未读通知数量",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/notifications/unread-count",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "notifications", "unread-count"]
+            }
+          }
+        },
+        {
+          "name": "获取通知列表",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/notifications?page=1&size=20&isRead=",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "notifications"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "20" },
+                { "key": "isRead", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "标记通知为已读",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/notifications/1/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "notifications", "1", "read"]
+            }
+          }
+        },
+        {
+          "name": "标记所有通知为已读",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/notifications/read-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "notifications", "read-all"]
+            }
+          }
+        },
+        {
+          "name": "删除通知",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/notifications/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "notifications", "1"]
+            }
+          }
+        },
+        {
+          "name": "获取最新未读通知",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/notifications/latest?limit=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "notifications", "latest"],
+              "query": [
+                { "key": "limit", "value": "5" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "统计分析 ⭐",
+      "item": [
+        {
+          "name": "按日查询统计数据",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/statistics/daily?startDate=2026-05-01&endDate=2026-05-14",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "daily"],
+              "query": [
+                { "key": "startDate", "value": "2026-05-01" },
+                { "key": "endDate", "value": "2026-05-14" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "按周查询统计数据",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/statistics/weekly?weeks=4",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "weekly"],
+              "query": [
+                { "key": "weeks", "value": "4" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "按月查询统计数据",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/statistics/monthly?months=6",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "monthly"],
+              "query": [
+                { "key": "months", "value": "6" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "导出用户数据报表（CSV）",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/statistics/export?type=user&startDate=2026-05-01&endDate=2026-05-14",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "export"],
+              "query": [
+                { "key": "type", "value": "user" },
+                { "key": "startDate", "value": "2026-05-01" },
+                { "key": "endDate", "value": "2026-05-14" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "导出营收数据报表（CSV）",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/statistics/export?type=revenue&startDate=2026-05-01&endDate=2026-05-14",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "export"],
+              "query": [
+                { "key": "type", "value": "revenue" },
+                { "key": "startDate", "value": "2026-05-01" },
+                { "key": "endDate", "value": "2026-05-14" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "导出业务数据报表（CSV）",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/statistics/export?type=business&startDate=2026-05-01&endDate=2026-05-14",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "export"],
+              "query": [
+                { "key": "type", "value": "business" },
+                { "key": "startDate", "value": "2026-05-01" },
+                { "key": "endDate", "value": "2026-05-14" }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

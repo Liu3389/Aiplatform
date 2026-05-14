@@ -8,24 +8,29 @@ Aiplatform-demo/
 │   ├── annotation/          # 自定义注解（RequireAdmin）
 │   ├── aspect/              # AOP切面（AdminAuthAspect）
 │   ├── common/              # 通用类（Result、ResultCode、Constants）
-│   ├── config/              # 配置类（Redis、MyBatis-Plus、Web MVC、CORS、AsyncConfig）
+│   ├── config/              # 配置类（Redis、MyBatis-Plus、Web MVC、CORS、AsyncConfig、DatabaseInitializer）
 │   ├── controller/          # 控制器（Auth、ApiKey、Chat、User、Admin）
 │   ├── dto/                 # 请求DTO
-│   ├── entity/              # 数据库实体
+│   ├── entity/              # 数据库实体（含AdminOperationLog、UserNotification、PlatformStatistics）
 │   ├── exception/           # 异常处理
 │   ├── interceptor/         # 拦截器（API Key鉴权、IP限流）
 │   ├── mapper/              # MyBatis Mapper
-│   ├── service/             # 业务服务
+│   ├── service/             # 业务服务（含AdminOperationLogService、NotificationService、StatisticsService）
 │   └── vo/                  # 响应VO
 ├── src/main/resources/
 │   ├── lua/                 # Redis Lua脚本
-│   ├── sql/                 # 数据库脚本
+│   ├── sql/                 # 数据库脚本（含migration_admin_enhanced.sql）
 │   └── application.yml      # 配置文件
-├── API_TEST.postman_collection.json  # Postman测试
-├── OPTIMIZATION_SUMMARY.md  # 优化总结
+├── API_TEST.postman_collection.json        # Postman测试（用户接口）
+├── ADMIN_API.postman_collection.json       # Postman测试（管理员接口）⭐ 新增
+├── ADMIN_API_DOCUMENTATION.md              # 管理员API文档 ⭐ 新增
+├── ADMIN_BACKEND_COMPLETION_SUMMARY.md     # 管理员后台完成总结 ⭐ 新增
 ├── README.md                # 项目说明
 ├── DEPLOYMENT.md            # 部署指南
 ├── CHECKLIST.md             # 检查清单
+├── PROJECT_SUMMARY.md       # 项目总结
+├── QUICK_REFERENCE.md       # 快速参考
+├── AI_DEVELOPMENT_TASKS.md  # 开发任务
 ├── start.sh                 # 启动脚本
 └── stop.sh                  # 停止脚本
 ```
@@ -138,6 +143,49 @@ Header: X-User-Token: {token}
 # 删除
 DELETE /api/user/api-keys/{id}
 Header: X-User-Token: {token}
+```
+
+### 管理员后台 ⭐ 新增
+```bash
+# 获取系统统计
+GET /admin/stats
+Header: X-User-Token: {adminToken}
+
+# 分页查询用户（高级版）
+GET /admin/users/advanced?page=1&size=20&membership=vip&minBalance=100&maxBalance=500
+Header: X-User-Token: {adminToken}
+
+# 批量封禁用户
+POST /admin/batch/update-status
+Header: X-User-Token: {adminToken}
+Body: { "userIds":[1,2,3], "status":0 }
+
+# 批量发放点数
+POST /admin/batch/grant-points
+Header: X-User-Token: {adminToken}
+Body: { "userIds":[1,2,3], "points":100.000 }
+
+# 手动增减点数
+POST /admin/points/adjust
+Header: X-User-Token: {adminToken}
+Body: { "userId":1, "points":50.000, "reason":"活动奖励" }
+
+# 调整会员等级
+POST /admin/membership/update
+Header: X-User-Token: {adminToken}
+Body: { "userId":1, "membership":"vip" }
+
+# 查询操作日志
+GET /admin/logs?page=1&size=50
+Header: X-User-Token: {adminToken}
+
+# 按日查询统计
+GET /admin/statistics/daily?startDate=2026-05-01&endDate=2026-05-14
+Header: X-User-Token: {adminToken}
+
+# 导出CSV报表
+GET /admin/statistics/export?type=user&startDate=2026-05-01&endDate=2026-05-14
+Header: X-User-Token: {adminToken}
 ```
 
 ## 💡 常用命令
@@ -355,7 +403,7 @@ public class AnthropicChatService {
 3. 在Controller中路由
 ```java
 if (modelName.startsWith("claude")) {
-    return anthropicChatService.chat(...);
+        return anthropicChatService.chat(...);
 }
 ```
 
@@ -386,7 +434,7 @@ if (modelName.startsWith("claude")) {
 
 **提示**: 将此文件加入书签，方便快速查阅！
 
-**最新更新**: 
+**最新更新**:
 - ✅ 免费额度逻辑修复
 - ✅ Token计算优化（更精确的估算）
 - ✅ 管理员权限AOP统一处理

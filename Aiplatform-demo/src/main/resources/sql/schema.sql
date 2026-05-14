@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS `user` (
   `password`           varchar(128) NOT NULL COMMENT '密码（BCrypt加密存储）',
   `email` varchar(128) DEFAULT NULL COMMENT '邮箱',
   `balance` decimal(10,4) NOT NULL DEFAULT '0.0000' COMMENT '账户余额（美元）',
+  `points` decimal(10,3) NOT NULL DEFAULT '100.000' COMMENT '点数余额（保留三位小数）',
   `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：0-禁用，1-启用',
   `role`               varchar(32)  NOT NULL DEFAULT 'USER' COMMENT '角色：USER/ADMIN/SUPER_ADMIN',
   `free_api_strategy`  varchar(32)           DEFAULT 'NONE' COMMENT '免费策略：NONE/UNLIMITED/QUOTA_BASED/COUNT_LIMITED/TIME_LIMITED/MODEL_SPECIFIC',
@@ -44,6 +45,8 @@ CREATE TABLE IF NOT EXISTS `model_config` (
   `api_key` varchar(128) NOT NULL COMMENT '厂商API Key',
   `input_price` decimal(10,6) NOT NULL COMMENT '每千输入Token价格（美元）',
   `output_price` decimal(10,6) NOT NULL COMMENT '每千输出Token价格（美元）',
+  `points_mode` varchar(20) DEFAULT 'STANDARD' COMMENT '点数消耗模式：FREE-免费模型, STANDARD-中端模型, PREMIUM-高端模型',
+  `points_per_request` decimal(10,3) DEFAULT NULL COMMENT '每次对话消耗的点数（保留三位小数精度，优先使用此值）',
   `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：0-禁用，1-启用',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -87,16 +90,16 @@ CREATE TABLE IF NOT EXISTS `billing_record` (
 
 -- ============================================
 -- 模型配置：免费 DeepSeek 模型 + 点数模型
--- 点数标准: free=免费, medium=1点/次, premium=3点/次
+-- 点数标准: FREE=0点/次, STANDARD=1点/次, PREMIUM=3点/次
 -- 所有模型当前均使用 DeepSeek API 后端
 -- ============================================
-INSERT INTO `model_config` (`model_name`, `provider`, `base_url`, `api_key`, `input_price`, `output_price`, `status`) VALUES
-('deepseek-chat',     'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000000, 0.000000, 1),
-('deepseek-reasoner', 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000000, 0.000000, 1),
-('deepseek-v4-pro',   'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000100, 0.000100, 1),
-('deepseek-v4-flash', 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000000, 0.000000, 1),
-('gpt-3.5-turbo',     'openai',   'https://api.openai.com/v1/chat/completions',   'sk-your-openai-api-key',                   0.001000, 0.002000, 1),
-('gpt-4o',            'openai',   'https://api.openai.com/v1/chat/completions',   'sk-your-openai-api-key',                   0.005000, 0.015000, 1),
-('chatgpt-5.5',       'openai',   'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.003000, 0.003000, 1),
-('gemini-3.1-pro',    'google',   'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.001000, 0.001000, 1),
-('claude-opus-4.7',   'anthropic','https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.003000, 0.003000, 1);
+INSERT INTO `model_config` (`model_name`, `provider`, `base_url`, `api_key`, `input_price`, `output_price`, `points_mode`, `points_per_request`, `status`) VALUES
+('deepseek-chat',     'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000000, 0.000000, 'FREE', 0.000, 1),
+('deepseek-reasoner', 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000000, 0.000000, 'STANDARD', 1.000, 1),
+('deepseek-v4-pro',   'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000100, 0.000100, 'PREMIUM', 3.000, 1),
+('deepseek-v4-flash', 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000000, 0.000000, 'FREE', 0.000, 1),
+('gpt-3.5-turbo',     'openai',   'https://api.openai.com/v1/chat/completions',   'sk-your-openai-api-key',                   0.001000, 0.002000, 'STANDARD', 1.000, 1),
+('gpt-4o',            'openai',   'https://api.openai.com/v1/chat/completions',   'sk-your-openai-api-key',                   0.005000, 0.015000, 'PREMIUM', 3.000, 1),
+('chatgpt-5.5',       'openai',   'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.003000, 0.003000, 'PREMIUM', 3.000, 1),
+('gemini-3.1-pro',    'google',   'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.001000, 0.001000, 'STANDARD', 1.000, 1),
+('claude-opus-4.7',   'anthropic','https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.003000, 0.003000, 'PREMIUM', 3.000, 1);
