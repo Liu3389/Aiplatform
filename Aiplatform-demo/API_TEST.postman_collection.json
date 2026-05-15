@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AI Gateway Platform API - 用户接口",
-    "description": "凌点AI模型调度网关用户接口测试 - 使用 X-User-Token Header 认证\n\n**最新更新 (2026-05-15)**:\n- ✅ 更新 DeepSeek API 配置（使用最新 base_url）\n- ✅ 移除已弃用模型（deepseek-chat, deepseek-reasoner）\n- ✅ 仅保留 deepseek-v4-flash（免费）和 deepseek-v4-pro（高级）\n- ✅ 所有模型统一使用 DeepSeek API Key: REDACTED_PROVIDER_API_KEY\n- ✅ 新增聊天记录管理模块（游标分页 + 冷热分离）\n- ✅ 新增优惠券使用记录功能\n- ✅ 新增充值记录真实数据查询\n- ✅ 新增套餐订阅系统（身份标识展示）\n- ✅ 新增用户自定义 API Key 管理（加密存储）⭐NEW\n- ✅ 统一点数体系，新增点数账单查询接口 ⭐NEW\n\n**接口总数**: 53个API接口\n\n**主要功能模块**:\n1. 用户认证（6个接口）\n2. API Key管理（4个接口）\n3. 会话管理（4个接口）\n4. 聊天对话（4个接口）\n5. 聊天记录管理（3个接口）\n6. 限流与安全测试（3个接口）\n7. 用户中心（12个接口）\n8. 通知与优惠券（6个接口）\n9. 套餐订阅管理（5个接口）\n10. 点数账单管理（2个接口 - 新增）⭐NEW\n11. 用户自定义 API Key 管理（4个接口）",
+    "description": "凌点AI模型调度网关用户接口测试 - 使用 X-User-Token Header 认证\n\n**最新更新 (2026-05-15)**:\n- ✅ 更新 DeepSeek API 配置（使用最新 base_url）\n- ✅ 移除已弃用模型（deepseek-chat, deepseek-reasoner）\n- ✅ 仅保留 deepseek-v4-flash（免费）和 deepseek-v4-pro（高级）\n- ✅ 所有模型统一使用 DeepSeek API Key: REDACTED_PROVIDER_API_KEY\n- ✅ 新增聊天记录管理模块（游标分页 + 冷热分离）\n- ✅ 新增优惠券使用记录功能\n- ✅ 新增充值记录真实数据查询\n- ✅ 新增套餐订阅系统（身份标识展示）\n- ✅ 新增用户自定义 API Key 管理（加密存储）⭐NEW\n- ✅ 统一点数体系，新增点数账单查询接口 ⭐NEW\n- ✅ 新增点数余额查询接口 ⭐NEW\n\n**接口总数**: 54个API接口\n\n**主要功能模块**:\n1. 用户认证（6个接口）\n2. API Key管理（4个接口）\n3. 会话管理（4个接口）\n4. 聊天对话（4个接口）\n5. 聊天记录管理（3个接口）\n6. 限流与安全测试（3个接口）\n7. 用户中心（13个接口 - 新增 /points）\n8. 通知与优惠券（6个接口）\n9. 套餐订阅管理（5个接口）\n10. 点数账单管理（2个接口 - 新增）⭐NEW\n11. 用户自定义 API Key 管理（4个接口）",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -676,7 +676,8 @@
               "host": ["{{baseUrl}}"],
               "path": ["user", "recharge"],
               "query": [{ "key": "amount", "value": "100" }]
-            }
+            },
+            "description": "用户充值（增加余额 balance）\n\n⚠️ 重要说明：\n- 充值只增加人民币余额（balance），不直接增加点数\n- 需要使用余额购买套餐才能获得点数和会员权益\n- 套餐制度：越贵的套餐越划算（例如：100元=1500点，比10元=100点更优惠）\n\n使用流程：\n1. 充值 → 增加 balance\n2. 购买套餐 → 从 balance 扣款，获得 points + 会员权益\n\n参数：\n- amount: 充值金额（元），必须大于0"
           }
         },
         {
@@ -696,7 +697,8 @@
               "raw": "{{baseUrl}}/api/user/recharge-with-coupon",
               "host": ["{{baseUrl}}"],
               "path": ["user", "recharge-with-coupon"]
-            }
+            },
+            "description": "使用优惠券充值（增加余额 balance）\n\n⚠️ 重要说明：\n- 充值只增加人民币余额，不直接增加点数\n- 优惠券用于减少实际支付金额\n- 需要使用余额购买套餐才能获得点数\n\n请求体：\n- amount: 充值金额（元）\n- couponId: 优惠券ID（可选）\n\n返回数据：\n- success: 是否成功\n- amount: 原始金额\n- actualAmount: 实际支付金额（扣除优惠后）\n- discount: 优惠金额\n- balanceBefore: 充值前余额\n- balanceAfter: 充值后余额"
           }
         },
         {
@@ -748,6 +750,24 @@
               "path": ["user", "balance"]
             }
           }
+        },
+        {
+          "name": "查询点数余额",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{token}}" },
+              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/points",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "points"]
+            }
+          },
+          "response": [],
+          "event": [],
+          "description": "查询当前用户的点数余额\n\n返回数据：\n- 当前点数余额（保留三位小数）\n- 从 Redis 读取，性能高\n- 如果 Redis 不存在，自动从数据库同步"
         },
         {
           "name": "获取免费额度",
@@ -1468,7 +1488,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["user", "subscriptions", "purchase"]
             },
-            "description": "购买套餐，支持使用优惠券。packageCode可选值：free/basic/premium/ultimate"
+            "description": "购买套餐（从 balance 扣款，获得 points + 会员权益）\n\n⚠️ 重要说明：\n- 购买前需要先充值，确保 balance 充足\n- 购买后会从 balance 扣除相应金额\n- 获得套餐对应的点数和会员权益\n- 越贵的套餐性价比越高（例如：旗舰版每元6.67点 vs 基础版每元3.34点）\n\n请求体：\n- packageCode: 套餐代码（必填），可选值：free/basic/premium/ultimate\n- couponId: 优惠券ID（可选），用于享受折扣\n\n返回数据：\n- subscription: 订阅记录\n- pointsGranted: 授予的点数\n- pricePaid: 实际支付金额\n- expireTime: 过期时间\n- identityLabel: 身份标识\n\n套餐示例：\n- free: 免费版 (0元 = 0点)\n- basic: 基础版 (29.9元 = 100点)\n- premium: 专业版 (99.9元 = 500点) ✅\n- ultimate: 旗舰版 (299.9元 = 2000点) ✅✅"
           }
         },
         {

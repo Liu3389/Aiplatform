@@ -61,7 +61,7 @@ public class PointsService {
      * @param modelName 模型名称
      * @return 是否成功
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public boolean deductPoints(Long userId, BigDecimal points, String businessId, String modelName) {
         // 保留三位小数精度进行计算
         BigDecimal deductPoints = points.setScale(3, RoundingMode.HALF_DOWN);
@@ -85,8 +85,9 @@ public class PointsService {
         // 计算新余额（保留三位小数）
         BigDecimal newBalance = currentPoints.subtract(deductPoints).setScale(3, RoundingMode.HALF_DOWN);
         
-        // 更新Redis
+        // ✅ 同时更新 Redis 和数据库
         redisTemplate.opsForValue().set(key, newBalance.toString());
+        updateUserPointsInDB(userId, newBalance);
         
         // 记录账单（返回给前端时保留两位小数）
         recordBill(userId, "DEDUCT", deductPoints.negate(), currentPoints, newBalance, 
@@ -106,7 +107,7 @@ public class PointsService {
      * @param expireTime 有效期（可选）
      * @return 新余额
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public BigDecimal addPoints(Long userId, BigDecimal points, String changeType, 
                                 String businessId, String description, LocalDateTime expireTime) {
         // 保留三位小数精度
@@ -125,8 +126,9 @@ public class PointsService {
         // 计算新余额（保留三位小数）
         BigDecimal newBalance = currentPoints.add(addPoints).setScale(3, RoundingMode.HALF_DOWN);
         
-        // 更新Redis
+        // ✅ 同时更新 Redis 和数据库
         redisTemplate.opsForValue().set(key, newBalance.toString());
+        updateUserPointsInDB(userId, newBalance);
         
         // 记录账单
         recordBill(userId, changeType, addPoints, currentPoints, newBalance, 
@@ -156,6 +158,20 @@ public class PointsService {
         
         log.info("同步用户点数到Redis: userId={}, points={}", userId, points);
         return points;
+    }
+
+    /**
+     * 更新用户点数到数据库
+     * @param userId 用户ID
+     * @param newPoints 新点数
+     */
+    private void updateUserPointsInDB(Long userId, BigDecimal newPoints) {
+        User user = new User();
+        user.setId(userId);
+        user.setPoints(newPoints);
+        userMapper.updateById(user);
+        
+        log.debug("更新用户点数到数据库: userId={}, points={}", userId, newPoints);
     }
 
     /**
@@ -224,7 +240,7 @@ public class PointsService {
      * @param dailyFreePoints 每日免费点数
      * @return 发放后的余额
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public BigDecimal grantDailyFreePoints(Long userId, BigDecimal dailyFreePoints) {
         String grantKey = "daily_grant:" + userId + ":" + LocalDateTime.now().toLocalDate();
         
@@ -257,7 +273,7 @@ public class PointsService {
      * @param userId 用户ID
      * @return 清理的点数
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public BigDecimal cleanExpiredPoints(Long userId) {
         LocalDateTime now = LocalDateTime.now();
         

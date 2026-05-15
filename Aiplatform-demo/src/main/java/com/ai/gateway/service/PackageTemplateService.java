@@ -58,7 +58,7 @@ public class PackageTemplateService {
     /**
      * 创建套餐模板
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public PackageTemplate createPackage(PackageTemplate template) {
         // 检查套餐代码是否已存在
         PackageTemplate existing = getByCode(template.getPackageCode());
@@ -75,7 +75,7 @@ public class PackageTemplateService {
     /**
      * 更新套餐模板
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void updatePackage(PackageTemplate template) {
         packageTemplateMapper.updateById(template);
         log.info("更新套餐模板成功: id={}, code={}", template.getId(), template.getPackageCode());
@@ -84,7 +84,7 @@ public class PackageTemplateService {
     /**
      * 上架/下架套餐
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void togglePackageStatus(Long id, Integer status) {
         PackageTemplate template = new PackageTemplate();
         template.setId(id);
@@ -96,7 +96,7 @@ public class PackageTemplateService {
     /**
      * 删除套餐模板
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void deletePackage(Long id) {
         packageTemplateMapper.deleteById(id);
         log.info("删除套餐模板: id={}", id);

@@ -29,6 +29,7 @@ public class AdminService {
     private final ApiKeyMapper apiKeyMapper;
     private final CallLogMapper callLogMapper;
     private final UserMapper userMapper;
+    private final PointsService pointsService;
 
     public SystemStatsVO getSystemStats() {
         SystemStatsVO stats = new SystemStatsVO();
@@ -337,15 +338,18 @@ public class AdminService {
     /**
      * 批量发放点数
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public int batchGrantPoints(List<Long> userIds, BigDecimal points) {
         int successCount = 0;
         for (Long userId : userIds) {
-            User user = userMapper.selectById(userId);
-            if (user != null) {
-                user.setPoints(user.getPoints().add(points));
-                userMapper.updateById(user);
+            try {
+                // ✅ 使用 PointsService 统一处理，确保数据库+Redis+账单一致
+                String businessId = "admin_batch_" + System.currentTimeMillis() + "_" + userId;
+                pointsService.addPoints(userId, points, "GRANT", businessId, 
+                        "管理员批量发放点数", null);
                 successCount++;
+            } catch (Exception e) {
+                log.error("批量发放点数失败: userId={}, error={}", userId, e.getMessage());
             }
         }
         log.info("批量发放点数: 总数={}, 成功={}, 点数={}", userIds.size(), successCount, points);
@@ -357,29 +361,22 @@ public class AdminService {
     /**
      * 手动增减用户点数
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void adjustUserPoints(Long userId, BigDecimal points, String reason) {
-        User user = userMapper.selectById(userId);
-        if (user == null) {
-            throw new RuntimeException("用户不存在");
-        }
+        // ✅ 使用 PointsService 统一处理，确保数据库+Redis+账单一致
+        String changeType = points.compareTo(BigDecimal.ZERO) >= 0 ? "GRANT" : "DEDUCT";
+        String businessId = "admin_adjust_" + System.currentTimeMillis();
         
-        BigDecimal newPoints = user.getPoints().add(points);
-        if (newPoints.compareTo(BigDecimal.ZERO) < 0) {
-            throw new RuntimeException("点数不能为负数");
-        }
+        pointsService.addPoints(userId, points.abs(), changeType, businessId, 
+                "管理员调整: " + reason, null);
         
-        user.setPoints(newPoints);
-        userMapper.updateById(user);
-        
-        log.info("调整用户点数: userId={}, 调整={}, 原因={}, 新余额={}", 
-                userId, points, reason, newPoints);
+        log.info("调整用户点数: userId={}, 调整={}, 原因={}", userId, points, reason);
     }
 
     /**
      * 设置用户每日免费次数
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void setDailyFreeCount(Long userId, int count) {
         User user = userMapper.selectById(userId);
         if (user == null) {
@@ -397,7 +394,7 @@ public class AdminService {
     /**
      * 调整用户会员等级
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void updateMembership(Long userId, String membership) {
         User user = userMapper.selectById(userId);
         if (user == null) {
@@ -413,7 +410,7 @@ public class AdminService {
     /**
      * 设置会员有效期
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void setMembershipExpireTime(Long userId, LocalDateTime expireTime) {
         User user = userMapper.selectById(userId);
         if (user == null) {
@@ -429,7 +426,7 @@ public class AdminService {
     /**
      * 批量开通会员
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public int batchActivateMembership(List<Long> userIds, String membership, int days) {
         LocalDateTime expireTime = LocalDateTime.now().plusDays(days);
         int successCount = 0;

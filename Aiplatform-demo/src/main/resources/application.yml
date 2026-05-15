@@ -65,6 +65,10 @@ api:
   encryption:
     key: ${API_ENCRYPTION_KEY:}  # AES-256 密钥（Base64编码），建议通过环境变量设置
 
+# CORS 跨域配置
+cors:
+  allowed-origins: ${ALLOWED_ORIGINS:*}  # 允许的域名，多个用逗号分隔。生产环境建议明确指定域名
+
 logging:
   level:
     root: WARN

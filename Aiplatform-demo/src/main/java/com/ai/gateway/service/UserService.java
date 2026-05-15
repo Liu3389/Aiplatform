@@ -236,12 +236,8 @@ public class UserService {
 
         billingService.syncUserBalanceToRedis(userId, balanceAfter);
         
-        // 记录点数账单（如果有实际充值金额）
-        if (actualAmount.compareTo(BigDecimal.ZERO) > 0) {
-            String businessId = "recharge_" + System.currentTimeMillis();
-            pointsService.addPoints(userId, actualAmount, "RECHARGE", businessId, 
-                    "充值" + (discount.compareTo(BigDecimal.ZERO) > 0 ? "（使用优惠券优惠" + discount + "）" : ""), null);
-        }
+        // ⚠️ 注意：充值只增加余额（balance），不直接增加点数
+        // 用户需要使用余额购买套餐才能获得点数和会员权益
 
         result.put("success", true);
         result.put("amount", amount);

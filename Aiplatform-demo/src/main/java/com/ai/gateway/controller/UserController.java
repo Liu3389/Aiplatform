@@ -71,6 +71,17 @@ public class UserController {
         return Result.success(userService.getBalance(userId));
     }
 
+    /**
+     * 查询点数余额
+     */
+    @GetMapping("/points")
+    public Result<BigDecimal> getPoints(@RequestHeader("X-User-Token") String token) {
+        Long userId = tokenService.getUserIdFromToken(token);
+        if (userId == null) return Result.error(401, "Token无效或已过期");
+        BigDecimal points = pointsService.getUserPoints(userId);
+        return Result.success(points);
+    }
+
     @GetMapping("/free-quota")
     public Result<Map<String, Integer>> getFreeQuota(@RequestHeader("X-User-Token") String token) {
         Long userId = tokenService.getUserIdFromToken(token);

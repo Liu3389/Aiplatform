@@ -22,7 +22,7 @@ ALTER TABLE `call_log` ADD INDEX IF NOT EXISTS `idx_create_time` (`create_time`)
 ALTER TABLE `call_log` ADD INDEX IF NOT EXISTS `idx_status` (`status`);
 
 -- points_bill表索引优化
-ALTER TABLE `points_bill` ADD INDEX IF NOT EXISTS `idx_user_type` (`user_id`, `type`);
+ALTER TABLE `points_bill` ADD INDEX IF NOT EXISTS `idx_user_type` (`user_id`, `change_type`);
 ALTER TABLE `points_bill` ADD INDEX IF NOT EXISTS `idx_expire_time` (`expire_time`);
 ALTER TABLE `points_bill` ADD INDEX IF NOT EXISTS `idx_create_time` (`create_time`);
 

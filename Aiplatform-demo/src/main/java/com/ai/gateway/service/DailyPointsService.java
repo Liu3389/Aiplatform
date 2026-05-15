@@ -32,7 +32,7 @@ public class DailyPointsService {
      * 0 0 0 * * ? 表示每天0点执行
      */
     @Scheduled(cron = "0 0 0 * * ?")
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void distributeDailyPoints() {
         log.info("开始执行每日点数发放任务...");
         
@@ -80,7 +80,7 @@ public class DailyPointsService {
      * 手动触发每日点数发放（用于测试或补发）
      * @param userId 用户ID，如果为null则给所有用户发放
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void manualDistributePoints(Long userId) {
         if (userId != null) {
             // 给指定用户发放

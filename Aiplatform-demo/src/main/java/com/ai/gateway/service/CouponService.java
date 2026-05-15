@@ -43,7 +43,7 @@ public class CouponService {
         return couponUsageRecordMapper.selectList(wrapper);
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Coupon createCoupon(Long userId, BigDecimal amount, BigDecimal thresholdAmount,
                                 String applicablePlan, LocalDateTime expireTime) {
         Coupon c = new Coupon();
@@ -59,7 +59,7 @@ public class CouponService {
         return c;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public int sendToAllUsers(BigDecimal amount, BigDecimal thresholdAmount,
                                String applicablePlan, LocalDateTime expireTime) {
         List<User> users = userMapper.selectList(new LambdaQueryWrapper<>());
@@ -70,7 +70,7 @@ public class CouponService {
         return users.size();
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public int sendToMembership(String membership, BigDecimal amount, BigDecimal thresholdAmount,
                                  String applicablePlan, LocalDateTime expireTime) {
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
@@ -83,7 +83,7 @@ public class CouponService {
         return users.size();
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public int sendToRecentUsers(int days, BigDecimal amount, BigDecimal thresholdAmount,
                                   String applicablePlan, LocalDateTime expireTime) {
         LocalDateTime since = LocalDateTime.now().minusDays(days);
@@ -97,7 +97,7 @@ public class CouponService {
         return users.size();
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public BigDecimal useCoupon(Long userId, Long couponId, BigDecimal orderAmount, String plan, 
                                 String orderType, String orderId) {
         Coupon c = couponMapper.selectById(couponId);

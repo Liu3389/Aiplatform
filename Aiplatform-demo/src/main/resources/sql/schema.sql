@@ -93,6 +93,29 @@ CREATE TABLE IF NOT EXISTS `billing_record` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='计费记录表';
 
 -- ============================================
+-- 点数明细账单表（统一点数体系）
+-- ============================================
+CREATE TABLE IF NOT EXISTS `points_bill` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id` BIGINT NOT NULL COMMENT '用户ID',
+  `change_type` VARCHAR(20) NOT NULL COMMENT '变动类型：RECHARGE-充值, DEDUCT-扣除, GRANT-发放, EXPIRE-过期清零, REFUND-退款',
+  `points_change` DECIMAL(10,3) NOT NULL COMMENT '变动点数（正数为增加，负数为减少，保留三位小数）',
+  `balance_before` DECIMAL(10,3) NOT NULL COMMENT '变动前点数余额',
+  `balance_after` DECIMAL(10,3) NOT NULL COMMENT '变动后点数余额',
+  `business_id` VARCHAR(100) DEFAULT NULL COMMENT '关联业务ID（如对话ID、充值订单ID等）',
+  `description` VARCHAR(500) DEFAULT NULL COMMENT '业务描述',
+  `model_name` VARCHAR(100) DEFAULT NULL COMMENT '模型名称（如果是对话消耗）',
+  `expire_time` DATETIME DEFAULT NULL COMMENT '有效期（过期清零时使用）',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
+  PRIMARY KEY (`id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_create_time` (`create_time`),
+  KEY `idx_business_id` (`business_id`),
+  KEY `idx_user_time` (`user_id`, `create_time` DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='点数明细账单表';
+
+-- ============================================
 -- 模型配置：DeepSeek 模型
 -- 点数标准: FREE=0点/次, STANDARD=1点/次, PREMIUM=3点/次
 -- 注意：deepseek-chat 和 deepseek-reasoner 将于 2026/07/24 弃用

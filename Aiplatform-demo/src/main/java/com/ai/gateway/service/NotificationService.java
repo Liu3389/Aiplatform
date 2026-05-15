@@ -32,7 +32,7 @@ public class NotificationService {
      * @param type 通知类型
      * @param relatedId 关联ID
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void sendNotification(Long userId, String title, String content, 
                                 String type, Long relatedId) {
         UserNotification notification = new UserNotification();
@@ -57,7 +57,7 @@ public class NotificationService {
      * @param type 通知类型
      * @param relatedId 关联ID
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void batchSendNotification(List<Long> userIds, String title, 
                                      String content, String type, Long relatedId) {
         int successCount = 0;
@@ -122,7 +122,7 @@ public class NotificationService {
      * @param notificationId 通知ID
      * @param userId 用户ID
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void markAsRead(Long notificationId, Long userId) {
         UserNotification notification = notificationMapper.selectById(notificationId);
         
@@ -147,7 +147,7 @@ public class NotificationService {
      * 标记所有通知为已读
      * @param userId 用户ID
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void markAllAsRead(Long userId) {
         LambdaQueryWrapper<UserNotification> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(UserNotification::getUserId, userId)
@@ -170,7 +170,7 @@ public class NotificationService {
      * @param notificationId 通知ID
      * @param userId 用户ID
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteNotification(Long notificationId, Long userId) {
         UserNotification notification = notificationMapper.selectById(notificationId);
         

@@ -481,7 +481,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["admin", "points", "adjust"]
             },
-            "description": "手动调整用户点数\n\npoints为正数表示增加，负数表示扣除\nreason：调整原因（必填）"
+            "description": "手动调整用户点数（活动奖励、补偿等场景）\n\n⚠️ 重要说明：\n- points为正数表示增加，负数表示扣除\n- 此操作直接修改用户的 points，不涉及 balance\n- 适用于：活动奖励、错误补偿、违规扣除等场景\n- 所有操作会自动记录到 points_bill 表\n\n请求体：\n- userId: 用户ID（必填）\n- points: 点数变动量（必填），正数增加，负数扣除\n- reason: 调整原因（必填），会记录在账单描述中\n\n示例：\n- 活动奖励: {\"userId\": 1, \"points\": 50.000, \"reason\": \"新用户注册奖励\"}\n- 错误补偿: {\"userId\": 1, \"points\": 10.000, \"reason\": \"系统故障补偿\"}\n- 违规扣除: {\"userId\": 1, \"points\": -20.000, \"reason\": \"滥用API扣除\"}"
           },
           "response": []
         },
@@ -1147,7 +1147,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["admin", "packages", "create"]
             },
-            "description": "创建新的套餐模板"
+            "description": "创建新的套餐模板\n\n⚠️ 重要说明：\n- 套餐代码（packageCode）必须唯一\n- 越贵的套餐应该设置更高的性价比（每元获得的点数更多）\n- 套餐一旦创建，用户即可购买\n\n关键字段：\n- packageCode: 套餐代码（必填，唯一标识），例如：basic/premium/ultimate\n- packageName: 套餐名称（必填），例如：基础版/专业版/旗舰版\n- identityLabel: 身份标识（可选），例如：畅享会员/尊享会员/至尊会员\n- points: 包含点数（必填），用户购买后获得的点数\n- price: 价格（必填），单位：元\n- durationDays: 有效期天数（可选），NULL表示永久\n- dailyCallLimit: 每日调用限制（可选），0表示无限制\n- monthlyCallLimit: 每月调用限制（可选），0表示无限制\n- maxTokensPerCall: 单次最大Token数（可选），0表示无限制\n- priorityLevel: 优先级等级（可选），数字越大优先级越高\n- features: 特性说明（可选），JSON格式\n- sortOrder: 排序顺序（可选），数字越小越靠前\n\n示例（体现越贵越划算）：\n- 基础版: 29.9元 = 100点 (每元3.34点)\n- 专业版: 99.9元 = 500点 (每元5.01点) ✅\n- 旗舰版: 299.9元 = 2000点 (每元6.67点) ✅✅"
           },
           "response": []
         },
@@ -1174,7 +1174,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["admin", "packages", "update"]
             },
-            "description": "更新套餐模板信息"
+            "description": "更新套餐模板信息\n\n⚠️ 注意事项：\n- 只能更新部分字段，不能修改 packageCode\n- 修改价格和点数会影响新购买的用戶\n- 已购买的订阅不受影响\n\n可更新字段：\n- id: 套餐ID（必填）\n- packageName: 套餐名称\n- description: 套餐描述\n- identityLabel: 身份标识\n- points: 包含点数\n- price: 价格\n- durationDays: 有效期天数\n- dailyCallLimit: 每日调用限制\n- monthlyCallLimit: 每月调用限制\n- maxTokensPerCall: 单次最大Token数\n- priorityLevel: 优先级等级\n- features: 特性说明\n- status: 状态（0-下架，1-上架）\n- sortOrder: 排序顺序\n\n建议：\n- 调整价格时保持“越贵越划算”的原则\n- 下架套餐前确认没有活跃订阅"
           },
           "response": []
         },
@@ -1201,7 +1201,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["admin", "packages", "toggle-status"]
             },
-            "description": "上架(status=1)或下架(status=0)套餐"
+            "description": "上架(status=1)或下架(status=0)套餐\n\n⚠️ 重要说明：\n- 下架的套餐用户无法购买，但已购买的订阅仍然有效\n- 上架的套餐会立即对用户可见\n- 常用于：临时促销、库存不足、套餐调整等场景\n\n请求体：\n- id: 套餐ID（必填）\n- status: 状态（必填），1-上架，0-下架\n\n使用场景：\n- 节假日促销活动：先下架旧套餐，上架限时优惠套餐\n- 库存管理：某套餐点数不足时暂时下架\n- 套餐优化：调整套餐内容后重新上架"
           },
           "response": []
         },
@@ -1220,7 +1220,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["admin", "packages", "1"]
             },
-            "description": "删除指定的套餐模板"
+            "description": "删除指定的套餐模板\n\n⚠️ 警告：\n- 删除操作不可恢复！\n- 只能删除没有被任何用户购买的套餐\n- 如果有活跃订阅，需要先处理完所有订阅\n\n建议流程：\n1. 先下架套餐（status=0）\n2. 等待所有订阅过期\n3. 确认没有活跃订阅后再删除\n\n或者：\n- 如果只是不想让用户购买，建议使用“下架”而不是“删除”\n- 下架可以保留历史数据，方便后续统计和分析"
           },
           "response": []
         }

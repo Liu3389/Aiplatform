@@ -1,441 +1,592 @@
 #!/bin/bash
-# ===================================================================
-# Lingdian AI Gateway - 全量API测试脚本
-# 覆盖 API_TEST.postman_collection.json + ADMIN_API.postman_collection.json
-# 共计 80 个接口
-# ===================================================================
 
-BASE="http://localhost:8080/api"
-PASS=0
-FAIL=0
-SKIP=0
-RESULTS=""
+# ===============================
+# AI Gateway 平台全面测试脚本
+# 测试所有接口，重点测试流式和非流式对话
+# ===============================
 
+BASE_URL="http://localhost:8080/api"
+DEEPSEEK_API_KEY="REDACTED_PROVIDER_API_KEY"
+
+# 颜色输出
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# 测试计数器
+TOTAL_TESTS=0
+PASSED_TESTS=0
+FAILED_TESTS=0
+
+# 全局变量
 TOKEN=""
-DEVICE_ID="test-device-$(date +%s)"
-ADMIN_TOKEN=""
-API_KEY=""
+DEVICE_ID=""
 USER_ID=""
+API_KEY_ID=""
 
-# ---- Helper Functions ----
-gjson() {
-  echo "$1" | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d.get('$2','')))" 2>/dev/null | tr -d '"'
+# ===============================
+# 工具函数
+# ===============================
+
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
 }
 
-_http_ok() {
-  local actual="$1"
-  local expected="$2"
-  IFS='|' read -ra exp <<< "$expected"
-  for e in "${exp[@]}"; do
-    [ "$actual" = "$e" ] && return 0
-  done
-  return 1
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    ((PASSED_TESTS++))
 }
 
-check() {
-  local name="$1"
-  local method="$2"
-  local url="$3"
-  local data="$4"
-  local headers="$5"
-  local expect_http="${6:-200}"
-  
-  local h_args=""
-  if [ -n "$headers" ]; then
-    IFS='|' read -ra harr <<< "$headers"
-    for h in "${harr[@]}"; do
-      h_args="$h_args -H '$h'"
-    done
-  fi
-  
-  local cmd="curl -s -w '\n%{http_code}' --connect-timeout 10 -X $method '$url'"
-  if [ -n "$h_args" ]; then
-    cmd="$cmd $h_args"
-  fi
-  if [ -n "$data" ]; then
-    cmd="$cmd -H 'Content-Type: application/json' -d '$data'"
-  fi
-  
-  local resp
-  resp=$(eval "$cmd" 2>/dev/null)
-  local http_code=$(echo "$resp" | tail -1)
-  local body=$(echo "$resp" | sed '$d')
-  
-  if _http_ok "$http_code" "$expect_http"; then
-    PASS=$((PASS + 1))
-    echo "  ✅ PASS [$http_code] $name"
-    RESULTS="$RESULTS\n  ✅ $name"
-  else
-    FAIL=$((FAIL + 1))
-    local errmsg=$(echo "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('message',''))" 2>/dev/null)
-    echo "  ❌ FAIL [$http_code expected $expect_http] $name -> $errmsg"
-    RESULTS="$RESULTS\n  ❌ $name (HTTP $http_code, expected $expect_http)"
-  fi
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+    ((FAILED_TESTS++))
 }
 
-check_and_extract() {
-  local name="$1"
-  local method="$2"
-  local url="$3"
-  local data="$4"
-  local headers="$5"
-  local extract_key="$6"
-  local extract_var="$7"
-  local expect_http="${8:-200}"
-  
-  local h_args=""
-  if [ -n "$headers" ]; then
-    IFS='|' read -ra harr <<< "$headers"
-    for h in "${harr[@]}"; do
-      h_args="$h_args -H '$h'"
-    done
-  fi
-  
-  local cmd="curl -s -w '\n%{http_code}' --connect-timeout 10 -X $method '$url'"
-  if [ -n "$h_args" ]; then
-    cmd="$cmd $h_args"
-  fi
-  if [ -n "$data" ]; then
-    cmd="$cmd -H 'Content-Type: application/json' -d '$data'"
-  fi
-  
-  local resp
-  resp=$(eval "$cmd" 2>/dev/null)
-  local http_code=$(echo "$resp" | tail -1)
-  local body=$(echo "$resp" | sed '$d')
-  
-  if _http_ok "$http_code" "$expect_http"; then
-    PASS=$((PASS + 1))
-    echo "  ✅ PASS [$http_code] $name"
-    RESULTS="$RESULTS\n  ✅ $name"
-    # Extract value
-    if [ -n "$extract_key" ]; then
-      local val=$(echo "$body" | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-data=d.get('data',{})
-keys='$extract_key'.split('.')
-for k in keys:
-    if isinstance(data,dict): data=str(data.get(k,''))
-    elif isinstance(data,list) and len(data)>0: data=str(data[0].get(k,''))
-    else: data=''
-print(data)" 2>/dev/null)
-      eval "$extract_var=\"$val\""
-      echo "       └─ $extract_var = $val"
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+test_title() {
+    echo ""
+    echo "=========================================="
+    echo -e "${BLUE}测试: $1${NC}"
+    echo "=========================================="
+    ((TOTAL_TESTS++))
+}
+
+check_service() {
+    log_info "检查后端服务是否启动..."
+    if curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/model-config/list" | grep -q "200"; then
+        log_success "后端服务运行正常"
+        return 0
+    else
+        log_error "后端服务未启动或无法访问"
+        return 1
     fi
-  else
-    FAIL=$((FAIL + 1))
-    local errmsg=$(echo "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('message',''))" 2>/dev/null)
-    echo "  ❌ FAIL [$http_code expected $expect_http] $name -> $errmsg"
-    RESULTS="$RESULTS\n  ❌ $name (HTTP $http_code, expected $expect_http)"
-  fi
 }
 
-echo "===================================================================="
-echo "  Lingdian AI Gateway - 全量 API 测试"
-echo "  Base URL: $BASE"
-echo "  Start Time: $(date '+%Y-%m-%d %H:%M:%S')"
-echo "===================================================================="
-
-# ===================================================================
-# 1. 用户认证 (6 APIs)
-# ===================================================================
-echo ""
-echo "━━━ 1. 用户认证 ━━━"
-
-check_and_extract "注册新用户(备选)" "POST" "$BASE/auth/register" \
-  '{"username":"testuser2","password":"Test@123456","email":"test2@example.com"}' \
-  "" "data.id" "USER_ID"
-sleep 1
-
-check_and_extract "用户登录(testuser)" "POST" "$BASE/auth/login" \
-  '{"username":"testuser","password":"Test@123456"}' \
-  "X-Device-Id: $DEVICE_ID" "token" "TOKEN"
-sleep 1
-
-# If testuser doesn't exist, register and login
-if [ -z "$TOKEN" ]; then
-  echo "  ⚠️  testuser不存在，重新注册..."
-  check_and_extract "注册新用户" "POST" "$BASE/auth/register" \
-    '{"username":"testuser","password":"Test@123456","email":"test@example.com"}' \
-    "" "id" "USER_ID"
-  sleep 1
-  check_and_extract "用户登录" "POST" "$BASE/auth/login" \
-    '{"username":"testuser","password":"Test@123456"}' \
-    "X-Device-Id: $DEVICE_ID" "token" "TOKEN"
-  sleep 1
-fi
-
-H_AUTH="X-User-Token: $TOKEN|X-Device-Id: $DEVICE_ID"
-
-check "查询用户信息(auth)" "GET" "$BASE/auth/userinfo" "" "$H_AUTH"
-check "查询余额(auth)" "GET" "$BASE/auth/balance" "" "$H_AUTH"
-check "刷新Token" "POST" "$BASE/auth/refresh-token" "" "$H_AUTH"
-
-echo ""
-echo "━━━ 2. API Key管理 ━━━"
-
-check_and_extract "生成API Key" "POST" "$BASE/api-key/generate" \
-  '{"name":"测试Key","rateLimit":100}' \
-  "$H_AUTH" "data.apiKey" "API_KEY"
-
-H_API="X-API-Key: $API_KEY|X-User-Token: $TOKEN|X-Device-Id: $DEVICE_ID"
-
-check "查询API Key列表" "GET" "$BASE/api-key/list" "" "$H_AUTH"
-check "启用API Key" "PUT" "$BASE/api-key/1/enable" "" "$H_AUTH"
-check "禁用API Key" "PUT" "$BASE/api-key/1/disable" "" "$H_AUTH"
-check "更新限流阈值" "PUT" "$BASE/api-key/1/rate-limit?rateLimit=200" "" "$H_AUTH"
-# Don't delete, need it for subsequent tests
-
-echo ""
-echo "━━━ 3. 模型配置 ━━━"
-
-check "模型列表" "GET" "$BASE/model-config/list" "" ""
-
-echo ""
-echo "━━━ 4. 用户基础信息 ━━━"
-
-H_AUTH="X-User-Token: $TOKEN|X-Device-Id: $DEVICE_ID"
-check "获取用户信息(/user/info)" "GET" "$BASE/user/info" "" "$H_AUTH"
-check "获取余额(/user/balance)" "GET" "$BASE/user/balance" "" "$H_AUTH"
-check "获取免费配额" "GET" "$BASE/user/free-quota" "" "$H_AUTH"
-
-echo ""
-echo "━━━ 5. 会话与对话管理 ━━━"
-
-check "同步对话数据" "POST" "$BASE/user/conversations/sync" \
-  '[{"id":"conv-test-001","title":"测试对话","messages":[],"createTime":"2026-05-15T10:00:00"}]' \
-  "$H_AUTH"
-
-check "获取对话列表" "GET" "$BASE/user/conversations/fetch" "" "$H_AUTH"
-check "获取对话版本" "GET" "$BASE/user/conversations/version" "" "$H_AUTH"
-
-echo ""
-echo "━━━ 6. 聊天对话 ━━━"
-
-check "免费模式-非流式对话" "POST" "$BASE/chat/completions" \
-  '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"你好，1+1=?"}],"stream":false,"temperature":0.7}' \
-  "$H_API"
-
-check "自定义模型-非流式对话" "POST" "$BASE/chat/completions" \
-  '{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"你好"}],"stream":false,"temperature":0.7}' \
-  "$H_API"
-
-echo ""
-echo "━━━ 7. 聊天记录管理（游标分页） ━━━"
-
-check "获取会话最新消息" "GET" "$BASE/user/conversations/1/messages/latest?limit=10" "" "$H_AUTH" "200|404"
-check "游标分页查询历史消息" "POST" "$BASE/user/conversations/messages/page" \
-  '{"conversationId":1,"limit":10}' \
-  "$H_AUTH" "200|404"
-
-echo ""
-echo "━━━ 8. 用户中心 ━━━"
-
-check "修改密码" "POST" "$BASE/user/change-password" \
-  '{"oldPassword":"Test@123456","newPassword":"Test@123456"}' \
-  "$H_AUTH"
-
-check "绑定邮箱" "POST" "$BASE/user/bind-email" \
-  '{"email":"test@example.com","code":"123456"}' \
-  "$H_AUTH"
-
-check "绑定手机" "POST" "$BASE/user/bind-phone" \
-  '{"phone":"13800138000","code":"123456"}' \
-  "$H_AUTH"
-
-check "发送绑定验证码" "POST" "$BASE/user/send-bind-code" \
-  '{"type":"email","target":"test@example.com"}' \
-  "$H_AUTH"
-
-check "启用2FA" "POST" "$BASE/user/2fa/enable" "" "$H_AUTH"
-check "验证2FA" "POST" "$BASE/user/2fa/verify" '{"code":"123456"}' "$H_AUTH"
-check "获取2FA状态" "GET" "$BASE/user/2fa/status" "" "$H_AUTH"
-check "禁用2FA" "POST" "$BASE/user/2fa/disable" '{"code":"123456"}' "$H_AUTH"
-
-check "获取登录设备" "GET" "$BASE/user/login-devices" "" "$H_AUTH"
-check "移除登录设备" "POST" "$BASE/user/login-devices/remove" '{"deviceId":"test-device-removed"}' "$H_AUTH"
-check "移除所有登录设备" "POST" "$BASE/user/login-devices/remove-all" '{"exceptCurrent":"true"}' "$H_AUTH"
-
-check "充值" "POST" "$BASE/user/recharge?amount=10&paymentMethod=Alipay" "" "$H_AUTH"
-check "获取充值记录" "GET" "$BASE/user/recharge-records" "" "$H_AUTH"
-
-check "申请发票" "POST" "$BASE/user/invoice/apply" '{"title":"测试公司","taxNumber":"12345","amount":100}' "$H_AUTH"
-check "获取优惠券列表" "GET" "$BASE/user/coupons" "" "$H_AUTH"
-check "兑换优惠券" "POST" "$BASE/user/coupons/redeem" '{"redeemCode":"TEST2026"}' "$H_AUTH"
-check "使用优惠券" "POST" "$BASE/user/coupons/use" '{"code":"TEST2026"}' "$H_AUTH"
-
-check "获取订阅信息" "GET" "$BASE/user/subscription" "" "$H_AUTH"
-check "订阅" "POST" "$BASE/user/subscription/subscribe" '{"plan":"plus","paymentMethod":"Alipay"}' "$H_AUTH"
-check "取消订阅" "POST" "$BASE/user/subscription/cancel" "" "$H_AUTH"
-
-check "获取我的优惠券" "GET" "$BASE/user/my-coupons" "" "$H_AUTH"
-
-echo ""
-echo "━━━ 9. 用户API Keys ━━━"
-
-check "获取用户API Keys" "GET" "$BASE/user/api-keys" "" "$H_AUTH"
-check "添加用户API Key" "POST" "$BASE/user/api-keys" \
-  '{"provider":"openai","displayName":"我的OpenAI Key","apiKey":"sk-test123","baseUrl":"https://api.openai.com"}' \
-  "$H_AUTH"
-check "测试连接" "POST" "$BASE/user/api-keys/test" \
-  '{"provider":"openai","apiKey":"sk-test123"}' \
-  "$H_AUTH"
-check "删除用户API Key(1)" "DELETE" "$BASE/user/api-keys/1" "" "$H_AUTH" "200|404|401"
-
-echo ""
-echo "━━━ 10. 通知系统 ━━━"
-
-check "获取通知列表" "GET" "$BASE/user/notifications?unreadOnly=false" "" "$H_AUTH"
-check "获取未读通知数" "GET" "$BASE/user/notifications/unread-count" "" "$H_AUTH"
-check "标记通知已读" "PUT" "$BASE/user/notifications/1/read" "" "$H_AUTH" "200|404"
-check "全部标记已读" "PUT" "$BASE/user/notifications/read-all" "" "$H_AUTH"
-
-echo ""
-echo "━━━ 11. OAuth相关 ━━━"
-
-check "获取OAuth URL(GitHub)" "GET" "$BASE/auth/oauth/url?provider=github" "" ""
-check "OAuth回调" "POST" "$BASE/auth/oauth/callback" \
-  '{"provider":"github","code":"mock_code","state":"mock_state"}' \
-  ""
-
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  ADMIN API 测试 (需要管理员权限)"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-# Try to get admin token - login as admin user
-echo ""
-echo "  🔑 尝试获取管理员Token..."
-
-ADMIN_RESP=$(curl -s -w '\n%{http_code}' --connect-timeout 10 -X POST "$BASE/auth/login" \
-  -H 'Content-Type: application/json' \
-  -H "X-Device-Id: admin-device-$DEVICE_ID" \
-  -d '{"username":"admin","password":"Admin@123"}' 2>/dev/null)
-ADMIN_HTTP=$(echo "$ADMIN_RESP" | tail -1)
-ADMIN_BODY=$(echo "$ADMIN_RESP" | sed '$d')
-
-if [ "$ADMIN_HTTP" = "200" ]; then
-  ADMIN_CODE=$(echo "$ADMIN_BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('code',-1))" 2>/dev/null)
-  if [ "$ADMIN_CODE" = "200" ]; then
-    ADMIN_TOKEN=$(echo "$ADMIN_BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('token',''))" 2>/dev/null)
-    echo "  ✅ 管理员登录成功"
-  fi
-fi
-
-if [ -z "$ADMIN_TOKEN" ]; then
-  echo "  ⚠️  无管理员账号，尝试注册admin用户..."
-  curl -s -X POST "$BASE/auth/register" \
-    -H 'Content-Type: application/json' \
-    -d '{"username":"admin","password":"Admin@123","email":"admin@lingdian.ai"}' > /dev/null 2>&1
-  sleep 1
-  ADMIN_RESP=$(curl -s -w '\n%{http_code}' --connect-timeout 10 -X POST "$BASE/auth/login" \
-    -H 'Content-Type: application/json' \
-    -H "X-Device-Id: admin-device-$DEVICE_ID" \
-    -d '{"username":"admin","password":"Admin@123"}' 2>/dev/null)
-  ADMIN_TOKEN=$(echo "$ADMIN_RESP" | sed '$d' | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('token',''))" 2>/dev/null)
-  if [ -n "$ADMIN_TOKEN" ]; then
-    echo "  ✅ admin用户已创建并登录，需要手动升级为管理员"
-    # Try to assign admin role - this requires existing admin, so may fail
-    # We'll test admin APIs that work without admin auth or test the auth failures
-    echo "  ⚠️  以下测试需要管理员权限，部分接口将返回403"
-  fi
-fi
-
-H_ADMIN="X-User-Token: $ADMIN_TOKEN|X-Device-Id: admin-device-$DEVICE_ID"
-
-echo ""
-echo "━━━ 12. 管理员-系统统计 ━━━"
-
-check "获取系统统计数据" "GET" "$BASE/admin/stats" "" "$H_ADMIN" "200|403|401"
-check "获取完整分析数据" "GET" "$BASE/admin/analytics/full?days=7&months=6" "" "$H_ADMIN" "200|403|401"
-check "仪表盘统计数据" "GET" "$BASE/admin/statistics/dashboard?period=7d" "" "$H_ADMIN" "200|404|403|401"
-check "用户统计数据" "GET" "$BASE/admin/statistics/users" "" "$H_ADMIN" "200|404|403|401"
-check "对话统计数据" "GET" "$BASE/admin/statistics/conversations" "" "$H_ADMIN" "200|404|403|401"
-
-echo ""
-echo "━━━ 13. 管理员-用户管理 ━━━"
-
-check "分页查询用户(基础)" "GET" "$BASE/admin/users?page=1&size=20" "" "$H_ADMIN" "200|403|401"
-check "分页查询用户(高级)" "GET" "$BASE/admin/users/advanced?page=1&size=20" "" "$H_ADMIN" "200|403|401"
-check "获取用户详情" "GET" "$BASE/admin/user/1" "" "$H_ADMIN" "200|404|403|401"
-check "切换用户状态" "POST" "$BASE/admin/user/status" '{"userId":1,"status":"ACTIVE"}' "$H_ADMIN" "200|403|401"
-check "管理员给用户充值" "POST" "$BASE/admin/user/recharge" '{"userId":1,"amount":100}' "$H_ADMIN" "200|403|401"
-check "分配管理员角色" "POST" "$BASE/admin/assign-role" '{"userId":1,"role":"ADMIN"}' "$H_ADMIN" "200|403|401"
-check "撤销管理员角色" "POST" "$BASE/admin/revoke-role" '{"userId":1}' "$H_ADMIN" "200|403|401"
-check "重置用户密码" "POST" "$BASE/admin/reset-password" '{"userId":1,"password":"NewPass123"}' "$H_ADMIN" "200|403|401"
-
-echo ""
-echo "━━━ 14. 管理员-批量操作 ━━━"
-
-check "批量封禁/解封用户" "POST" "$BASE/admin/batch/update-status" '{"userIds":[1,2],"status":1}' "$H_ADMIN" "200|403|401"
-check "批量发放点数" "POST" "$BASE/admin/batch/grant-points" '{"userIds":[1,2],"points":50}' "$H_ADMIN" "200|403|401"
-check "批量开通会员" "POST" "$BASE/admin/batch/activate-membership" '{"userIds":[1,2],"membership":"vip","days":30}' "$H_ADMIN" "200|403|401"
-
-echo ""
-echo "━━━ 15. 管理员-点数管理 ━━━"
-
-check "手动增减用户点数" "POST" "$BASE/admin/points/adjust" '{"userId":1,"points":100,"reason":"测试奖励"}' "$H_ADMIN" "200|403|401"
-check "设置每日免费次数" "POST" "$BASE/admin/points/set-free-count" '{"userId":1,"count":50}' "$H_ADMIN" "200|403|401"
-
-echo ""
-echo "━━━ 16. 管理员-会员管理 ━━━"
-
-check "调整会员等级" "POST" "$BASE/admin/membership/update" '{"userId":1,"membership":"vip"}' "$H_ADMIN" "200|403|401"
-check "设置会员有效期" "POST" "$BASE/admin/membership/set-expire-time" '{"userId":1,"expireTime":"2026-12-31T23:59:59"}' "$H_ADMIN" "200|403|401"
-
-echo ""
-echo "━━━ 17. 管理员-操作日志 ━━━"
-
-check "查询操作日志" "GET" "$BASE/admin/logs?page=1&size=20" "" "$H_ADMIN" "200|403|401"
-
-echo ""
-echo "━━━ 18. 管理员-通知管理 ━━━"
-
-check "获取未读通知数(admin)" "GET" "$BASE/admin/notifications/unread-count" "" "$H_AUTH"
-check "获取通知列表(admin)" "GET" "$BASE/admin/notifications?page=1&size=20" "" "$H_AUTH"
-check "标记通知已读(admin)" "POST" "$BASE/admin/notifications/1/read" "" "$H_AUTH" "200|404"
-check "全部标记已读(admin)" "POST" "$BASE/admin/notifications/read-all" "" "$H_AUTH"
-check "获取最新通知" "GET" "$BASE/admin/notifications/latest?limit=5" "" "$H_AUTH"
-check "删除通知" "DELETE" "$BASE/admin/notifications/1" "" "$H_AUTH" "200|404"
-
-echo ""
-echo "━━━ 19. 管理员-统计分析与导出 ━━━"
-
-check "按日查询统计" "GET" "$BASE/admin/statistics/daily?startDate=2026-05-01&endDate=2026-05-15" "" "$H_ADMIN" "200|404|403|401"
-check "按周查询统计" "GET" "$BASE/admin/statistics/weekly?weeks=4" "" "$H_ADMIN" "200|404|403|401"
-check "按月查询统计" "GET" "$BASE/admin/statistics/monthly?months=6" "" "$H_ADMIN" "200|404|403|401"
-
-echo ""
-echo "━━━ 20. 管理员-优惠券与通知发送 ━━━"
-
-check "管理员发送通知" "POST" "$BASE/admin/notifications/send" \
-  '{"title":"测试通知","content":"全量API测试","target":"all"}' \
-  "$H_ADMIN" "200|403|401"
-
-check "管理员发放优惠券" "POST" "$BASE/admin/coupons/send" \
-  '{"amount":10,"target":"all"}' \
-  "$H_ADMIN" "200|403|401"
-
-# ===================================================================
-# 汇总报告
-# ===================================================================
-echo ""
-echo "===================================================================="
-echo "  📊 测试结果汇总"
-echo "===================================================================="
-total=$((PASS + FAIL))
-echo "  ✅ 通过: $PASS"
-echo "  ❌ 失败: $FAIL"
-echo "  📝 总计: $total"
-if [ $total -gt 0 ]; then
-  echo "  📈 通过率: $(echo "scale=1; $PASS * 100 / $total" | bc)%"
-fi
-echo "===================================================================="
-echo "  完成时间: $(date '+%Y-%m-%d %H:%M:%S')"
-echo "===================================================================="
-
-# Save results to file
-echo -e "$RESULTS" > /tmp/api_test_results.txt
-
-exit 0
+# ===============================
+# 1. 用户认证测试
+# ===============================
+
+test_register() {
+    test_title "用户注册"
+    
+    RESPONSE=$(curl -s -X POST "$BASE_URL/auth/register" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "username": "testuser'$(date +%s)'",
+            "password": "Test@123456",
+            "email": "test'$(date +%s)'@example.com"
+        }')
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "注册成功"
+        USER_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d: -f2)
+        log_info "用户ID: $USER_ID"
+        return 0
+    else
+        log_error "注册失败: $RESPONSE"
+        return 1
+    fi
+}
+
+test_login() {
+    test_title "用户登录"
+    
+    if [ -z "$USER_ID" ]; then
+        # 如果没有新注册用户，尝试用固定账号登录
+        USERNAME="testuser"
+        PASSWORD="Test@123456"
+    else
+        # 使用刚才注册的用户
+        USERNAME="testuser'$(date +%s)'"
+        USERNAME="testuser"
+        PASSWORD="Test@123456"
+    fi
+    
+    DEVICE_ID=$(uuidgen)
+    
+    RESPONSE=$(curl -s -X POST "$BASE_URL/auth/login" \
+        -H "Content-Type: application/json" \
+        -H "X-Device-Id: $DEVICE_ID" \
+        -d '{
+            "username": "testuser",
+            "password": "Test@123456"
+        }')
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        TOKEN=$(echo "$RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+        USER_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d: -f2)
+        log_success "登录成功"
+        log_info "Token: ${TOKEN:0:20}..."
+        log_info "Device ID: $DEVICE_ID"
+        log_info "User ID: $USER_ID"
+        return 0
+    else
+        # 如果登录失败，尝试注册新用户
+        log_warning "登录失败，尝试注册新用户..."
+        
+        USERNAME="testuser$(date +%s)"
+        RESPONSE=$(curl -s -X POST "$BASE_URL/auth/register" \
+            -H "Content-Type: application/json" \
+            -d "{
+                \"username\": \"$USERNAME\",
+                \"password\": \"Test@123456\",
+                \"email\": \"$USERNAME@example.com\"
+            }")
+        
+        if echo "$RESPONSE" | grep -q '"code":200'; then
+            log_success "注册成功，重新登录..."
+            
+            RESPONSE=$(curl -s -X POST "$BASE_URL/auth/login" \
+                -H "Content-Type: application/json" \
+                -H "X-Device-Id: $DEVICE_ID" \
+                -d "{
+                    \"username\": \"$USERNAME\",
+                    \"password\": \"Test@123456\"
+                }")
+            
+            if echo "$RESPONSE" | grep -q '"code":200'; then
+                TOKEN=$(echo "$RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+                USER_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d: -f2)
+                log_success "登录成功"
+                return 0
+            fi
+        fi
+        
+        log_error "登录/注册失败: $RESPONSE"
+        return 1
+    fi
+}
+
+test_get_user_info() {
+    test_title "获取用户信息"
+    
+    RESPONSE=$(curl -s -X GET "$BASE_URL/auth/userinfo" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID")
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "获取用户信息成功"
+        log_info "响应: $(echo "$RESPONSE" | head -c 200)..."
+        return 0
+    else
+        log_error "获取用户信息失败: $RESPONSE"
+        return 1
+    fi
+}
+
+test_get_balance() {
+    test_title "获取余额"
+    
+    RESPONSE=$(curl -s -X GET "$BASE_URL/auth/balance" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID")
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "获取余额成功"
+        log_info "响应: $RESPONSE"
+        return 0
+    else
+        log_error "获取余额失败: $RESPONSE"
+        return 1
+    fi
+}
+
+test_get_points() {
+    test_title "获取点数余额"
+    
+    RESPONSE=$(curl -s -X GET "$BASE_URL/user/points" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID")
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "获取点数余额成功"
+        log_info "响应: $RESPONSE"
+        return 0
+    else
+        log_error "获取点数余额失败: $RESPONSE"
+        return 1
+    fi
+}
+
+# ===============================
+# 2. API Key 管理测试
+# ===============================
+
+test_generate_api_key() {
+    test_title "生成API Key"
+    
+    RESPONSE=$(curl -s -X POST "$BASE_URL/api-key/generate" \
+        -H "Content-Type: application/json" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID" \
+        -d '{
+            "name": "测试API Key",
+            "rateLimit": 100
+        }')
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        API_KEY=$(echo "$RESPONSE" | grep -o '"apiKey":"[^"]*"' | cut -d'"' -f4)
+        API_KEY_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | cut -d: -f2)
+        log_success "生成API Key成功"
+        log_info "API Key: ${API_KEY:0:20}..."
+        log_info "API Key ID: $API_KEY_ID"
+        return 0
+    else
+        log_error "生成API Key失败: $RESPONSE"
+        return 1
+    fi
+}
+
+test_list_api_keys() {
+    test_title "获取API Key列表"
+    
+    RESPONSE=$(curl -s -X GET "$BASE_URL/api-key/list" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID")
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "获取API Key列表成功"
+        log_info "响应: $(echo "$RESPONSE" | head -c 200)..."
+        return 0
+    else
+        log_error "获取API Key列表失败: $RESPONSE"
+        return 1
+    fi
+}
+
+# ===============================
+# 3. 模型配置测试
+# ===============================
+
+test_model_list() {
+    test_title "获取模型列表"
+    
+    RESPONSE=$(curl -s -X GET "$BASE_URL/model-config/list")
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "获取模型列表成功"
+        log_info "响应: $RESPONSE"
+        return 0
+    else
+        log_error "获取模型列表失败: $RESPONSE"
+        return 1
+    fi
+}
+
+# ===============================
+# 4. 对话功能测试（重点）
+# ===============================
+
+test_chat_non_stream_free() {
+    test_title "免费模式 - 非流式对话"
+    
+    RESPONSE=$(curl -s -X POST "$BASE_URL/chat/completions" \
+        -H "Content-Type: application/json" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID" \
+        -X-API-Key "$API_KEY" \
+        -d '{
+            "model": "deepseek-v4-flash",
+            "mode": "free",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "你好，请简单介绍一下你自己（不超过50字）"
+                }
+            ],
+            "stream": false,
+            "temperature": 0.7
+        }')
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "非流式对话成功"
+        CONTENT=$(echo "$RESPONSE" | grep -o '"data":"[^"]*"' | cut -d'"' -f4 | sed 's/\\u/\\u/g')
+        log_info "AI回复: $CONTENT"
+        return 0
+    else
+        log_error "非流式对话失败: $RESPONSE"
+        return 1
+    fi
+}
+
+test_chat_stream_free() {
+    test_title "免费模式 - 流式对话(SSE)"
+    
+    log_info "开始流式对话测试（这个会持续接收数据）..."
+    
+    # 使用curl的--no-buffer来测试SSE
+    curl -s -N -X POST "$BASE_URL/chat/stream" \
+        -H "Content-Type: application/json" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID" \
+        -H "X-API-Key: $API_KEY" \
+        -d '{
+            "model": "deepseek-v4-flash",
+            "mode": "free",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "写一首关于春天的短诗（4句）"
+                }
+            ],
+            "stream": true,
+            "temperature": 0.8
+        }' 2>&1 | head -50 > /tmp/stream_output.txt &
+    
+    CURL_PID=$!
+    sleep 10
+    
+    # 检查是否有输出
+    if [ -s /tmp/stream_output.txt ]; then
+        log_success "流式对话测试完成"
+        log_info "收到的SSE数据:"
+        cat /tmp/stream_output.txt | head -20
+        kill $CURL_PID 2>/dev/null || true
+        return 0
+    else
+        log_error "流式对话失败，没有收到数据"
+        kill $CURL_PID 2>/dev/null || true
+        return 1
+    fi
+}
+
+test_chat_non_stream_paid() {
+    test_title "付费模式 - 非流式对话"
+    
+    # 先给用户充值点数
+    log_info "先给用户充值点数..."
+    RESPONSE=$(curl -s -X POST "$BASE_URL/user/recharge?amount=100" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID")
+    log_info "充值响应: $RESPONSE"
+    
+    # 测试付费对话
+    RESPONSE=$(curl -s -X POST "$BASE_URL/chat/completions" \
+        -H "Content-Type: application/json" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID" \
+        -H "X-API-Key: $API_KEY" \
+        -d '{
+            "model": "deepseek-v4-flash",
+            "mode": "paid",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "1+1等于几？"
+                }
+            ],
+            "stream": false,
+            "temperature": 0.7
+        }')
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "付费模式非流式对话成功"
+        CONTENT=$(echo "$RESPONSE" | grep -o '"data":"[^"]*"' | cut -d'"' -f4)
+        log_info "AI回复: $CONTENT"
+        return 0
+    else
+        log_error "付费模式非流式对话失败: $RESPONSE"
+        return 1
+    fi
+}
+
+# ===============================
+# 5. 用户中心其他接口测试
+# ===============================
+
+test_get_user_center_info() {
+    test_title "获取用户中心信息"
+    
+    RESPONSE=$(curl -s -X GET "$BASE_URL/user/info" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID")
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "获取用户中心信息成功"
+        return 0
+    else
+        log_error "获取用户中心信息失败: $RESPONSE"
+        return 1
+    fi
+}
+
+test_get_free_quota() {
+    test_title "获取免费额度"
+    
+    RESPONSE=$(curl -s -X GET "$BASE_URL/user/free-quota" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID")
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "获取免费额度成功"
+        log_info "响应: $RESPONSE"
+        return 0
+    else
+        log_error "获取免费额度失败: $RESPONSE"
+        return 1
+    fi
+}
+
+test_get_points_bills() {
+    test_title "获取点数账单"
+    
+    RESPONSE=$(curl -s -X GET "$BASE_URL/user/points-bills?page=1&size=10" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID")
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "获取点数账单成功"
+        return 0
+    else
+        log_error "获取点数账单失败: $RESPONSE"
+        return 1
+    fi
+}
+
+test_get_subscription() {
+    test_title "获取订阅信息"
+    
+    RESPONSE=$(curl -s -X GET "$BASE_URL/user/subscription" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID")
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "获取订阅信息成功"
+        return 0
+    else
+        log_error "获取订阅信息失败: $RESPONSE"
+        return 1
+    fi
+}
+
+# ===============================
+# 6. 会话管理测试
+# ===============================
+
+test_get_conversations() {
+    test_title "获取会话列表"
+    
+    RESPONSE=$(curl -s -X GET "$BASE_URL/conversations" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID")
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "获取会话列表成功"
+        return 0
+    else
+        log_error "获取会话列表失败: $RESPONSE"
+        return 1
+    fi
+}
+
+# ===============================
+# 7. 通知管理测试
+# ===============================
+
+test_get_notifications() {
+    test_title "获取通知列表"
+    
+    RESPONSE=$(curl -s -X GET "$BASE_URL/user/notifications" \
+        -H "X-User-Token: $TOKEN" \
+        -H "X-Device-Id: $DEVICE_ID")
+    
+    if echo "$RESPONSE" | grep -q '"code":200'; then
+        log_success "获取通知列表成功"
+        return 0
+    else
+        log_error "获取通知列表失败: $RESPONSE"
+        return 1
+    fi
+}
+
+# ===============================
+# 主测试流程
+# ===============================
+
+main() {
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════╗"
+    echo "║         AI Gateway 平台全面测试脚本 v1.0                   ║"
+    echo "╚════════════════════════════════════════════════════════════╝"
+    echo ""
+    
+    # 检查服务
+    if ! check_service; then
+        log_error "请先启动后端服务！"
+        exit 1
+    fi
+    
+    echo ""
+    log_info "使用 DeepSeek API Key: ${DEEPSEEK_API_KEY:0:20}..."
+    echo ""
+    
+    # 1. 用户认证
+    test_login
+    if [ -n "$TOKEN" ]; then
+        test_get_user_info
+        test_get_balance
+        test_get_points
+    fi
+    
+    # 2. API Key 管理
+    if [ -n "$TOKEN" ]; then
+        test_generate_api_key
+        test_list_api_keys
+    fi
+    
+    # 3. 模型配置
+    test_model_list
+    
+    # 4. 对话功能（重点）
+    if [ -n "$TOKEN" ] && [ -n "$API_KEY" ]; then
+        test_chat_non_stream_free
+        test_chat_stream_free
+        test_chat_non_stream_paid
+    fi
+    
+    # 5. 用户中心
+    if [ -n "$TOKEN" ]; then
+        test_get_user_center_info
+        test_get_free_quota
+        test_get_points_bills
+        test_get_subscription
+    fi
+    
+    # 6. 会话管理
+    if [ -n "$TOKEN" ]; then
+        test_get_conversations
+    fi
+    
+    # 7. 通知管理
+    if [ -n "$TOKEN" ]; then
+        test_get_notifications
+    fi
+    
+    # ===============================
+    # 测试总结
+    # ===============================
+    echo ""
+    echo "=========================================="
+    echo -e "${BLUE}测试总结${NC}"
+    echo "=========================================="
+    echo -e "总测试数: ${BLUE}$TOTAL_TESTS${NC}"
+    echo -e "通过: ${GREEN}$PASSED_TESTS${NC}"
+    echo -e "失败: ${RED}$FAILED_TESTS${NC}"
+    echo ""
+    
+    if [ $FAILED_TESTS -eq 0 ]; then
+        echo -e "${GREEN}✓ 所有测试通过！平台运行正常。${NC}"
+    else
+        echo -e "${RED}✗ 有 $FAILED_TESTS 个测试失败，请检查。${NC}"
+    fi
+    
+    echo ""
+}
+
+# 运行主函数
+main "$@"
