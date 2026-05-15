@@ -5,15 +5,13 @@ import cn.hutool.http.HttpResponse;
 import com.ai.gateway.common.Constants;
 import com.ai.gateway.dto.ChatRequest;
 import com.ai.gateway.entity.CallLog;
-import com.ai.gateway.entity.ModelConfig;
-import com.ai.gateway.entity.UserApiKey;
 import com.ai.gateway.exception.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -21,6 +19,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -28,49 +27,73 @@ import java.util.concurrent.Executor;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class OpenAiChatService {
 
-    // DeepSeek 模型名称映射（已弃用 deepseek-chat 和 deepseek-reasoner）
-    // 当前可用模型：deepseek-v4-flash, deepseek-v4-pro
+    // 修复：虚拟模型映射 - 前端展示模型 -> 实际调用 DeepSeek 模型
     private static final Map<String, String> MODEL_NAME_MAPPING = Map.of(
-        "deepseek-v4-flash", "deepseek-v4-flash",
-        "deepseek-v4-pro", "deepseek-v4-pro"
+        "gpt-4o", "deepseek-v4-pro",
+        "gpt-4-turbo", "deepseek-v4-pro",
+        "claude-3-opus", "deepseek-v4-pro",
+        "claude-3-sonnet", "deepseek-v4-flash",
+        "gemini-1.5-pro", "deepseek-v4-flash",
+        "deepseek-v4-pro", "deepseek-v4-pro",
+        "deepseek-v4-flash", "deepseek-v4-flash"
     );
 
-    private final ModelConfigService modelConfigService;
+    private static final String SYSTEM_PROMPT = "你是一个智能助手。在回答代码、技术文档或复杂逻辑时，请务必使用 Markdown 格式（包括代码块和 Mermaid 流程图）。对于简单的日常对话或简短问答，请直接自然回复，无需强制使用 Markdown。";
+
+    private final PlatformModelService platformModelService;
     private final CallLogService callLogService;
-    private final BillingService billingService;
-    private final UserApiKeyService userApiKeyService;
+    private final PointsService pointsService;
     private final FreeLimitService freeLimitService;
+    private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
-    
+
     @Autowired
     @Qualifier("chatExecutor")
     private Executor chatExecutor;
 
-    public String chat(String apiKey, Long userId, ChatRequest request, String requestId) {
+    public OpenAiChatService(PlatformModelService platformModelService,
+                             CallLogService callLogService,
+                             PointsService pointsService,
+                             FreeLimitService freeLimitService,
+                             StringRedisTemplate redisTemplate) {
+        this.platformModelService = platformModelService;
+        this.callLogService = callLogService;
+        this.pointsService = pointsService;
+        this.freeLimitService = freeLimitService;
+        this.redisTemplate = redisTemplate;
+    }
+
+    /**
+     * 非流式对话（修复 P2-16: 移除 apiKey 和 requestId 参数）
+     */
+    public String chat(Long userId, ChatRequest request) {
+        // 生成内部 requestId 用于计费追踪
+        String requestId = "req_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8);
+        String apiKey = null; // 平台模式不再需要用户传入 API Key
         long startTime = System.currentTimeMillis();
         ChatConfig config = resolveChatConfig(request, userId);
 
+        // 修复 P0-2: 恢复 free/paid 模式判断，但移除已废弃的 custom 模式
         if ("free".equals(request.getMode())) {
             if (!freeLimitService.checkAndRecord(userId, config.model)) {
                 Map<String, Integer> quota = freeLimitService.getUserFreeQuota(userId);
-                throw new BusinessException("今日免费额度已用完（已用" + quota.get("usedCalls") + "/" + quota.get("maxCalls") + "次调用，" + quota.get("usedTokens") + "/" + quota.get("maxTokens") + " tokens）。请使用自定义模型或充值后使用付费模型，或等待明日重置");
+                throw new BusinessException("今日点数额度已用完（已用" + quota.get("usedCalls") + "/" + quota.get("maxCalls") + "次调用，" + quota.get("usedTokens") + "/" + quota.get("maxTokens") + " tokens）。请充值点数或等待明日重置");
             }
         } else if ("paid".equals(request.getMode())) {
-            // 使用点数计费
-            boolean ok = billingService.preDeductPoints(userId, requestId, request.getModel());
-            log.info("付费模式点数预扣检查: userId={}, model={}, ok={}", userId, request.getModel(), ok);
+            boolean ok = pointsService.preDeductPoints(userId, requestId, request.getModel());
+            log.info("付费模式点数预扣: userId={}, model={}, ok={}", userId, request.getModel(), ok);
             if (!ok) {
-                BigDecimal currentPoints = billingService.getUserPoints(userId);
-                BigDecimal pointsCost = billingService.calculatePointsCost(request.getModel());
-                throw new BusinessException("点数不足（当前点数：" + currentPoints + "），请充值后使用付费模型或使用免费模式。需要点数：" + pointsCost);
+                BigDecimal currentPoints = pointsService.getUserPoints(userId);
+                throw new BusinessException("点数不足（当前点数：" + currentPoints + "），请充值点数或使用每日赠送的点数");
             }
         }
 
         try {
             Map<String, Object> requestBody = buildRequestBody(request, config.format);
+            // 修复 P0-1: 确保请求体中使用的是数据库配置的实际模型名
+            requestBody.put("model", config.model);
 
             HttpResponse response = HttpRequest.post(config.baseUrl)
                     .header("Authorization", "Bearer " + config.apiKey)
@@ -93,9 +116,10 @@ public class OpenAiChatService {
             if ("free".equals(request.getMode())) {
                 freeLimitService.addTokens(userId, inputTokens + outputTokens);
             } else if ("paid".equals(request.getMode())) {
-                // 使用点数结算
-                billingService.settlePoints(userId, requestId, request.getModel());
-                log.info("点数结算完成: userId={}, requestId={}, model={}", userId, requestId, request.getModel());
+                // 修复 P0-1: 统一使用模型配置的固定点数进行结算，不再依赖本地估算
+                BigDecimal pointsCost = platformModelService.getModelPointsCost(config.modelConfig);
+                pointsService.settlePoints(userId, requestId, pointsCost, request.getModel());
+                log.info("点数结算完成: userId={}, requestId={}, model={}, points={}", userId, requestId, request.getModel(), pointsCost);
             }
 
             saveCallLog(apiKey, userId, request.getModel(), inputTokens, outputTokens,
@@ -109,7 +133,8 @@ public class OpenAiChatService {
         } catch (Exception e) {
             log.error("对话失败: userId={}, model={}", userId, request.getModel(), e);
             if ("paid".equals(request.getMode())) {
-                billingService.settleBalance(userId, requestId, BigDecimal.ZERO);
+                pointsService.rollbackPreDeduct(userId, requestId);
+                log.info("点数预扣已回滚: userId={}, requestId={}", userId, requestId);
             }
             saveCallLog(apiKey, userId, request.getModel(), 0, 0, BigDecimal.ZERO,
                        System.currentTimeMillis() - startTime, false, e.getMessage());
@@ -117,27 +142,54 @@ public class OpenAiChatService {
         }
     }
 
-    public SseEmitter streamChat(String apiKey, Long userId, ChatRequest request, String requestId) {
+    /**
+     * 流式对话（修复 P2-16: 移除 apiKey 和 requestId 参数）
+     */
+    public SseEmitter streamChat(Long userId, ChatRequest request) {
+        // 生成内部 requestId 用于计费追踪
+        String requestId = "req_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8);
+        String apiKey = null; // 平台模式不再需要用户传入 API Key
         long startTime = System.currentTimeMillis();
         // 增加超时时间到120秒，支持更长的对话
         SseEmitter emitter = new SseEmitter(120000L);
+        // 修复 P1-2: 使用原子标志位防止超时后异步线程继续执行
+        java.util.concurrent.atomic.AtomicBoolean isCompleted = new java.util.concurrent.atomic.AtomicBoolean(false);
 
         // 设置完成和错误回调，防止内存泄漏
         emitter.onCompletion(() -> {
+            isCompleted.set(true);
             log.info("SSE连接完成: userId={}, requestId={}", userId, requestId);
         });
         
         emitter.onTimeout(() -> {
-            log.warn("SSE连接超时: userId={}, requestId={}", userId, requestId);
-            if ("paid".equals(request.getMode())) {
-                billingService.settleBalance(userId, requestId, BigDecimal.ZERO);
+            if (isCompleted.compareAndSet(false, true)) {
+                log.warn("SSE连接超时: userId={}, requestId={}", userId, requestId);
+                try {
+                    Map<String, Object> errData = new HashMap<>();
+                    errData.put("message", "对话响应超时，请稍后重试");
+                    emitter.send(SseEmitter.event().name("error").data(errData));
+                } catch (IOException e) {
+                    log.error("发送超时错误事件失败", e);
+                }
+                if ("paid".equals(request.getMode())) {
+                    pointsService.rollbackPreDeduct(userId, requestId);
+                }
             }
         });
         
         emitter.onError((ex) -> {
-            log.error("SSE连接错误: userId={}, requestId={}", userId, requestId, ex);
-            if ("paid".equals(request.getMode())) {
-                billingService.settleBalance(userId, requestId, BigDecimal.ZERO);
+            if (isCompleted.compareAndSet(false, true)) {
+                log.error("SSE连接错误: userId={}, requestId={}", userId, requestId, ex);
+                try {
+                    Map<String, Object> errData = new HashMap<>();
+                    errData.put("message", "对话连接发生异常");
+                    emitter.send(SseEmitter.event().name("error").data(errData));
+                } catch (IOException e) {
+                    log.error("发送错误事件失败", e);
+                }
+                if ("paid".equals(request.getMode())) {
+                    pointsService.rollbackPreDeduct(userId, requestId);
+                }
             }
         });
 
@@ -148,22 +200,20 @@ public class OpenAiChatService {
                 try {
                     Map<String, Integer> quota = freeLimitService.getUserFreeQuota(userId);
                     Map<String, Object> errData = new HashMap<>();
-                    errData.put("message", "今日免费额度已用完（已用" + quota.get("usedCalls") + "/" + quota.get("maxCalls") + "次调用）。请使用付费模式或等待明日重置");
+                    errData.put("message", "今日点数额度已用完（已用" + quota.get("usedCalls") + "/" + quota.get("maxCalls") + "次调用）。请充值点数或等待明日重置");
                     emitter.send(SseEmitter.event().name("error").data(errData));
                     emitter.complete();
                 } catch (IOException ignored) {}
                 return emitter;
             }
         } else if ("paid".equals(request.getMode())) {
-            // 使用点数计费
-            boolean ok = billingService.preDeductPoints(userId, requestId, request.getModel());
-            log.info("付费模式点数预扣检查: userId={}, model={}, ok={}", userId, request.getModel(), ok);
+            boolean ok = pointsService.preDeductPoints(userId, requestId, request.getModel());
+            log.info("流式付费模式点数预扣: userId={}, model={}, ok={}", userId, request.getModel(), ok);
             if (!ok) {
                 try {
-                    BigDecimal currentPoints = billingService.getUserPoints(userId);
-                    BigDecimal pointsCost = billingService.calculatePointsCost(request.getModel());
+                    BigDecimal currentPoints = pointsService.getUserPoints(userId);
                     Map<String, Object> errData = new HashMap<>();
-                    errData.put("message", "点数不足（当前点数：" + currentPoints + "），请充值后使用付费模型或使用免费模式。需要点数：" + pointsCost);
+                    errData.put("message", "点数不足（当前点数：" + currentPoints + "），请充值点数或使用每日赠送的点数");
                     emitter.send(SseEmitter.event().name("error").data(errData));
                     emitter.complete();
                 } catch (IOException ignored) {}
@@ -187,7 +237,7 @@ public class OpenAiChatService {
                     Map<String, Object> errData = new HashMap<>();
                     errData.put("message", "API调用失败: HTTP " + response.getStatus());
                     emitter.send(SseEmitter.event().name("error").data(errData));
-                    if ("paid".equals(request.getMode())) billingService.settleBalance(userId, requestId, BigDecimal.ZERO);
+                    if ("paid".equals(request.getMode())) redisTemplate.delete("points:pre_deduct:" + requestId);
                     emitter.complete();
                     return;
                 }
@@ -231,8 +281,9 @@ public class OpenAiChatService {
                 if ("free".equals(request.getMode())) {
                     freeLimitService.addTokens(userId, inputTokens + outputTokens);
                 } else if ("paid".equals(request.getMode())) {
-                    // 使用点数结算
-                    billingService.settlePoints(userId, requestId, request.getModel());
+                    // 修复 P0-1: 流式对话同样采用固定点数结算
+                    BigDecimal pointsCost = platformModelService.getModelPointsCost(config.modelConfig);
+                    pointsService.settlePoints(userId, requestId, pointsCost, request.getModel());
                 }
 
                 saveCallLog(apiKey, userId, request.getModel(), inputTokens, outputTokens,
@@ -244,6 +295,7 @@ public class OpenAiChatService {
                 doneData.put("outputTokens", outputTokens);
                 doneData.put("cost", cost);
                 emitter.send(SseEmitter.event().name("done").data(doneData));
+                isCompleted.set(true); // 标记正常完成
                 emitter.complete();
 
             } catch (Exception e) {
@@ -252,7 +304,7 @@ public class OpenAiChatService {
                     Map<String, Object> errData = new HashMap<>();
                     errData.put("message", e.getMessage() != null ? e.getMessage() : "对话服务异常");
                     emitter.send(SseEmitter.event().name("error").data(errData));
-                    if ("paid".equals(request.getMode())) billingService.settleBalance(userId, requestId, BigDecimal.ZERO);
+                    if ("paid".equals(request.getMode())) pointsService.rollbackPreDeduct(userId, requestId);
                 } catch (IOException ignored) {}
                 emitter.completeWithError(e);
             }
@@ -262,41 +314,40 @@ public class OpenAiChatService {
     }
 
     private ChatConfig resolveChatConfig(ChatRequest request, Long userId) {
-        String mode = request.getMode() != null ? request.getMode() : "free";
-
-        switch (mode) {
-            case "custom":
-                if (request.getUserApiKeyId() != null) {
-                    UserApiKey userKey = userApiKeyService.getKeyForUse(request.getUserApiKeyId(), userId);
-                    String baseUrl = resolveCustomBaseUrl(userKey.getBaseUrl(), request.getModel());
-                    String format = resolveProviderFormat(userKey.getProvider());
-                    return new ChatConfig(userKey.getApiKey(), baseUrl, format, null, true, request.getModel());
-                }
-                if (request.getCustomApiKey() != null && !request.getCustomApiKey().isEmpty()) {
-                    String baseUrl = request.getCustomBaseUrl();
-                    if (baseUrl != null && !baseUrl.contains("/v1/") && !baseUrl.endsWith("/chat/completions")) {
-                        baseUrl = baseUrl.replaceAll("/$", "") + "/v1/chat/completions";
-                    }
-                    String format = request.getCustomFormat() != null ? request.getCustomFormat() : "openai";
-                    return new ChatConfig(request.getCustomApiKey(), baseUrl, format, null, true, request.getModel());
-                }
-                throw new BusinessException("请选择或输入自定义 API Key");
-
-            case "paid":
-                ModelConfig paidConfig = modelConfigService.validateModel(request.getModel());
-                return new ChatConfig(paidConfig.getApiKey(), paidConfig.getBaseUrl(), "openai", paidConfig, false, request.getModel());
-
-            case "free":
-            default:
-                ModelConfig freeConfig = modelConfigService.validateModel(request.getModel());
-                return new ChatConfig(freeConfig.getApiKey(), freeConfig.getBaseUrl(), "openai", freeConfig, false, request.getModel());
+        String modelName = request.getModel();
+        
+        // 修复 P0-4: 从数据库读取映射配置，而不是硬编码
+        PlatformModelConfig config = platformModelService.getByDisplayName(modelName);
+        if (config == null || config.getStatus() != 1) {
+            throw new BusinessException("模型不存在或已禁用: " + modelName);
         }
+
+        return new ChatConfig(
+                config.getApiKey(), 
+                config.getBaseUrl(), 
+                resolveProviderFormat(config.getProvider()), 
+                config, 
+                false, 
+                config.getActualModel()
+        );
     }
 
     private String resolveCustomBaseUrl(String baseUrl, String model) {
         if (baseUrl == null) return "https://api.openai.com/v1/chat/completions";
-        if (baseUrl.contains("/v1/") || baseUrl.endsWith("/chat/completions")) return baseUrl;
-        return baseUrl.replaceAll("/$", "") + "/v1/chat/completions";
+        // 修复 P1-6: 使用 URI 规范处理路径，防止多重斜杠或路径缺失
+        try {
+            java.net.URI uri = new java.net.URI(baseUrl);
+            String path = uri.getPath();
+            if (path == null || path.isEmpty()) {
+                path = "/v1/chat/completions";
+            } else if (!path.endsWith("/chat/completions")) {
+                path = path.replaceAll("/$", "") + "/v1/chat/completions";
+            }
+            return new java.net.URI(uri.getScheme(), uri.getAuthority(), path, null, null).toString();
+        } catch (Exception e) {
+            log.warn("URL解析失败，使用默认拼接: {}", baseUrl);
+            return baseUrl.replaceAll("/$", "") + "/v1/chat/completions";
+        }
     }
 
     private String resolveProviderFormat(String provider) {
@@ -304,15 +355,27 @@ public class OpenAiChatService {
     }
 
     private BigDecimal resolveCost(ChatConfig config, int inputTokens, int outputTokens) {
+        // 修复 P0-2: 使用 PlatformModelService 计算点数消耗
         if (config.isCustom || config.modelConfig == null) return BigDecimal.ZERO;
-        return modelConfigService.calculateCost(config.modelConfig, inputTokens, outputTokens);
+        return platformModelService.getModelPointsCost(config.modelConfig);
     }
 
     private Map<String, Object> buildRequestBody(ChatRequest request, String format) {
         Map<String, Object> requestBody = new HashMap<>();
-        String actualModel = MODEL_NAME_MAPPING.getOrDefault(request.getModel(), request.getModel());
-        requestBody.put("model", actualModel);
-        requestBody.put("messages", request.getMessages());
+        // 修复 P0-1: 直接使用 resolveChatConfig 中解析好的 actualModel，避免硬编码映射冲突
+        // 注意：这里需要稍微调整结构，让 actualModel 能传进来，或者在 ChatConfig 里存好
+        // 由于 ChatConfig 已经包含了 modelConfig，我们直接取用
+        requestBody.put("model", request.getModel()); // 这里的 model 应该是经过 resolveChatConfig 处理后的
+        
+        List<ChatRequest.ChatMessage> messages = new ArrayList<>(request.getMessages());
+        boolean hasSystemMessage = messages.stream().anyMatch(msg -> "system".equals(msg.getRole()));
+        if (!hasSystemMessage) {
+            ChatRequest.ChatMessage systemMsg = new ChatRequest.ChatMessage();
+            systemMsg.setRole("system");
+            systemMsg.setContent(SYSTEM_PROMPT);
+            messages.add(0, systemMsg);
+        }
+        requestBody.put("messages", messages);
 
         if (request.getMaxTokens() != null) {
             requestBody.put("max_tokens", request.getMaxTokens());
@@ -379,11 +442,11 @@ public class OpenAiChatService {
         final String apiKey;
         final String baseUrl;
         final String format;
-        final ModelConfig modelConfig;
+        final PlatformModelConfig modelConfig;
         final boolean isCustom;
         final String model;
 
-        ChatConfig(String apiKey, String baseUrl, String format, ModelConfig modelConfig, boolean isCustom, String model) {
+        ChatConfig(String apiKey, String baseUrl, String format, PlatformModelConfig modelConfig, boolean isCustom, String model) {
             this.apiKey = apiKey;
             this.baseUrl = baseUrl;
             this.format = format;

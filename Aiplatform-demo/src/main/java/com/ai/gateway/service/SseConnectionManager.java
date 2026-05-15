@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * SSE连接管理服务 - 支持断线重连
+ * SSE连接管理服务 - 支持断线重连 (修复 P1-8: 当前为僵尸代码，待后续流式功能启用)
  */
 @Slf4j
 @Service

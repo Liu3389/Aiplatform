@@ -3,6 +3,7 @@ package com.ai.gateway.service;
 import com.ai.gateway.entity.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -15,7 +16,6 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class TokenService {
 
     private static final String TOKEN_PREFIX = "ai_gateway:token:";
@@ -25,8 +25,9 @@ public class TokenService {
     private static final int MAX_LOGIN_FAIL = 5;
     private static final long LOGIN_LOCK_MINUTES = 15;
 
-    // AES encryption for API Keys
-    private static final String AES_KEY = "AiGateway2026Key";
+    // 修复 P1-13: 从配置文件读取 AES 密钥，避免硬编码
+    @Value("${security.aes-key:AiGateway2026Key}")
+    private String aesKey;
 
     private final RedisTemplate<String, String> redisTemplate;
     private final UserService userService;
@@ -118,7 +119,7 @@ public class TokenService {
 
     public String encryptApiKey(String plainKey) {
         try {
-            SecretKeySpec keySpec = new SecretKeySpec(AES_KEY.getBytes(StandardCharsets.UTF_8), "AES");
+            SecretKeySpec keySpec = new SecretKeySpec(aesKey.getBytes(StandardCharsets.UTF_8), "AES");
             Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
             cipher.init(Cipher.ENCRYPT_MODE, keySpec);
             byte[] encrypted = cipher.doFinal(plainKey.getBytes(StandardCharsets.UTF_8));
@@ -131,7 +132,7 @@ public class TokenService {
 
     public String decryptApiKey(String encryptedKey) {
         try {
-            SecretKeySpec keySpec = new SecretKeySpec(AES_KEY.getBytes(StandardCharsets.UTF_8), "AES");
+            SecretKeySpec keySpec = new SecretKeySpec(aesKey.getBytes(StandardCharsets.UTF_8), "AES");
             Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
             cipher.init(Cipher.DECRYPT_MODE, keySpec);
             byte[] decoded = Base64.getDecoder().decode(encryptedKey);

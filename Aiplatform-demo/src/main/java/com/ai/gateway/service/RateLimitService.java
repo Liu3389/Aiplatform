@@ -63,7 +63,7 @@ public class RateLimitService {
 
             return result != null && result == 1;
         } catch (Exception e) {
-            log.error("限流检查失败: apiKey={}", apiKey, e);
+            log.error("限流检查失败: apiKey={}", maskApiKey(apiKey), e);
             // 发生异常时放行，避免影响正常业务
             return true;
         }
@@ -88,8 +88,13 @@ public class RateLimitService {
             int count = Integer.parseInt(currentCount.toString());
             return Math.max(0, rateLimit - count);
         } catch (Exception e) {
-            log.error("获取剩余请求次数失败: apiKey={}", apiKey, e);
+            log.error("获取剩余请求次数失败: apiKey={}", maskApiKey(apiKey), e);
             return 0;
         }
+    }
+
+    private String maskApiKey(String key) {
+        if (key == null || key.length() <= 8) return "****";
+        return key.substring(0, 4) + "****" + key.substring(key.length() - 4);
     }
 }

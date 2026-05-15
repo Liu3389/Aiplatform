@@ -1,31 +1,43 @@
--- AI模型调度网关数据库建表语句
--- 数据库名: ai_gateway
+-- ============================================
+-- AI Gateway Platform - 核心数据库建表脚本 (Schema)
+-- 版本: v3.0 (2026-05-15)
+-- 说明: 整合了所有业务逻辑所需的表结构、索引优化及点数计费体系配置
+-- ============================================
 
--- 用户表
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- ============================================
+-- 1. 用户与权限管理模块
+-- ============================================
+
 CREATE TABLE IF NOT EXISTS `user` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `username` varchar(64) NOT NULL COMMENT '用户名',
-  `password`           varchar(128) NOT NULL COMMENT '密码（BCrypt加密存储）',
+  `password` varchar(128) NOT NULL COMMENT '密码（BCrypt加密存储）',
   `email` varchar(128) DEFAULT NULL COMMENT '邮箱',
-  `balance` decimal(10,4) NOT NULL DEFAULT '0.0000' COMMENT '账户余额（美元）',
+  `balance` decimal(10,3) NOT NULL DEFAULT '0.000' COMMENT '账户余额（元，后端存储三位）',
+  `points` decimal(10,3) NOT NULL DEFAULT '100.000' COMMENT '点数余额（保留三位小数，全点数对话模式）',
   `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：0-禁用，1-启用',
-  `role`               varchar(32)  NOT NULL DEFAULT 'USER' COMMENT '角色：USER/ADMIN/SUPER_ADMIN',
-  `free_api_strategy`  varchar(32)           DEFAULT 'NONE' COMMENT '免费策略：NONE/UNLIMITED/QUOTA_BASED/COUNT_LIMITED/TIME_LIMITED/MODEL_SPECIFIC',
-  `free_quota`         int                   DEFAULT 0 COMMENT '免费配额',
-  `daily_call_limit`   int                   DEFAULT 0 COMMENT '每日调用限制',
-  `monthly_call_limit` int                   DEFAULT 0 COMMENT '每月调用限制',
-  `membership`         varchar(32)           DEFAULT NULL COMMENT '会员类型',
-  `points`             decimal(10,3) NOT NULL DEFAULT '100.000' COMMENT '点数余额（保留三位小数）',
-  `daily_free_count`   int                   DEFAULT 0 COMMENT '每日免费次数',
-  `membership_expire_time` datetime          DEFAULT NULL COMMENT '会员过期时间',
-  `last_login_time`    datetime              DEFAULT NULL COMMENT '最后登录时间',
+  `role` varchar(32) NOT NULL DEFAULT 'USER' COMMENT '角色：USER/ADMIN/SUPER_ADMIN',
+  `membership` varchar(32) DEFAULT NULL COMMENT '会员类型标识',
+  `membership_expire_time` datetime DEFAULT NULL COMMENT '会员过期时间',
+  `free_api_strategy` varchar(32) DEFAULT 'NONE' COMMENT '免费策略：NONE/UNLIMITED/QUOTA_BASED/COUNT_LIMITED',
+  `free_quota` int DEFAULT 0 COMMENT '免费配额总量',
+  `daily_call_limit` int DEFAULT 0 COMMENT '每日调用限制次数',
+  `monthly_call_limit` int DEFAULT 0 COMMENT '每月调用限制次数',
+  `daily_free_count` int DEFAULT 0 COMMENT '每日免费次数（兼容旧版）',
+  `last_login_time` datetime DEFAULT NULL COMMENT '最后登录时间',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_username` (`username`)
+  UNIQUE KEY `uk_username` (`username`),
+  KEY `idx_role` (`role`),
+  KEY `idx_status` (`status`),
+  KEY `idx_membership` (`membership`),
+  KEY `idx_create_time` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
--- API Key表
 CREATE TABLE IF NOT EXISTS `api_key` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `api_key` varchar(256) NOT NULL COMMENT 'API Key（AES加密存储）',
@@ -38,102 +50,116 @@ CREATE TABLE IF NOT EXISTS `api_key` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_api_key` (`api_key`),
   KEY `idx_user_id` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='API Key表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='平台统一API Key表';
 
--- 模型配置表
-CREATE TABLE IF NOT EXISTS `model_config` (
+CREATE TABLE IF NOT EXISTS `user_api_key` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `model_name` varchar(64) NOT NULL COMMENT '模型名称',
-  `provider`   varchar(32) NOT NULL COMMENT '厂商',
-  `base_url` varchar(256) NOT NULL COMMENT 'API基础地址',
-  `api_key` varchar(128) NOT NULL COMMENT '厂商API Key',
-  `input_price` decimal(10,6) NOT NULL COMMENT '每千输入Token价格（美元）',
-  `output_price` decimal(10,6) NOT NULL COMMENT '每千输出Token价格（美元）',
-  `points_mode` varchar(20) DEFAULT 'STANDARD' COMMENT '点数消耗模式：FREE-免费模型, STANDARD-中端模型, PREMIUM-高端模型',
-  `points_per_request` decimal(10,3) DEFAULT NULL COMMENT '每次对话消耗的点数（保留三位小数精度，优先使用此值）',
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `provider` varchar(32) NOT NULL COMMENT '服务商: openai/anthropic/deepseek等',
+  `display_name` varchar(64) DEFAULT NULL COMMENT '显示名称',
+  `api_key` varchar(256) NOT NULL COMMENT 'API Key（AES-GCM加密存储）',
+  `base_url` varchar(256) DEFAULT NULL COMMENT '自定义Base URL',
+  `verified_status` tinyint NOT NULL DEFAULT 0 COMMENT '验证状态：0-未验证, 1-验证成功, 2-验证失败',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_provider` (`provider`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户自定义API Key表';
+
+-- ============================================
+-- 2. 模型与计费配置模块
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS `platform_model_config` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `display_name` varchar(64) NOT NULL COMMENT '展示名称（如 GPT-4o）',
+  `actual_model` varchar(64) NOT NULL COMMENT '实际调用模型（如 deepseek-v4-pro）',
+  `fixed_points` decimal(10,3) DEFAULT '3.000' COMMENT '每次对话固定消耗点数',
+  `provider` varchar(32) DEFAULT 'deepseek' COMMENT '关联厂商',
+  `base_url` varchar(256) DEFAULT NULL COMMENT '厂商 API 地址',
+  `api_key` varchar(128) DEFAULT NULL COMMENT '平台持有的 API Key',
+  `sort_order` int DEFAULT 0 COMMENT '前端展示排序',
   `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：0-禁用，1-启用',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_model_name` (`model_name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型配置表';
+  KEY `idx_status_sort` (`status`, `sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='平台对话模型配置表';
 
--- 调用日志表
-CREATE TABLE IF NOT EXISTS `call_log` (
+CREATE TABLE IF NOT EXISTS `marketplace_provider` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `api_key` varchar(64) NOT NULL COMMENT '使用的API Key',
-  `user_id` bigint NOT NULL COMMENT '用户ID',
-  `model` varchar(64) NOT NULL COMMENT '使用的模型名称',
-  `input_tokens` int NOT NULL DEFAULT '0' COMMENT '输入Token数量',
-  `output_tokens` int NOT NULL DEFAULT '0' COMMENT '输出Token数量',
-  `cost` decimal(10,6) NOT NULL DEFAULT '0.000000' COMMENT '本次调用费用（美元）',
-  `duration` int NOT NULL DEFAULT '0' COMMENT '调用时长（毫秒）',
-  `status` tinyint NOT NULL COMMENT '状态：0-失败，1-成功',
-  `error_message` text COMMENT '错误信息（失败时记录）',
+  `provider_name` varchar(32) NOT NULL COMMENT '厂商名称（如 OpenAI, Anthropic）',
+  `base_url` varchar(256) NOT NULL COMMENT 'API基础地址',
+  `platform_api_key` varchar(128) NOT NULL COMMENT '平台持有的厂商 Key（用于分发或代理）',
+  `input_price` decimal(10,6) NOT NULL COMMENT '每千输入Token价格（元）',
+  `output_price` decimal(10,6) NOT NULL COMMENT '每千输出Token价格（元）',
+  `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：0-下架，1-上架',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
-  KEY `idx_api_key` (`api_key`),
+  UNIQUE KEY `uk_provider_name` (`provider_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型商店厂商配置表';
+
+CREATE TABLE IF NOT EXISTS `user_marketplace_key` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `provider_id` bigint NOT NULL COMMENT '关联厂商ID',
+  `api_key` varchar(128) NOT NULL COMMENT '分发给用户的 API Key',
+  `key_name` varchar(64) DEFAULT NULL COMMENT 'Key 备注名',
+  `total_requests` bigint DEFAULT '0' COMMENT '累计请求次数',
+  `total_input_tokens` bigint DEFAULT '0' COMMENT '累计输入 Token',
+  `total_output_tokens` bigint DEFAULT '0' COMMENT '累计输出 Token',
+  `total_cost` decimal(10,3) DEFAULT '0.000' COMMENT '累计花费金额（元）',
+  `status` varchar(20) DEFAULT 'ACTIVE' COMMENT '状态：ACTIVE/FROZEN/EXPIRED',
+  `expire_time` datetime DEFAULT NULL COMMENT '过期时间',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
+  KEY `idx_api_key` (`api_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户模型商店 Key 记录表';
+
+CREATE TABLE IF NOT EXISTS `marketplace_usage_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_key_id` bigint NOT NULL COMMENT '关联用户 Key ID',
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `model` varchar(64) NOT NULL COMMENT '使用的模型',
+  `input_tokens` int NOT NULL DEFAULT '0' COMMENT '输入 Token',
+  `output_tokens` int NOT NULL DEFAULT '0' COMMENT '输出 Token',
+  `cost` decimal(10,3) NOT NULL DEFAULT '0.000' COMMENT '本次费用（元）',
+  `duration` int NOT NULL DEFAULT '0' COMMENT '耗时（毫秒）',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_user_key_id` (`user_key_id`),
   KEY `idx_create_time` (`create_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='调用日志表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型商店调用日志表';
 
--- 计费记录表
-CREATE TABLE IF NOT EXISTS `billing_record` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `user_id` bigint NOT NULL COMMENT '用户ID',
-  `call_log_id` bigint NOT NULL COMMENT '关联的调用日志ID',
-  `amount` decimal(10,6) NOT NULL COMMENT '金额（美元）',
-  `type` tinyint NOT NULL COMMENT '类型：1-扣费，2-充值',
-  `balance_before` decimal(10,4) NOT NULL COMMENT '操作前余额（美元）',
-  `balance_after` decimal(10,4) NOT NULL COMMENT '操作后余额（美元）',
-  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  PRIMARY KEY (`id`),
-  KEY `idx_user_id` (`user_id`),
-  KEY `idx_call_log_id` (`call_log_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='计费记录表';
-
--- ============================================
--- 点数明细账单表（统一点数体系）
--- ============================================
-CREATE TABLE IF NOT EXISTS `points_bill` (
+CREATE TABLE IF NOT EXISTS `package_template` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `user_id` BIGINT NOT NULL COMMENT '用户ID',
-  `change_type` VARCHAR(20) NOT NULL COMMENT '变动类型：RECHARGE-充值, DEDUCT-扣除, GRANT-发放, EXPIRE-过期清零, REFUND-退款',
-  `points_change` DECIMAL(10,3) NOT NULL COMMENT '变动点数（正数为增加，负数为减少，保留三位小数）',
-  `balance_before` DECIMAL(10,3) NOT NULL COMMENT '变动前点数余额',
-  `balance_after` DECIMAL(10,3) NOT NULL COMMENT '变动后点数余额',
-  `business_id` VARCHAR(100) DEFAULT NULL COMMENT '关联业务ID（如对话ID、充值订单ID等）',
-  `description` VARCHAR(500) DEFAULT NULL COMMENT '业务描述',
-  `model_name` VARCHAR(100) DEFAULT NULL COMMENT '模型名称（如果是对话消耗）',
-  `expire_time` DATETIME DEFAULT NULL COMMENT '有效期（过期清零时使用）',
+  `package_code` VARCHAR(32) NOT NULL COMMENT '套餐代码（唯一标识）',
+  `package_name` VARCHAR(64) NOT NULL COMMENT '套餐名称',
+  `description` VARCHAR(500) DEFAULT NULL COMMENT '套餐描述',
+  `identity_label` VARCHAR(32) DEFAULT NULL COMMENT '身份标识（如：至尊、尊享）',
+  `points` DECIMAL(10,3) NOT NULL DEFAULT 0 COMMENT '包含点数',
+  `price` DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '价格（元）',
+  `duration_days` INT DEFAULT NULL COMMENT '有效期天数（NULL表示永久）',
+  `daily_call_limit` INT DEFAULT 0 COMMENT '每日调用限制',
+  `monthly_call_limit` INT DEFAULT 0 COMMENT '每月调用限制',
+  `max_tokens_per_call` INT DEFAULT 0 COMMENT '单次最大Token数',
+  `priority_level` INT DEFAULT 0 COMMENT '优先级等级',
+  `features` TEXT DEFAULT NULL COMMENT '特性说明（JSON格式）',
+  `status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：0-下架，1-上架',
+  `sort_order` INT DEFAULT 0 COMMENT '排序顺序',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  KEY `idx_user_id` (`user_id`),
-  KEY `idx_create_time` (`create_time`),
-  KEY `idx_business_id` (`business_id`),
-  KEY `idx_user_time` (`user_id`, `create_time` DESC)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='点数明细账单表';
+  UNIQUE KEY `uk_package_code` (`package_code`),
+  KEY `idx_status_sort` (`status`, `sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='套餐模板表';
 
 -- ============================================
--- 模型配置：DeepSeek 模型
--- 点数标准: FREE=0点/次, STANDARD=1点/次, PREMIUM=3点/次
--- 注意：deepseek-chat 和 deepseek-reasoner 将于 2026/07/24 弃用
--- ============================================
--- 先清空现有数据，避免重复
-DELETE FROM `model_config`;
-
--- 插入模型配置（统一使用 DeepSeek API）
--- 注意：请在 application.yml 或环境变量中配置 DEEPSEEK_API_KEY
-INSERT INTO `model_config` (`model_name`, `provider`, `base_url`, `api_key`, `input_price`, `output_price`, `points_mode`, `points_per_request`, `status`) VALUES
-('deepseek-v4-flash', 'deepseek', 'https://api.deepseek.com/v1/chat/completions', '${DEEPSEEK_API_KEY:your-api-key-here}', 0.000000, 0.000000, 'FREE', 0.000, 1),
-('deepseek-v4-pro',   'deepseek', 'https://api.deepseek.com/v1/chat/completions', '${DEEPSEEK_API_KEY:your-api-key-here}', 0.000000, 0.000000, 'PREMIUM', 3.000, 1);
-
--- ============================================
--- 会话管理表（支持游标分页和冷热分离）
+-- 3. 会话与消息记录模块（冷热分离架构）
 -- ============================================
 
--- 会话表
 CREATE TABLE IF NOT EXISTS `conversation` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id` bigint NOT NULL COMMENT '用户ID',
@@ -146,27 +172,26 @@ CREATE TABLE IF NOT EXISTS `conversation` (
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_user_deleted_time` (`user_id`, `is_deleted`, `last_message_time`) COMMENT '用户会话列表查询索引',
-  KEY `idx_last_message_time` (`last_message_time`) COMMENT '按时间排序索引'
+  KEY `idx_create_time` (`create_time`) COMMENT '统计趋势查询索引'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会话表';
 
--- 聊天消息表（热数据 - 最近30天）
 CREATE TABLE IF NOT EXISTS `chat_message` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `conversation_id` bigint NOT NULL COMMENT '会话ID',
   `user_id` bigint NOT NULL COMMENT '用户ID',
   `role` varchar(16) NOT NULL COMMENT '角色：user/assistant/system',
-  `content` text NOT NULL COMMENT '消息内容',
+  `content` text NOT NULL COMMENT '消息内容（统一为 Markdown 格式，支持代码块和 Mermaid 流程图）',
   `model` varchar(64) DEFAULT NULL COMMENT '使用的模型',
   `tokens` int DEFAULT '0' COMMENT 'Token数量',
-  `metadata` json DEFAULT NULL COMMENT '元数据（JSON格式）',
+  `file_urls` json DEFAULT NULL COMMENT '关联文件URL列表（JSON数组，存储阿里云OSS路径）',
+  `metadata` json DEFAULT NULL COMMENT '元数据',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
-  KEY `idx_conversation_create` (`conversation_id`, `create_time`) COMMENT '游标分页查询索引（核心）',
+  KEY `idx_conversation_create` (`conversation_id`, `create_time`) COMMENT '游标分页查询索引（热数据）',
   KEY `idx_user_conversation` (`user_id`, `conversation_id`) COMMENT '权限校验索引',
-  KEY `idx_create_time` (`create_time`) COMMENT '时间范围查询索引'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天消息表（热数据）';
+  KEY `idx_create_time` (`create_time`) COMMENT '统计趋势查询索引'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天消息表（热数据-最近30天）';
 
--- 聊天消息历史表（冷数据 - 30天前）
 CREATE TABLE IF NOT EXISTS `chat_message_history` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `conversation_id` bigint NOT NULL COMMENT '会话ID',
@@ -175,68 +200,70 @@ CREATE TABLE IF NOT EXISTS `chat_message_history` (
   `content` text NOT NULL COMMENT '消息内容',
   `model` varchar(64) DEFAULT NULL COMMENT '使用的模型',
   `tokens` int DEFAULT '0' COMMENT 'Token数量',
-  `metadata` json DEFAULT NULL COMMENT '元数据（JSON格式）',
+  `file_urls` json DEFAULT NULL COMMENT '关联文件URL列表（JSON数组，存储阿里云OSS路径）',
+  `metadata` json DEFAULT NULL COMMENT '元数据',
   `original_create_time` datetime NOT NULL COMMENT '原始创建时间',
   `archive_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '归档时间',
   PRIMARY KEY (`id`),
-  KEY `idx_conversation_original_time` (`conversation_id`, `original_create_time`) COMMENT '游标分页查询索引（核心）',
-  KEY `idx_user_conversation` (`user_id`, `conversation_id`) COMMENT '权限校验索引',
-  KEY `idx_original_create_time` (`original_create_time`) COMMENT '时间范围查询索引',
-  KEY `idx_archive_time` (`archive_time`) COMMENT '归档任务查询索引'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天消息历史表（冷数据）';
+  KEY `idx_conversation_original_time` (`conversation_id`, `original_create_time`) COMMENT '游标分页查询索引（冷数据）',
+  KEY `idx_user_conversation` (`user_id`, `conversation_id`) COMMENT '权限校验索引'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天消息历史表（冷数据-30天前）';
 
 -- ============================================
--- 优惠券使用记录表
+-- 4. 计费、账单与订阅模块
 -- ============================================
-CREATE TABLE IF NOT EXISTS `coupon_usage_record` (
-  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `user_id` BIGINT NOT NULL COMMENT '用户ID',
-  `coupon_id` BIGINT NOT NULL COMMENT '优惠券ID',
-  `coupon_code` VARCHAR(32) NOT NULL COMMENT '优惠券码',
-  `coupon_amount` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '优惠券面额',
-  `order_type` VARCHAR(32) NOT NULL COMMENT '订单类型：RECHARGE-充值, SUBSCRIPTION-订阅, PACKAGE-套餐',
-  `order_id` VARCHAR(100) DEFAULT NULL COMMENT '关联订单ID（如充值订单号、订阅ID等）',
-  `order_amount` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '订单原始金额',
-  `discount_amount` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '优惠金额',
-  `actual_amount` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '实际支付金额',
-  `usage_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '使用时间',
-  `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
+
+CREATE TABLE IF NOT EXISTS `call_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `api_key` varchar(64) NOT NULL COMMENT '使用的API Key',
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `model` varchar(64) NOT NULL COMMENT '使用的模型名称',
+  `input_tokens` int NOT NULL DEFAULT '0' COMMENT '输入Token数量',
+  `output_tokens` int NOT NULL DEFAULT '0' COMMENT '输出Token数量',
+  `cost` decimal(10,3) NOT NULL DEFAULT '0.000' COMMENT '本次调用费用（元，后端存储三位）',
+  `duration` int NOT NULL DEFAULT '0' COMMENT '调用时长（毫秒）',
+  `status` tinyint NOT NULL COMMENT '状态：0-失败，1-成功',
+  `error_message` text COMMENT '错误信息',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_user_model` (`user_id`, `model`),
+  KEY `idx_create_time` (`create_time`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='调用日志表';
+
+CREATE TABLE IF NOT EXISTS `billing_record` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `call_log_id` bigint NOT NULL COMMENT '关联的调用日志ID',
+  `amount` decimal(10,3) NOT NULL COMMENT '金额（元，后端存储三位）',
+  `type` tinyint NOT NULL COMMENT '类型：1-扣费，2-充值',
+  `balance_before` decimal(10,3) NOT NULL COMMENT '操作前余额',
+  `balance_after` decimal(10,3) NOT NULL COMMENT '操作后余额',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
-  KEY `idx_coupon_id` (`coupon_id`),
-  KEY `idx_order_id` (`order_id`),
-  KEY `idx_usage_time` (`usage_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='优惠券使用记录表';
+  KEY `idx_call_log_id` (`call_log_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='计费记录表';
 
--- ============================================
--- 套餐模板表和用户订阅表
--- ============================================
-
--- 套餐模板表（管理员配置）
-CREATE TABLE IF NOT EXISTS `package_template` (
+CREATE TABLE IF NOT EXISTS `points_bill` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `package_code` VARCHAR(32) NOT NULL COMMENT '套餐代码（唯一标识）',
-  `package_name` VARCHAR(64) NOT NULL COMMENT '套餐名称',
-  `description` VARCHAR(500) DEFAULT NULL COMMENT '套餐描述',
-  `identity_label` VARCHAR(32) DEFAULT NULL COMMENT '身份标识（如：至尊、尊享、畅享）',
-  `points` DECIMAL(10,3) NOT NULL DEFAULT 0 COMMENT '包含点数',
-  `price` DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '价格（元）',
-  `duration_days` INT DEFAULT NULL COMMENT '有效期天数（NULL表示永久）',
-  `daily_call_limit` INT DEFAULT 0 COMMENT '每日调用限制（0表示无限制）',
-  `monthly_call_limit` INT DEFAULT 0 COMMENT '每月调用限制（0表示无限制）',
-  `max_tokens_per_call` INT DEFAULT 0 COMMENT '单次最大Token数（0表示无限制）',
-  `priority_level` INT DEFAULT 0 COMMENT '优先级等级（数字越大优先级越高）',
-  `features` TEXT DEFAULT NULL COMMENT '特性说明（JSON格式）',
-  `status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：0-下架，1-上架',
-  `sort_order` INT DEFAULT 0 COMMENT '排序顺序',
+  `user_id` BIGINT NOT NULL COMMENT '用户ID',
+  `change_type` VARCHAR(20) NOT NULL COMMENT '变动类型：RECHARGE/DEDUCT/GRANT/EXPIRE',
+  `points_change` DECIMAL(10,3) NOT NULL COMMENT '变动点数（正增负减）',
+  `balance_before` DECIMAL(10,3) NOT NULL COMMENT '变动前点数余额',
+  `balance_after` DECIMAL(10,3) NOT NULL COMMENT '变动后点数余额',
+  `business_id` VARCHAR(100) DEFAULT NULL COMMENT '关联业务ID',
+  `description` VARCHAR(500) DEFAULT NULL COMMENT '业务描述',
+  `model_name` VARCHAR(100) DEFAULT NULL COMMENT '模型名称',
+  `expire_time` DATETIME DEFAULT NULL COMMENT '点数过期时间',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_package_code` (`package_code`),
-  KEY `idx_status_sort` (`status`, `sort_order`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='套餐模板表';
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_create_time` (`create_time`),
+  KEY `idx_business_id` (`business_id`),
+  KEY `idx_user_time` (`user_id`, `create_time` DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='点数明细账单表';
 
--- 用户订阅记录表
 CREATE TABLE IF NOT EXISTS `user_subscription` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id` BIGINT NOT NULL COMMENT '用户ID',
@@ -247,8 +274,8 @@ CREATE TABLE IF NOT EXISTS `user_subscription` (
   `points_granted` DECIMAL(10,3) NOT NULL DEFAULT 0 COMMENT '授予点数',
   `price_paid` DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '实际支付价格',
   `start_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '生效时间',
-  `expire_time` DATETIME DEFAULT NULL COMMENT '过期时间（NULL表示永久）',
-  `status` VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' COMMENT '状态：ACTIVE-生效中，EXPIRED-已过期，CANCELLED-已取消',
+  `expire_time` DATETIME DEFAULT NULL COMMENT '过期时间',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' COMMENT '状态：ACTIVE/EXPIRED/CANCELLED',
   `auto_renew` TINYINT(1) DEFAULT 0 COMMENT '是否自动续费',
   `order_id` VARCHAR(100) DEFAULT NULL COMMENT '关联订单ID',
   `coupon_id` BIGINT DEFAULT NULL COMMENT '使用的优惠券ID',
@@ -256,26 +283,172 @@ CREATE TABLE IF NOT EXISTS `user_subscription` (
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  KEY `idx_user_id` (`user_id`),
+  KEY `idx_user_status` (`user_id`, `status`),
   KEY `idx_package_id` (`package_id`),
-  KEY `idx_status` (`status`),
-  KEY `idx_expire_time` (`expire_time`),
-  KEY `idx_user_status` (`user_id`, `status`)
+  KEY `idx_expire_time` (`expire_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户订阅记录表';
 
--- ============================================
--- 用户自定义 API Key 表
--- ============================================
-CREATE TABLE IF NOT EXISTS `user_api_key` (
-  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `user_id` BIGINT NOT NULL COMMENT '用户ID',
-  `provider` VARCHAR(32) NOT NULL COMMENT 'API提供商（如：deepseek/openai/anthropic）',
-  `display_name` VARCHAR(64) DEFAULT NULL COMMENT '显示名称/备注',
-  `api_key` VARCHAR(256) NOT NULL COMMENT 'API Key（AES加密存储）',
-  `base_url` VARCHAR(256) DEFAULT NULL COMMENT '自定义API基础地址',
-  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+CREATE TABLE IF NOT EXISTS `coupon` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL,
+  `coupon_code` varchar(32) NOT NULL,
+  `amount` decimal(10,3) NOT NULL DEFAULT 0 COMMENT '代金券面额(元，后端存储三位)',
+  `threshold_amount` decimal(10,3) NOT NULL DEFAULT 0 COMMENT '使用门槛(元，后端存储三位)',
+  `applicable_plan` varchar(32) DEFAULT NULL COMMENT '适用套餐',
+  `expire_time` datetime DEFAULT NULL,
+  `used` tinyint(1) DEFAULT 0,
+  `used_time` datetime DEFAULT NULL,
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
-  KEY `idx_provider` (`provider`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户自定义API Key表';
+  KEY `idx_coupon_code` (`coupon_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='代金券表';
+
+CREATE TABLE IF NOT EXISTS `coupon_usage_record` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id` BIGINT NOT NULL COMMENT '用户ID',
+  `coupon_id` BIGINT NOT NULL COMMENT '优惠券ID',
+  `coupon_code` VARCHAR(32) NOT NULL COMMENT '优惠券码',
+  `coupon_amount` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '优惠券面额',
+  `order_type` VARCHAR(32) NOT NULL COMMENT '订单类型',
+  `order_id` VARCHAR(100) DEFAULT NULL COMMENT '关联订单ID',
+  `order_amount` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '订单原始金额',
+  `discount_amount` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '优惠金额',
+  `actual_amount` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '实际支付金额',
+  `usage_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '使用时间',
+  `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
+  PRIMARY KEY (`id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_coupon_id` (`coupon_id`),
+  KEY `idx_order_id` (`order_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='优惠券使用记录表';
+
+-- ============================================
+-- 5. 管理员后台与统计模块
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS `admin_operation_log` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `admin_id` bigint NOT NULL COMMENT '管理员ID',
+  `admin_username` varchar(64) NOT NULL COMMENT '管理员用户名',
+  `operation_type` varchar(32) NOT NULL COMMENT '操作类型',
+  `operation_action` varchar(64) NOT NULL COMMENT '操作动作',
+  `target_user_ids` text COMMENT '目标用户ID列表',
+  `operation_detail` text COMMENT '操作详情',
+  `ip_address` varchar(64) DEFAULT NULL COMMENT '操作IP地址',
+  `user_agent` varchar(512) DEFAULT NULL COMMENT '浏览器标识',
+  `result` varchar(16) NOT NULL DEFAULT 'SUCCESS' COMMENT '操作结果',
+  `error_message` text COMMENT '错误信息',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_admin_id` (`admin_id`),
+  KEY `idx_operation_type` (`operation_type`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='管理员操作日志表';
+
+CREATE TABLE IF NOT EXISTS `system_notification` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL,
+  `title` varchar(128) NOT NULL,
+  `content` varchar(1024) DEFAULT NULL,
+  `type` varchar(32) DEFAULT 'system',
+  `is_read` tinyint(1) DEFAULT 0,
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_user_unread` (`user_id`, `is_read`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统通知表';
+
+CREATE TABLE IF NOT EXISTS `user_notification` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id` bigint NOT NULL COMMENT '用户ID',
+  `title` varchar(128) NOT NULL COMMENT '通知标题',
+  `content` text NOT NULL COMMENT '通知内容',
+  `type` varchar(32) NOT NULL COMMENT '通知类型',
+  `related_id` bigint DEFAULT NULL COMMENT '关联ID',
+  `is_read` tinyint NOT NULL DEFAULT 0 COMMENT '是否已读',
+  `read_time` datetime DEFAULT NULL COMMENT '阅读时间',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_is_read` (`is_read`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户通知表';
+
+CREATE TABLE IF NOT EXISTS `daily_statistics` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `stat_date` date NOT NULL COMMENT '统计日期',
+  `new_users` int NOT NULL DEFAULT 0 COMMENT '新增用户数',
+  `total_users` int NOT NULL DEFAULT 0 COMMENT '累计用户总数',
+  `active_users` int NOT NULL DEFAULT 0 COMMENT '活跃用户数',
+  `new_conversations` int NOT NULL DEFAULT 0 COMMENT '新增会话数',
+  `total_conversations` int NOT NULL DEFAULT 0 COMMENT '累计会话总数',
+  `total_messages` int NOT NULL DEFAULT 0 COMMENT '新增消息数',
+  `total_message_count` bigint NOT NULL DEFAULT 0 COMMENT '累计消息总数',
+  `total_input_tokens` bigint NOT NULL DEFAULT 0 COMMENT '输入Token总数',
+  `total_output_tokens` bigint NOT NULL DEFAULT 0 COMMENT '输出Token总数',
+  `total_tokens` bigint NOT NULL DEFAULT 0 COMMENT 'Token总数',
+  `total_points_consumed` decimal(12,3) NOT NULL DEFAULT 0.000 COMMENT '点数消耗总数',
+  `api_call_success` int NOT NULL DEFAULT 0 COMMENT 'API调用成功次数',
+  `api_call_failed` int NOT NULL DEFAULT 0 COMMENT 'API调用失败次数',
+  `api_call_total` int NOT NULL DEFAULT 0 COMMENT 'API调用总次数',
+  `model_usage` json DEFAULT NULL COMMENT '模型使用统计',
+  `hourly_distribution` json DEFAULT NULL COMMENT '小时分布',
+  `error_count` int NOT NULL DEFAULT 0 COMMENT '错误次数',
+  `timeout_count` int NOT NULL DEFAULT 0 COMMENT '超时次数',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_stat_date` (`stat_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='每日统计表';
+
+CREATE TABLE IF NOT EXISTS `statistics_counter` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `counter_type` varchar(32) NOT NULL COMMENT '计数器类型',
+  `counter_value` bigint NOT NULL DEFAULT 0 COMMENT '计数值',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_counter_type` (`counter_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='实时计数器表';
+
+CREATE TABLE IF NOT EXISTS `user_retention_statistics` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `stat_date` date NOT NULL COMMENT '统计日期',
+  `new_users` int NOT NULL DEFAULT 0 COMMENT '当日新增用户数',
+  `retained_day1` int NOT NULL DEFAULT 0 COMMENT '次日留存用户数',
+  `retained_day7` int NOT NULL DEFAULT 0 COMMENT '7日留存用户数',
+  `retained_day30` int NOT NULL DEFAULT 0 COMMENT '30日留存用户数',
+  `retention_rate_day1` decimal(5,2) NOT NULL DEFAULT 0.00 COMMENT '次日留存率',
+  `retention_rate_day7` decimal(5,2) NOT NULL DEFAULT 0.00 COMMENT '7日留存率',
+  `retention_rate_day30` decimal(5,2) NOT NULL DEFAULT 0.00 COMMENT '30日留存率',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_stat_date` (`stat_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户留存统计表';
+
+CREATE TABLE IF NOT EXISTS `hot_questions_statistics` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `stat_date` date NOT NULL COMMENT '统计日期',
+  `question_hash` varchar(64) NOT NULL COMMENT '问题哈希值',
+  `question_preview` varchar(255) NOT NULL COMMENT '问题预览',
+  `occurrence_count` int NOT NULL DEFAULT 0 COMMENT '出现次数',
+  `unique_users` int NOT NULL DEFAULT 0 COMMENT '提问的唯一用户数',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_stat_date` (`stat_date`),
+  KEY `idx_occurrence` (`occurrence_count`),
+  UNIQUE KEY `uk_date_question` (`stat_date`, `question_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='热门问题统计表';
+
+CREATE TABLE IF NOT EXISTS `content_safety_statistics` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `stat_date` date NOT NULL COMMENT '统计日期',
+  `sensitive_word_trigger` int NOT NULL DEFAULT 0 COMMENT '敏感词触发次数',
+  `violation_report` int NOT NULL DEFAULT 0 COMMENT '违规举报数',
+  `violation_handled` int NOT NULL DEFAULT 0 COMMENT '已处理违规数',
+  `blocked_messages` int NOT NULL DEFAULT 0 COMMENT '被拦截消息数',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_stat_date` (`stat_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='内容安全统计表';
+
+SET FOREIGN_KEY_CHECKS = 1;

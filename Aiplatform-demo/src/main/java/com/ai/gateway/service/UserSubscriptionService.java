@@ -68,7 +68,7 @@ public class UserSubscriptionService {
     /**
      * 购买套餐（支持优惠券）
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> purchasePackage(Long userId, String packageCode, Long couponId) {
         Map<String, Object> result = new HashMap<>();
         
@@ -97,7 +97,20 @@ public class UserSubscriptionService {
             }
         }
 
-        // 3. 计算过期时间
+        // 修复 P1-8: 检查用户余额并扣费
+        if (actualPrice.compareTo(BigDecimal.ZERO) > 0) {
+            User user = userMapper.selectById(userId);
+            if (user == null || user.getBalance().compareTo(actualPrice) < 0) {
+                throw new RuntimeException("余额不足，当前余额：" + (user != null ? user.getBalance() : 0));
+            }
+            
+            // 扣除余额
+            user.setBalance(user.getBalance().subtract(actualPrice));
+            userMapper.updateById(user);
+            
+            // 记录账单（这里可以调用 BillingService）
+            log.info("购买套餐扣除余额: userId={}, amount={}", userId, actualPrice);
+        }
         LocalDateTime startTime = LocalDateTime.now();
         LocalDateTime expireTime = null;
         if (pkg.getDurationDays() != null) {
@@ -120,6 +133,8 @@ public class UserSubscriptionService {
         subscription.setOrderId("SUB_" + System.currentTimeMillis());
         subscription.setCouponId(usedCouponId);
         subscription.setDiscountAmount(discount);
+        subscription.setCreateTime(LocalDateTime.now());
+        subscription.setUpdateTime(LocalDateTime.now());
         
         userSubscriptionMapper.insert(subscription);
 
@@ -162,7 +177,7 @@ public class UserSubscriptionService {
     /**
      * 取消订阅
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void cancelSubscription(Long userId, Long subscriptionId) {
         UserSubscription subscription = userSubscriptionMapper.selectById(subscriptionId);
         
@@ -203,7 +218,7 @@ public class UserSubscriptionService {
     /**
      * 检查并更新过期订阅（定时任务调用）
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void checkAndExpireSubscriptions() {
         LocalDateTime now = LocalDateTime.now();
         

@@ -37,7 +37,7 @@ public class BillingRecord implements Serializable {
     private Long callLogId;
 
     /**
-     * 金额（美元）
+     * 金额（元，修复 P0-9: 统一为 3 位小数）
      */
     private BigDecimal amount;
 
@@ -47,12 +47,12 @@ public class BillingRecord implements Serializable {
     private Integer type;
 
     /**
-     * 操作前余额（美元）
+     * 操作前余额（元）
      */
     private BigDecimal balanceBefore;
 
     /**
-     * 操作后余额（美元）
+     * 操作后余额（元）
      */
     private BigDecimal balanceAfter;
 

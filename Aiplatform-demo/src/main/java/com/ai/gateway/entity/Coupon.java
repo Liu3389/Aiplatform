@@ -22,6 +22,7 @@ public class Coupon implements Serializable {
 
     private String couponCode;
 
+    // 修复 P0-7: 统一金额为 3 位小数，与数据库 schema.sql 保持一致
     private BigDecimal amount;
 
     private BigDecimal thresholdAmount;

@@ -39,7 +39,7 @@ public class AsyncConfig {
         // 线程空闲时间（秒）
         executor.setKeepAliveSeconds(60);
         
-        // 拒绝策略：由调用线程处理
+        // 修复 P0-4: 使用 CallerRunsPolicy，确保流式对话请求不会静默失败
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         
         // 等待所有任务结束后再关闭线程池

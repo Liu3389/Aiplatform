@@ -1,6 +1,5 @@
 package com.ai.gateway.interceptor;
 
-import cn.hutool.json.JSONUtil;
 import com.ai.gateway.common.Constants;
 import com.ai.gateway.common.Result;
 import com.ai.gateway.common.ResultCode;
@@ -8,9 +7,9 @@ import com.ai.gateway.entity.ApiKey;
 import com.ai.gateway.entity.User;
 import com.ai.gateway.exception.BusinessException;
 import com.ai.gateway.service.ApiKeyService;
-import com.ai.gateway.service.BillingService;
 import com.ai.gateway.service.RateLimitService;
 import com.ai.gateway.service.UserService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +18,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
@@ -37,6 +35,7 @@ public class ApiKeyAuthInterceptor implements HandlerInterceptor {
     private final ApiKeyService apiKeyService;
     private final UserService userService;
     private final RateLimitService rateLimitService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) 
@@ -113,6 +112,6 @@ public class ApiKeyAuthInterceptor implements HandlerInterceptor {
         response.setStatus(HttpServletResponse.SC_OK);
         
         Result<Void> result = Result.error(code, message);
-        response.getWriter().write(JSONUtil.toJsonStr(result));
+        response.getWriter().write(objectMapper.writeValueAsString(result));
     }
 }

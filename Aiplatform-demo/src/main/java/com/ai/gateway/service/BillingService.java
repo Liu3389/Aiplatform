@@ -18,14 +18,14 @@ public class BillingService {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final PointsService pointsService;
-    private final CacheService cacheService;
+    private final PlatformModelService platformModelService;
 
     public BillingService(StringRedisTemplate stringRedisTemplate, 
                          PointsService pointsService,
-                         CacheService cacheService) {
+                         PlatformModelService platformModelService) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.pointsService = pointsService;
-        this.cacheService = cacheService;
+        this.platformModelService = platformModelService;
     }
 
     private DefaultRedisScript<List> billingScript;
@@ -45,66 +45,15 @@ public class BillingService {
     }
 
     public boolean preDeductBalance(Long userId, String requestId, BigDecimal preDeductAmount, int expireTime) {
-        if (preDeductAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            return true;
-        }
-        try {
-            String balanceKey = Constants.REDIS_USER_BALANCE_PREFIX + userId;
-            String preDeductKey = Constants.REDIS_BILLING_PRE_DEDUCT_PREFIX + requestId;
-
-            List<String> keys = java.util.Arrays.asList(balanceKey, preDeductKey);
-
-            @SuppressWarnings("unchecked")
-            List<Object> result = (List<Object>) stringRedisTemplate.execute(
-                billingScript, keys,
-                userId.toString(), preDeductAmount.toPlainString(), requestId, String.valueOf(expireTime)
-            );
-
-            if (result != null && !result.isEmpty()) {
-                Object successObj = result.get(0);
-                long success = successObj instanceof Number ? ((Number) successObj).longValue() : Long.parseLong(successObj.toString());
-                log.info("预扣余额: userId={}, amount={}, success={}", userId, preDeductAmount, success);
-                return success == 1;
-            }
-            log.warn("预扣余额返回空: userId={}", userId);
-            return false;
-        } catch (Exception e) {
-            log.error("预扣余额失败: userId={}, requestId={}", userId, requestId, e);
-            return false;
-        }
+        // 修复：全平台统一使用点数结算，不再扣除余额（元）
+        log.warn("系统已禁用余额扣费逻辑，请使用点数模式: userId={}", userId);
+        return false;
     }
 
     public BigDecimal settleBalance(Long userId, String requestId, BigDecimal actualCost) {
-        if (actualCost.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
-        }
-        try {
-            String balanceKey = Constants.REDIS_USER_BALANCE_PREFIX + userId;
-            String preDeductKey = Constants.REDIS_BILLING_PRE_DEDUCT_PREFIX + requestId;
-
-            List<String> keys = java.util.Arrays.asList(balanceKey, preDeductKey);
-
-            @SuppressWarnings("unchecked")
-            List<Object> result = (List<Object>) stringRedisTemplate.execute(
-                settlementScript, keys,
-                userId.toString(), actualCost.toPlainString(), requestId
-            );
-
-            if (result != null && result.size() >= 2) {
-                Object successObj = result.get(0);
-                long success = successObj instanceof Number ? ((Number) successObj).longValue() : Long.parseLong(successObj.toString());
-                if (success == 1) {
-                    BigDecimal refund = new BigDecimal(result.get(2).toString());
-                    log.info("结算成功: userId={}, cost={}, refund={}", userId, actualCost, refund);
-                    return refund;
-                }
-            }
-            log.warn("结算返回空: userId={}", userId);
-            return BigDecimal.ZERO;
-        } catch (Exception e) {
-            log.error("结算失败: userId={}", userId, e);
-            return BigDecimal.ZERO;
-        }
+        // 修复：全平台统一使用点数结算，不再扣除余额（元）
+        log.warn("系统已禁用余额结算逻辑，请使用点数模式: userId={}", userId);
+        return BigDecimal.ZERO;
     }
 
     public BigDecimal getUserBalance(Long userId) {
@@ -137,88 +86,37 @@ public class BillingService {
      * @return 点数消耗（保留三位小数）
      */
     public BigDecimal calculatePointsCost(String modelName) {
-        com.ai.gateway.entity.ModelConfig config = cacheService.getModelConfig(modelName);
+        // 修复 P2-11: 使用 PlatformModelService 替代旧的 ModelConfig
+        com.ai.gateway.entity.PlatformModelConfig config = platformModelService.getByDisplayName(modelName);
         
         if (config == null) {
             log.warn("模型配置不存在: modelName={}", modelName);
             return java.math.BigDecimal.ONE; // 默认1点
         }
         
-        // 如果配置了点每次消耗，直接使用
-        if (config.getPointsPerRequest() != null) {
-            return config.getPointsPerRequest();
-        }
-        
-        // 否则根据pointsMode判断
-        String pointsMode = config.getPointsMode();
-        if (pointsMode == null) {
-            pointsMode = "STANDARD"; // 默认中端模型
-        }
-        
-        switch (pointsMode.toUpperCase()) {
-            case "FREE":
-                return java.math.BigDecimal.ZERO;
-            case "STANDARD":
-                return java.math.BigDecimal.ONE; // 1点/次
-            case "PREMIUM":
-                return new java.math.BigDecimal("3.000"); // 3点/次
-            default:
-                return java.math.BigDecimal.ONE;
-        }
+        return platformModelService.getModelPointsCost(config);
     }
 
     /**
      * 使用点数进行预扣（对话前检查）
-     * @param userId 用户ID
-     * @param requestId 请求ID
-     * @param modelName 模型名称
-     * @return 是否成功
+     * @deprecated 请直接使用 PointsService.preDeductPoints
      */
+    @Deprecated
     public boolean preDeductPoints(Long userId, String requestId, String modelName) {
-        BigDecimal pointsCost = calculatePointsCost(modelName);
-        
-        // 免费模型不需要扣费
-        if (pointsCost.compareTo(java.math.BigDecimal.ZERO) <= 0) {
-            return true;
-        }
-        
-        // 检查用户点数是否充足
-        BigDecimal currentPoints = pointsService.getUserPoints(userId);
-        if (currentPoints.compareTo(pointsCost) < 0) {
-            log.warn("点数不足: userId={}, current={}, need={}, model={}", 
-                    userId, currentPoints, pointsCost, modelName);
-            return false;
-        }
-        
-        log.info("点数预扣检查通过: userId={}, cost={}, model={}", userId, pointsCost, modelName);
-        return true;
+        return pointsService.preDeductPoints(userId, requestId, modelName);
     }
 
     /**
-     * 结算点数消耗（对话后扣除）
-     * @param userId 用户ID
-     * @param requestId 请求ID
-     * @param modelName 模型名称
-     * @return 是否成功
+     * 结算点数消耗（对话后扣除）- 已废弃，请使用 PointsService.settlePoints
+     * @deprecated 使用 PointsService 进行原子性点数操作
      */
+    @Deprecated
     public boolean settlePoints(Long userId, String requestId, String modelName) {
         BigDecimal pointsCost = calculatePointsCost(modelName);
-        
-        // 免费模型不需要扣费
         if (pointsCost.compareTo(java.math.BigDecimal.ZERO) <= 0) {
             return true;
         }
-        
-        // 扣除点数
-        boolean success = pointsService.deductPoints(userId, pointsCost, requestId, modelName);
-        
-        if (success) {
-            // 更新缓存
-            BigDecimal newBalance = pointsService.getUserPoints(userId);
-            cacheService.updateUserBalanceCache(userId, newBalance);
-        }
-        
-        return success;
+        return pointsService.deductPoints(userId, pointsCost, requestId, modelName);
     }
 
     /**

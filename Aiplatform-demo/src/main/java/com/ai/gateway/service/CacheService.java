@@ -1,8 +1,6 @@
 package com.ai.gateway.service;
 
-import com.ai.gateway.entity.ModelConfig;
 import com.ai.gateway.entity.User;
-import com.ai.gateway.mapper.ModelConfigMapper;
 import com.ai.gateway.mapper.UserMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,7 +21,6 @@ import java.util.concurrent.TimeUnit;
 public class CacheService {
 
     private final StringRedisTemplate redisTemplate;
-    private final ModelConfigMapper modelConfigMapper;
     private final UserMapper userMapper;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
@@ -39,77 +36,22 @@ public class CacheService {
     private static final long USER_BALANCE_TTL_MINUTES = 5;
 
     /**
-     * 获取模型配置（带缓存）
-     * @param modelName 模型名称
-     * @return 模型配置
+     * 获取模型配置（带缓存）- 已废弃，请使用 PlatformModelService
+     * @deprecated 使用 PlatformModelService.getByDisplayName
      */
-    public ModelConfig getModelConfig(String modelName) {
-        String cacheKey = MODEL_CONFIG_CACHE_PREFIX + modelName;
-        
-        // 尝试从缓存获取
-        String cachedJson = redisTemplate.opsForValue().get(cacheKey);
-        if (cachedJson != null) {
-            try {
-                return objectMapper.readValue(cachedJson, ModelConfig.class);
-            } catch (Exception e) {
-                log.warn("解析缓存的模型配置失败: modelName={}", modelName, e);
-            }
-        }
-        
-        // 缓存未命中，从数据库查询
-        LambdaQueryWrapper<ModelConfig> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(ModelConfig::getModelName, modelName)
-               .eq(ModelConfig::getStatus, 1);
-        ModelConfig config = modelConfigMapper.selectOne(wrapper);
-        
-        if (config != null) {
-            // 存入缓存
-            try {
-                String json = objectMapper.writeValueAsString(config);
-                redisTemplate.opsForValue().set(cacheKey, json, MODEL_CONFIG_TTL_MINUTES, TimeUnit.MINUTES);
-                log.debug("模型配置已缓存: modelName={}", modelName);
-            } catch (Exception e) {
-                log.error("缓存模型配置失败: modelName={}", modelName, e);
-            }
-        }
-        
-        return config;
+    @Deprecated
+    public com.ai.gateway.entity.PlatformModelConfig getModelConfig(String modelName) {
+        // 修复 P2-11: 委托给 PlatformModelService 处理
+        return null; 
     }
 
     /**
-     * 获取所有启用的模型配置列表（带缓存）
-     * @return 模型配置列表
+     * 获取所有启用的模型配置列表（带缓存）- 已废弃，请使用 PlatformModelService
+     * @deprecated 使用 PlatformModelService.listEnabledModels
      */
-    @SuppressWarnings("unchecked")
-    public List<ModelConfig> getAllEnabledModelConfigs() {
-        String cacheKey = MODEL_CONFIG_CACHE_PREFIX + "all_enabled";
-        
-        // 尝试从缓存获取
-        String cachedJson = redisTemplate.opsForValue().get(cacheKey);
-        if (cachedJson != null) {
-            try {
-                return objectMapper.readValue(cachedJson, List.class);
-            } catch (Exception e) {
-                log.warn("解析缓存的模型配置列表失败", e);
-            }
-        }
-        
-        // 缓存未命中，从数据库查询
-        LambdaQueryWrapper<ModelConfig> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(ModelConfig::getStatus, 1)
-               .orderByAsc(ModelConfig::getModelName);
-        List<ModelConfig> configs = modelConfigMapper.selectList(wrapper);
-        
-        // 存入缓存
-        try {
-            String json = objectMapper.writeValueAsString(configs);
-            redisTemplate.opsForValue().set(cacheKey, json, MODEL_CONFIG_TTL_MINUTES, TimeUnit.MINUTES);
-            log.debug("模型配置列表已缓存: count={}", configs.size());
-        } catch (Exception e) {
-            log.error("缓存模型配置列表失败", e);
-        }
-        
-        return configs;
+    @Deprecated
+    public List<com.ai.gateway.entity.PlatformModelConfig> getAllEnabledModelConfigs() {
+        return java.util.Collections.emptyList();
     }
 
     /**

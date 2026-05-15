@@ -36,7 +36,7 @@ public class SystemNotificationService {
         return notificationMapper.selectCount(wrapper).intValue();
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void markAsRead(Long id, Long userId) {
         SystemNotification n = notificationMapper.selectById(id);
         if (n != null && n.getUserId().equals(userId)) {
@@ -45,7 +45,7 @@ public class SystemNotificationService {
         }
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void markAllAsRead(Long userId) {
         LambdaQueryWrapper<SystemNotification> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(SystemNotification::getUserId, userId)
@@ -57,7 +57,7 @@ public class SystemNotificationService {
         }
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void sendToUser(Long userId, String title, String content, String type) {
         SystemNotification n = new SystemNotification();
         n.setUserId(userId);
@@ -70,7 +70,7 @@ public class SystemNotificationService {
         log.info("通知已发送: userId={}, title={}", userId, title);
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public int sendToAllUsers(String title, String content, String type) {
         List<User> users = userMapper.selectList(new LambdaQueryWrapper<>());
         int count = 0;
@@ -82,7 +82,7 @@ public class SystemNotificationService {
         return count;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public int sendToMembership(String membership, String title, String content, String type) {
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(User::getMembership, membership);
@@ -96,7 +96,7 @@ public class SystemNotificationService {
         return count;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public int sendToRecentUsers(int days, String title, String content, String type) {
         LocalDateTime since = LocalDateTime.now().minusDays(days);
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();

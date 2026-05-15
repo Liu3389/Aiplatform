@@ -24,7 +24,7 @@ public class User implements Serializable {
 
     private String email;
 
-    private BigDecimal balance;
+    private BigDecimal balance; // 后端存储三位小数，前端展示两位
 
     private Integer status;
 

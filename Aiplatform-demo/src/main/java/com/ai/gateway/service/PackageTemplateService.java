@@ -67,6 +67,8 @@ public class PackageTemplateService {
         }
         
         template.setStatus(1); // 默认上架
+        template.setCreateTime(java.time.LocalDateTime.now());
+        template.setUpdateTime(java.time.LocalDateTime.now());
         packageTemplateMapper.insert(template);
         log.info("创建套餐模板成功: code={}, name={}", template.getPackageCode(), template.getPackageName());
         return template;
@@ -77,6 +79,7 @@ public class PackageTemplateService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void updatePackage(PackageTemplate template) {
+        template.setUpdateTime(java.time.LocalDateTime.now());
         packageTemplateMapper.updateById(template);
         log.info("更新套餐模板成功: id={}, code={}", template.getId(), template.getPackageCode());
     }
@@ -89,6 +92,7 @@ public class PackageTemplateService {
         PackageTemplate template = new PackageTemplate();
         template.setId(id);
         template.setStatus(status);
+        template.setUpdateTime(java.time.LocalDateTime.now());
         packageTemplateMapper.updateById(template);
         log.info("套餐状态变更: id={}, status={}", id, status == 1 ? "上架" : "下架");
     }

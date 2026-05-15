@@ -52,7 +52,7 @@ public class CallLog implements Serializable {
     private Integer outputTokens;
 
     /**
-     * 本次调用费用（美元）
+     * 本次调用费用（元，修复 P0-8: 统一为 3 位小数）
      */
     private BigDecimal cost;
 

@@ -1,16 +1,21 @@
 package com.ai.gateway.service;
 
 import com.ai.gateway.entity.PointsBill;
+import com.ai.gateway.entity.PlatformModelConfig;
 import com.ai.gateway.entity.User;
 import com.ai.gateway.mapper.PointsBillMapper;
 import com.ai.gateway.mapper.UserMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.scripting.support.ResourceScriptSource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -21,18 +26,39 @@ import java.util.List;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class PointsService {
 
     private final PointsBillMapper pointsBillMapper;
     private final StringRedisTemplate redisTemplate;
     private final UserMapper userMapper;
+    private final PlatformModelService platformModelService;
+
+    public PointsService(PointsBillMapper pointsBillMapper,
+                         StringRedisTemplate redisTemplate,
+                         UserMapper userMapper,
+                         PlatformModelService platformModelService) {
+        this.pointsBillMapper = pointsBillMapper;
+        this.redisTemplate = redisTemplate;
+        this.userMapper = userMapper;
+        this.platformModelService = platformModelService;
+    }
     
     private static final String USER_POINTS_PREFIX = "points:user:";
     private static final String POINTS_PRECISION_KEY = "points:precision";
+    private static final String POINTS_PRE_DEDUCT_PREFIX = "points:pre_deduct:";
+
+    private DefaultRedisScript<List> pointsBillingScript;
+
+    @PostConstruct
+    public void init() {
+        pointsBillingScript = new DefaultRedisScript<>();
+        pointsBillingScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/points_billing.lua")));
+        pointsBillingScript.setResultType(List.class);
+        log.info("点数计费Lua脚本加载成功");
+    }
 
     /**
-     * 获取用户当前点数（从Redis缓存）
+     * 获取用户当前点数（从Redis缓存，带防击穿机制）
      * @param userId 用户ID
      * @return 点数，保留两位小数
      */
@@ -40,61 +66,251 @@ public class PointsService {
         String key = USER_POINTS_PREFIX + userId;
         String pointsStr = redisTemplate.opsForValue().get(key);
         
-        if (pointsStr == null) {
-            // 缓存未命中，从数据库查询并同步到Redis
-            return syncUserPointsFromDB(userId);
+        if (pointsStr != null) {
+            try {
+                return new BigDecimal(pointsStr).setScale(2, RoundingMode.HALF_UP);
+            } catch (NumberFormatException e) {
+                log.error("解析点数失败: userId={}, pointsStr={}", userId, pointsStr);
+            }
         }
         
-        try {
-            return new BigDecimal(pointsStr).setScale(2, RoundingMode.HALF_UP);
-        } catch (NumberFormatException e) {
-            log.error("解析点数失败: userId={}, pointsStr={}", userId, pointsStr);
-            return syncUserPointsFromDB(userId);
+        // 缓存未命中，使用分布式锁防止击穿
+        String lockKey = "lock:points:" + userId;
+        Boolean isLocked = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", 5, java.util.concurrent.TimeUnit.SECONDS);
+        
+        if (Boolean.TRUE.equals(isLocked)) {
+            try {
+                // 双重检查
+                pointsStr = redisTemplate.opsForValue().get(key);
+                if (pointsStr != null) {
+                    return new BigDecimal(pointsStr).setScale(2, RoundingMode.HALF_UP);
+                }
+                return syncUserPointsFromDB(userId);
+            } finally {
+                redisTemplate.delete(lockKey);
+            }
+        } else {
+            // 等待一小段时间后重试获取缓存
+            try { Thread.sleep(50); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            pointsStr = redisTemplate.opsForValue().get(key);
+            if (pointsStr != null) {
+                return new BigDecimal(pointsStr).setScale(2, RoundingMode.HALF_UP);
+            }
+            return BigDecimal.ZERO; // 极端情况下返回0，避免阻塞
         }
     }
 
     /**
-     * 扣除点数（对话消耗）
+     * 预扣点数（对话前检查 + 原子性预扣）
+     * 使用 Lua 脚本保证原子性：检查余额 -> 预扣 -> 记录预扣标记
      * @param userId 用户ID
-     * @param points 扣减点数（保留三位小数精度）
-     * @param businessId 业务ID（如requestId）
+     * @param requestId 请求ID
      * @param modelName 模型名称
      * @return 是否成功
      */
+    public boolean preDeductPoints(Long userId, String requestId, String modelName) {
+        BigDecimal pointsCost = calculatePointsCost(modelName);
+        if (pointsCost.compareTo(BigDecimal.ZERO) <= 0) {
+            return true;
+        }
+        return doPreDeduct(userId, requestId, pointsCost);
+    }
+
+    /**
+     * 执行预扣（Lua 原子操作）
+     */
+    private boolean doPreDeduct(Long userId, String requestId, BigDecimal points) {
+        BigDecimal deductPoints = points.setScale(3, RoundingMode.HALF_DOWN);
+        String pointsKey = USER_POINTS_PREFIX + userId;
+        String preDeductKey = POINTS_PRE_DEDUCT_PREFIX + requestId;
+
+        try {
+            List<Object> result = redisTemplate.execute(
+                pointsBillingScript,
+                List.of(pointsKey, preDeductKey),
+                userId.toString(), deductPoints.toPlainString(), requestId, "120"
+            );
+
+            if (result != null && !result.isEmpty()) {
+                long success = ((Number) result.get(0)).longValue();
+                if (success == 1) {
+                    String currentPointsStr = result.get(1).toString();
+                    BigDecimal balanceAfter = new BigDecimal(currentPointsStr);
+                    log.info("点数预扣成功(Lua): userId={}, deduct={}, requestId={}, balance={}",
+                            userId, deductPoints, requestId, balanceAfter);
+                    return true;
+                } else {
+                    log.warn("点数预扣失败(余额不足): userId={}, need={}, requestId={}",
+                            userId, deductPoints, requestId);
+                    return false;
+                }
+            }
+            log.warn("点数预扣返回空: userId={}, requestId={}", userId, requestId);
+            return false;
+        } catch (Exception e) {
+            log.error("点数预扣异常: userId={}, requestId={}", userId, requestId, e);
+            return false;
+        }
+    }
+
+    /**
+     * 结算点数（对话后根据实际消耗结算）
+     * 如果预扣金额 > 实际消耗，退还差额
+     * 如果预扣金额 < 实际消耗，补扣差额
+     * @param userId 用户ID
+     * @param requestId 请求ID
+     * @param actualPoints 实际消耗点数
+     * @param modelName 模型名称
+     * @return 是否成功
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public boolean settlePoints(Long userId, String requestId, BigDecimal actualPoints, String modelName) {
+        BigDecimal actual = actualPoints.setScale(3, RoundingMode.HALF_DOWN);
+        String pointsKey = USER_POINTS_PREFIX + userId;
+        String preDeductKey = POINTS_PRE_DEDUCT_PREFIX + requestId;
+
+        try {
+            String preDeductStr = redisTemplate.opsForValue().get(preDeductKey);
+            if (preDeductStr == null) {
+                log.warn("结算时预扣记录不存在: userId={}, requestId={}", userId, requestId);
+                return false;
+            }
+
+            BigDecimal preDeductAmount = new BigDecimal(preDeductStr);
+            BigDecimal difference = preDeductAmount.subtract(actual);
+
+            String currentPointsStr = redisTemplate.opsForValue().get(pointsKey);
+            BigDecimal currentPoints = currentPointsStr != null ? new BigDecimal(currentPointsStr) : BigDecimal.ZERO;
+            BigDecimal balanceAfter = currentPoints.add(difference).setScale(3, RoundingMode.HALF_DOWN);
+
+            if (balanceAfter.compareTo(BigDecimal.ZERO) < 0) {
+                balanceAfter = BigDecimal.ZERO;
+            }
+
+            redisTemplate.opsForValue().set(pointsKey, balanceAfter.toPlainString());
+            redisTemplate.delete(preDeductKey);
+
+            recordBill(userId, "SETTLE", actual.negate(), currentPoints, balanceAfter,
+                       requestId, "对话结算: " + modelName + " (预扣:" + preDeductAmount + ", 实际:" + actual + ")",
+                       modelName, null);
+
+            updateUserPointsInDB(userId, balanceAfter);
+
+            log.info("点数结算成功: userId={}, preDeduct={}, actual={}, difference={}, balance={}",
+                    userId, preDeductAmount, actual, difference, balanceAfter);
+            return true;
+        } catch (Exception e) {
+            log.error("点数结算异常: userId={}, requestId={}", userId, requestId, e);
+            return false;
+        }
+    }
+
+    /**
+     * 回滚预扣（对话失败时调用）
+     * @param userId 用户ID
+     * @param requestId 请求ID
+     */
+    public void rollbackPreDeduct(Long userId, String requestId) {
+        String preDeductKey = POINTS_PRE_DEDUCT_PREFIX + requestId;
+        try {
+            String preDeductStr = redisTemplate.opsForValue().get(preDeductKey);
+            if (preDeductStr != null) {
+                BigDecimal preDeductAmount = new BigDecimal(preDeductStr);
+                String pointsKey = USER_POINTS_PREFIX + userId;
+                String currentPointsStr = redisTemplate.opsForValue().get(pointsKey);
+                BigDecimal currentPoints = currentPointsStr != null ? new BigDecimal(currentPointsStr) : BigDecimal.ZERO;
+                BigDecimal balanceAfter = currentPoints.add(preDeductAmount).setScale(3, RoundingMode.HALF_DOWN);
+
+                redisTemplate.opsForValue().set(pointsKey, balanceAfter.toPlainString());
+                redisTemplate.delete(preDeductKey);
+
+                log.info("点数预扣回滚成功: userId={}, refund={}, requestId={}, balance={}",
+                        userId, preDeductAmount, requestId, balanceAfter);
+            }
+        } catch (Exception e) {
+            log.error("点数预扣回滚异常: userId={}, requestId={}", userId, requestId, e);
+        }
+    }
+
+    /**
+     * 计算模型点数消耗
+     */
+    private BigDecimal calculatePointsCost(String modelName) {
+        com.ai.gateway.entity.ModelConfig config = getModelConfigByName(modelName);
+        if (config == null) {
+            return BigDecimal.ONE;
+        }
+        if (config.getPointsPerRequest() != null) {
+            return config.getPointsPerRequest();
+        }
+        String pointsMode = config.getPointsMode();
+        if (pointsMode == null) {
+            pointsMode = "STANDARD";
+        }
+        switch (pointsMode.toUpperCase()) {
+            case "FREE":
+                return BigDecimal.ZERO;
+            case "STANDARD":
+                return BigDecimal.ONE;
+            case "PREMIUM":
+                return new BigDecimal("3.000");
+            default:
+                return BigDecimal.ONE;
+        }
+    }
+
+    private PlatformModelConfig getModelConfigByName(String modelName) {
+        try {
+            return platformModelService.getByDisplayName(modelName);
+        } catch (Exception e) {
+            log.warn("获取模型配置失败: modelName={}", modelName, e);
+            return null;
+        }
+    }
+
+    /**
+     * 扣除点数（对话消耗 - 原子性操作）
+     * @deprecated 使用 preDeductPoints + settlePoints 替代
+     */
+    @Deprecated
     @Transactional(rollbackFor = Exception.class)
     public boolean deductPoints(Long userId, BigDecimal points, String businessId, String modelName) {
         // 保留三位小数精度进行计算
         BigDecimal deductPoints = points.setScale(3, RoundingMode.HALF_DOWN);
         
-        String key = USER_POINTS_PREFIX + userId;
-        String currentPointsStr = redisTemplate.opsForValue().get(key);
-        
-        if (currentPointsStr == null) {
-            log.error("用户点数缓存不存在: userId={}", userId);
+        String pointsKey = USER_POINTS_PREFIX + userId;
+        String preDeductKey = POINTS_PRE_DEDUCT_PREFIX + businessId;
+
+        try {
+            List<Object> result = redisTemplate.execute(
+                pointsBillingScript,
+                List.of(pointsKey, preDeductKey),
+                userId.toString(), deductPoints.toPlainString(), businessId, "60"
+            );
+
+            if (result != null && !result.isEmpty()) {
+                long success = ((Number) result.get(0)).longValue();
+                if (success == 1) {
+                    // 记录账单
+                    String currentPointsStr = result.get(1).toString();
+                    BigDecimal balanceAfter = new BigDecimal(currentPointsStr);
+                    BigDecimal balanceBefore = balanceAfter.add(deductPoints);
+                    recordBill(userId, "DEDUCT", deductPoints.negate(), balanceBefore, balanceAfter, 
+                               businessId, "对话消耗: " + modelName, modelName, null);
+                    
+                    // 同步数据库
+                    updateUserPointsInDB(userId, balanceAfter);
+                    
+                    log.info("点数扣除成功(Lua): userId={}, deduct={}, balance={}", userId, deductPoints, balanceAfter);
+                    return true;
+                }
+            }
+            log.warn("点数扣除失败(Lua): userId={}, deduct={}", userId, deductPoints);
+            return false;
+        } catch (Exception e) {
+            log.error("点数扣除异常: userId={}", userId, e);
             return false;
         }
-        
-        BigDecimal currentPoints = new BigDecimal(currentPointsStr);
-        
-        // 检查余额是否充足
-        if (currentPoints.compareTo(deductPoints) < 0) {
-            log.warn("点数不足: userId={}, current={}, need={}", userId, currentPoints, deductPoints);
-            return false;
-        }
-        
-        // 计算新余额（保留三位小数）
-        BigDecimal newBalance = currentPoints.subtract(deductPoints).setScale(3, RoundingMode.HALF_DOWN);
-        
-        // ✅ 同时更新 Redis 和数据库
-        redisTemplate.opsForValue().set(key, newBalance.toString());
-        updateUserPointsInDB(userId, newBalance);
-        
-        // 记录账单（返回给前端时保留两位小数）
-        recordBill(userId, "DEDUCT", deductPoints.negate(), currentPoints, newBalance, 
-                   businessId, "对话消耗: " + modelName, modelName, null);
-        
-        log.info("点数扣除成功: userId={}, deduct={}, balance={}", userId, deductPoints, newBalance);
-        return true;
     }
 
     /**

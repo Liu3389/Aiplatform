@@ -42,33 +42,32 @@ public class DailyPointsService {
         
         List<User> users = userMapper.selectList(wrapper);
         
+        // 修复 P2-7: 采用分批处理，防止万级用户阻塞定时任务
+        int batchSize = 500;
         int successCount = 0;
         int failCount = 0;
         
-        for (User user : users) {
-            try {
-                // 计算过期时间：当天23:59:59
-                LocalDateTime expireTime = LocalDate.now().atTime(23, 59, 59);
-                
-                // 发放30点
-                String businessId = "daily_" + LocalDate.now() + "_" + user.getId();
-                String description = "每日免费点数（当日有效）";
-                
-                pointsService.addPoints(
-                    user.getId(), 
-                    new BigDecimal("30.000"), 
-                    "GRANT", 
-                    businessId, 
-                    description, 
-                    expireTime
-                );
-                
-                successCount++;
-                log.debug("用户 {} 每日点数发放成功", user.getUsername());
-                
-            } catch (Exception e) {
-                failCount++;
-                log.error("用户 {} 每日点数发放失败: {}", user.getUsername(), e.getMessage());
+        for (int i = 0; i < users.size(); i += batchSize) {
+            List<User> batch = users.subList(i, Math.min(i + batchSize, users.size()));
+            for (User user : batch) {
+                try {
+                    LocalDateTime expireTime = LocalDate.now().atTime(23, 59, 59);
+                    String businessId = "daily_" + LocalDate.now() + "_" + user.getId();
+                    
+                    pointsService.addPoints(
+                        user.getId(), 
+                        new BigDecimal("30.000"), 
+                        "GRANT", 
+                        businessId, 
+                        "每日免费点数（当日有效）", 
+                        expireTime
+                    );
+                    
+                    successCount++;
+                } catch (Exception e) {
+                    failCount++;
+                    log.error("用户 {} 每日点数发放失败", user.getUsername(), e);
+                }
             }
         }
         

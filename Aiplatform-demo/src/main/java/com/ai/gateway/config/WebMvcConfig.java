@@ -28,9 +28,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .addPathPatterns("/api/**")
                 .excludePathPatterns("/auth/login", "/auth/register", "/static/**");
 
-        // API Key认证拦截器
+        // API Key认证拦截器（修复 P0: 覆盖所有 AI 交互及导出接口）
         registry.addInterceptor(apiKeyAuthInterceptor)
-                .addPathPatterns("/chat/**")
+                .addPathPatterns("/chat/**", "/v1/ai-doc/**")
                 .excludePathPatterns("/auth/**", "/user/**");
     }
 }

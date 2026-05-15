@@ -65,13 +65,12 @@ public class FreeLimitService {
         int tokens = tokenUsed != null ? Integer.parseInt(tokenUsed) : 0;
         if (tokens >= maxTokens) return false;
 
-        // 同时增加调用次数和预估token数（基础估算）
+        // 增加调用次数
         redisTemplate.opsForValue().increment(callKey);
         redisTemplate.expire(callKey, 25, TimeUnit.HOURS);
         
-        // 为每次调用预设一个基础token数（实际token数在响应后更新）
-        redisTemplate.opsForValue().increment(tokenKey, 100); // 预设100 tokens作为基础消耗
-        redisTemplate.expire(tokenKey, 25, TimeUnit.HOURS);
+        // 注意：Token 的实际消耗会在对话完成后通过 addTokens 进行精确累加
+        // 此处不再预设 100 tokens，以避免计数偏差
 
         return true;
     }

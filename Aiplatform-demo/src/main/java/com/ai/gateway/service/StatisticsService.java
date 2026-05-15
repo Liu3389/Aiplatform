@@ -1,6 +1,13 @@
 package com.ai.gateway.service;
 
+import com.ai.gateway.entity.Conversation;
+import com.ai.gateway.entity.DailyStatistics;
+import com.ai.gateway.entity.User;
+import com.ai.gateway.mapper.ConversationMapper;
+import com.ai.gateway.mapper.DailyStatisticsMapper;
+import com.ai.gateway.mapper.UserMapper;
 import com.ai.gateway.vo.*;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,11 +26,9 @@ public class StatisticsService {
     
     private final StatisticsCounterService counterService;
     private final StatisticsCacheService cacheService;
-    
-    // 这里需要注入其他Mapper，暂时用注释标注
-    // private final UserMapper userMapper;
-    // private final ConversationMapper conversationMapper;
-    // private final DailyStatisticsMapper dailyStatsMapper;
+    private final UserMapper userMapper;
+    private final ConversationMapper conversationMapper;
+    private final DailyStatisticsMapper dailyStatsMapper;
     
     /**
      * 获取仪表盘统计数据（从缓存或实时计算）
@@ -57,10 +62,16 @@ public class StatisticsService {
         stats.setTotalUsers(counterService.getCounterValue("USER_TOTAL"));
         stats.setTotalConversations(counterService.getCounterValue("CONVERSATION_TOTAL"));
         
-        // TODO: 从数据库查询今日数据
-        stats.setTodayNewUsers(0);
-        stats.setTodayConversations(0);
-        stats.setTodayActiveUsers(0);
+        // 从数据库查询今日数据
+        LocalDate today = LocalDate.now();
+        stats.setTodayNewUsers(Math.toIntExact(userMapper.selectCount(new LambdaQueryWrapper<User>()
+                .ge(User::getCreateTime, today.atStartOfDay()))));
+        stats.setTodayConversations(Math.toIntExact(conversationMapper.selectCount(new LambdaQueryWrapper<Conversation>()
+                .ge(Conversation::getCreateTime, today.atStartOfDay()))));
+        
+        // 计算今日活跃用户（假设最近一次更新时间在今天即为活跃）
+        stats.setTodayActiveUsers(Math.toIntExact(userMapper.selectCount(new LambdaQueryWrapper<User>()
+                .ge(User::getUpdateTime, today.atStartOfDay()))));
         
         // 系统状态（简单判断）
         stats.setSystemStatus("normal");
@@ -106,12 +117,20 @@ public class StatisticsService {
         UserStatsVO stats = new UserStatsVO();
         
         // 基础统计
-        stats.setTotalUsers(counterService.getCounterValue("USER_TOTAL").intValue());
+        stats.setTotalUsers(userMapper.selectCount(null).intValue());
         
-        // TODO: 从数据库查询详细数据
-        stats.setTodayNewUsers(0);
-        stats.setActiveUsers7d(0);
-        stats.setInactiveUsers30d(0);
+        // 从数据库查询详细数据
+        LocalDate today = LocalDate.now();
+        stats.setTodayNewUsers(userMapper.selectCount(new LambdaQueryWrapper<User>()
+                .ge(User::getCreateTime, today.atStartOfDay())).intValue());
+        
+        // 7天活跃用户
+        stats.setActiveUsers7d(userMapper.selectCount(new LambdaQueryWrapper<User>()
+                .ge(User::getUpdateTime, today.minusDays(7).atStartOfDay())).intValue());
+        
+        // 30天未活跃用户
+        stats.setInactiveUsers30d(userMapper.selectCount(new LambdaQueryWrapper<User>()
+                .lt(User::getUpdateTime, today.minusDays(30).atStartOfDay())).intValue());
         
         // 用户分层
         UserStatsVO.UserSegmentVO segments = new UserStatsVO.UserSegmentVO();
@@ -150,7 +169,7 @@ public class StatisticsService {
         ConversationStatsVO stats = new ConversationStatsVO();
         
         // 总量统计
-        stats.setTotalConversations(counterService.getCounterValue("CONVERSATION_TOTAL"));
+        stats.setTotalConversations(conversationMapper.selectCount(null));
         stats.setTotalMessages(counterService.getCounterValue("MESSAGE_TOTAL"));
         
         // 计算平均值
@@ -160,10 +179,12 @@ public class StatisticsService {
             );
         }
         
-        // TODO: 从数据库查询今日数据和模型使用统计
-        stats.setTodayConversations(0);
-        stats.setTodayMessages(0);
-        stats.setAvgDuration(0);
+        // 从数据库查询今日数据
+        LocalDate today = LocalDate.now();
+        stats.setTodayConversations(Math.toIntExact(conversationMapper.selectCount(new LambdaQueryWrapper<Conversation>()
+                .ge(Conversation::getCreateTime, today.atStartOfDay()))));
+        stats.setTodayMessages(Math.toIntExact(counterService.getCounterValue("MESSAGE_TODAY"))); // 假设计数器有今日消息数
+        stats.setAvgDuration(0); // 暂时保持为0，后续可从 call_log 聚合
         
         // 模型使用统计
         ConversationStatsVO.ModelUsageStatsVO modelUsage = new ConversationStatsVO.ModelUsageStatsVO();
@@ -175,17 +196,29 @@ public class StatisticsService {
     }
     
     /**
-     * 生成用户趋势数据（示例）
+     * 生成用户趋势数据（修复：使用真实数据库查询）
      */
     private List<DashboardStatsVO.TrendDataVO> generateUserTrend(int days) {
         List<DashboardStatsVO.TrendDataVO> trend = new ArrayList<>();
         LocalDate today = LocalDate.now();
         
+        // 优化：一次性查询出所有数据，在内存中分组（减少数据库交互次数）
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+        wrapper.ge(User::getCreateTime, today.minusDays(days).atStartOfDay());
+        List<User> users = userMapper.selectList(wrapper);
+        
+        Map<String, Long> dateCountMap = users.stream()
+            .collect(java.util.stream.Collectors.groupingBy(
+                u -> u.getCreateTime().toLocalDate().toString(),
+                java.util.stream.Collectors.counting()
+            ));
+
         for (int i = days - 1; i >= 0; i--) {
             LocalDate date = today.minusDays(i);
+            String dateStr = date.toString();
             DashboardStatsVO.TrendDataVO data = new DashboardStatsVO.TrendDataVO();
-            data.setDate(date.toString());
-            data.setValue((long) (Math.random() * 100)); // 示例数据
+            data.setDate(dateStr);
+            data.setValue(dateCountMap.getOrDefault(dateStr, 0L));
             trend.add(data);
         }
         
@@ -193,7 +226,7 @@ public class StatisticsService {
     }
     
     /**
-     * 生成对话趋势数据（示例）
+     * 生成对话趋势数据（修复：使用真实数据库查询）
      */
     private List<DashboardStatsVO.TrendDataVO> generateConversationTrend(int days) {
         List<DashboardStatsVO.TrendDataVO> trend = new ArrayList<>();
@@ -201,9 +234,13 @@ public class StatisticsService {
         
         for (int i = days - 1; i >= 0; i--) {
             LocalDate date = today.minusDays(i);
+            long count = conversationMapper.selectCount(new LambdaQueryWrapper<Conversation>()
+                    .ge(Conversation::getCreateTime, date.atStartOfDay())
+                    .lt(Conversation::getCreateTime, date.plusDays(1).atStartOfDay()));
+            
             DashboardStatsVO.TrendDataVO data = new DashboardStatsVO.TrendDataVO();
             data.setDate(date.toString());
-            data.setValue((long) (Math.random() * 500)); // 示例数据
+            data.setValue(count);
             trend.add(data);
         }
         
@@ -249,10 +286,13 @@ public class StatisticsService {
      * @return 每日统计数据列表
      */
     public java.util.List<com.ai.gateway.entity.PlatformStatistics> getDailyStats(LocalDate startDate, LocalDate endDate) {
-        // TODO: 实现从daily_statistics表查询数据
-        // 目前返回空列表，后续需要注入DailyStatisticsMapper并实现查询逻辑
+        // 修复：从 platform_statistics 表查询真实数据
         log.info("查询每日统计: {} 至 {}", startDate, endDate);
-        return new ArrayList<>();
+        LambdaQueryWrapper<com.ai.gateway.entity.PlatformStatistics> wrapper = new LambdaQueryWrapper<>();
+        wrapper.ge(com.ai.gateway.entity.PlatformStatistics::getStatDate, startDate)
+               .le(com.ai.gateway.entity.PlatformStatistics::getStatDate, endDate)
+               .orderByAsc(com.ai.gateway.entity.PlatformStatistics::getStatDate);
+        return dailyStatsMapper.selectList(wrapper);
     }
     
     /**

@@ -33,7 +33,7 @@ public class DataArchiveService {
 
     /**
      * 每天凌晨2点执行归档任务
-     * 将30天前的聊天记录从热表迁移到冷表
+     * 修复 P2-17: 采用分批处理机制，防止表过大时 OOM
      */
     @Scheduled(cron = "0 0 2 * * ?")
     @Transactional(rollbackFor = Exception.class)
@@ -41,46 +41,59 @@ public class DataArchiveService {
         log.info("开始执行数据归档任务...");
 
         try {
-            // 计算归档时间阈值
             LocalDateTime archiveThreshold = LocalDateTime.now().minusDays(ARCHIVE_DAYS);
+            int batchSize = 1000;
+            int totalArchived = 0;
 
-            // 查询需要归档的消息
-            LambdaQueryWrapper<ChatMessage> wrapper = new LambdaQueryWrapper<>();
-            wrapper.lt(ChatMessage::getCreateTime, archiveThreshold);
+            while (true) {
+                // 分批查询需要归档的消息
+                LambdaQueryWrapper<ChatMessage> wrapper = new LambdaQueryWrapper<>();
+                wrapper.lt(ChatMessage::getCreateTime, archiveThreshold)
+                       .last("LIMIT " + batchSize);
 
-            List<ChatMessage> messagesToArchive = chatMessageMapper.selectList(wrapper);
+                List<ChatMessage> messagesToArchive = chatMessageMapper.selectList(wrapper);
 
-            if (messagesToArchive.isEmpty()) {
-                log.info("没有需要归档的数据");
-                return;
+                if (messagesToArchive.isEmpty()) {
+                    break;
+                }
+
+                log.info("正在归档一批数据: size={}", messagesToArchive.size());
+
+                // 转换并批量插入历史表
+                List<ChatMessageHistory> historyMessages = messagesToArchive.stream().map(msg -> {
+                    ChatMessageHistory history = new ChatMessageHistory();
+                    history.setConversationId(msg.getConversationId());
+                    history.setUserId(msg.getUserId());
+                    history.setRole(msg.getRole());
+                    history.setContent(msg.getContent());
+                    history.setModel(msg.getModel());
+                    history.setTokens(msg.getTokens());
+                    history.setFileUrls(msg.getFileUrls()); // 修复 P0-3: 补全文件 URL 迁移
+                    history.setMetadata(msg.getMetadata());
+                    history.setOriginalCreateTime(msg.getCreateTime());
+                    history.setArchiveTime(LocalDateTime.now());
+                    return history;
+                }).collect(Collectors.toList());
+
+                if (!historyMessages.isEmpty()) {
+                    // 修复：直接使用 Mapper 的 insert 方法分批插入
+                    for (int i = 0; i < historyMessages.size(); i += 500) {
+                        int end = Math.min(i + 500, historyMessages.size());
+                        List<ChatMessageHistory> batch = historyMessages.subList(i, end);
+                        for (ChatMessageHistory msg : batch) {
+                            chatMessageHistoryMapper.insert(msg);
+                        }
+                    }
+                }
+
+                // 删除已归档的热数据
+                List<Long> ids = messagesToArchive.stream().map(ChatMessage::getId).collect(Collectors.toList());
+                chatMessageMapper.deleteBatchIds(ids);
+
+                totalArchived += messagesToArchive.size();
             }
 
-            log.info("找到 {} 条需要归档的消息", messagesToArchive.size());
-
-            // 转换为历史消息对象
-            List<ChatMessageHistory> historyMessages = messagesToArchive.stream().map(msg -> {
-                ChatMessageHistory history = new ChatMessageHistory();
-                history.setConversationId(msg.getConversationId());
-                history.setUserId(msg.getUserId());
-                history.setRole(msg.getRole());
-                history.setContent(msg.getContent());
-                history.setModel(msg.getModel());
-                history.setTokens(msg.getTokens());
-                history.setMetadata(msg.getMetadata());
-                history.setOriginalCreateTime(msg.getCreateTime());
-                history.setArchiveTime(LocalDateTime.now());
-                return history;
-            }).collect(Collectors.toList());
-
-            // 批量插入到历史表
-            for (ChatMessageHistory history : historyMessages) {
-                chatMessageHistoryMapper.insert(history);
-            }
-
-            // 从热表中删除已归档的数据
-            chatMessageMapper.delete(wrapper);
-
-            log.info("数据归档完成: 归档 {} 条消息", historyMessages.size());
+            log.info("数据归档完成: 共归档 {} 条消息", totalArchived);
 
         } catch (Exception e) {
             log.error("数据归档失败", e);

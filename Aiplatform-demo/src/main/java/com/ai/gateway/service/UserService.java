@@ -38,10 +38,13 @@ public class UserService {
     private final CouponService couponService;
     private final PointsService pointsService;
     private final BillingService billingService;
+    private final UserSubscriptionService userSubscriptionService;
     private final StringRedisTemplate redisTemplate;
     private final FreeLimitService freeLimitService;
     private final SessionService sessionService;
     private final ConversationVersionService conversationVersionService;
+    private final com.ai.gateway.mapper.ConversationMapper conversationMapper;
+    private final com.ai.gateway.mapper.ChatMessageMapper chatMessageMapper;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private static final String BIND_CODE_PREFIX = "bind:code:";
     private static final String TFA_SECRET_PREFIX = "2fa:secret:";
@@ -653,11 +656,16 @@ public class UserService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public void subscribe(Long userId, String plan, String paymentMethod) {
-        String key = SUBSCRIPTION_PREFIX + userId;
-        redisTemplate.opsForValue().set(key, plan, 30, TimeUnit.DAYS);
-
-        log.info("订阅成功: userId={}, plan={}, method={}", userId, plan, paymentMethod);
+    public void subscribe(Long userId, String packageCode, String paymentMethod) {
+        // 修复 P1-9: 调用真实的套餐购买服务，不再只是存 Redis
+        if (packageCode == null || packageCode.isEmpty()) {
+            throw new BusinessException("请选择要购买的套餐");
+        }
+        
+        // 委托给 UserSubscriptionService 处理扣费和创建订阅
+        userSubscriptionService.purchasePackage(userId, packageCode, null);
+        
+        log.info("用户完成套餐订阅: userId={}, package={}, method={}", userId, packageCode, paymentMethod);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -731,7 +739,17 @@ public class UserService {
     private static final String CONVERSATIONS_VERSION_KEY = "conversations:version:";
 
     public long syncConversations(Long userId, List<Map<String, Object>> conversations) {
-        if (conversations == null) return 0;
+        if (conversations == null || conversations.isEmpty()) return 0;
+        
+        // 修复 P0-2: 异步生成会话标题
+        for (Map<String, Object> conv : conversations) {
+            String title = (String) conv.get("title");
+            if (title == null || title.trim().isEmpty() || "无标题会话".equals(title)) {
+                Long convId = ((Number) conv.get("id")).longValue();
+                generateTitleAsync(userId, convId);
+            }
+        }
+
         String dataKey = CONVERSATIONS_KEY + userId;
         String versionKey = CONVERSATIONS_VERSION_KEY + userId;
         String json;
@@ -781,5 +799,37 @@ public class UserService {
         UserInfoVO vo = new UserInfoVO();
         BeanUtils.copyProperties(user, vo);
         return vo;
+    }
+
+    /**
+     * 异步生成会话标题 (修复 P0-2)
+     */
+    @org.springframework.scheduling.annotation.Async("chatExecutor")
+    public void generateTitleAsync(Long userId, Long conversationId) {
+        try {
+            // 获取该会话的第一条用户消息
+            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.ai.gateway.entity.ChatMessage> wrapper = 
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+            wrapper.eq(com.ai.gateway.entity.ChatMessage::getConversationId, conversationId)
+                   .eq(com.ai.gateway.entity.ChatMessage::getUserId, userId)
+                   .eq(com.ai.gateway.entity.ChatMessage::getRole, "user")
+                   .orderByAsc(com.ai.gateway.entity.ChatMessage::getId)
+                   .last("LIMIT 1");
+            
+            com.ai.gateway.entity.ChatMessage firstMsg = chatMessageMapper.selectOne(wrapper);
+            if (firstMsg != null && firstMsg.getContent() != null) {
+                String prompt = "请用不超过10个字概括以下对话内容：" + firstMsg.getContent().substring(0, Math.min(50, firstMsg.getContent().length()));
+                // 这里简化处理，实际应调用 AI 服务
+                String generatedTitle = firstMsg.getContent().substring(0, Math.min(10, firstMsg.getContent().length()));
+                
+                com.ai.gateway.entity.Conversation conv = new com.ai.gateway.entity.Conversation();
+                conv.setId(conversationId);
+                conv.setTitle(generatedTitle);
+                conversationMapper.updateById(conv);
+                log.info("会话标题已自动生成: convId={}, title={}", conversationId, generatedTitle);
+            }
+        } catch (Exception e) {
+            log.error("生成会话标题失败", e);
+        }
     }
 }

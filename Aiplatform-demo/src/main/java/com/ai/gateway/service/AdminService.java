@@ -320,7 +320,7 @@ public class AdminService {
     /**
      * 批量封禁/解封用户
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public int batchUpdateStatus(List<Long> userIds, int status) {
         int successCount = 0;
         for (Long userId : userIds) {

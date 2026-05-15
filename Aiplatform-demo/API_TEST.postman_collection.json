@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AI Gateway Platform API - 用户接口",
-    "description": "凌点AI模型调度网关用户接口测试 - 使用 X-User-Token Header 认证\n\n**最新更新 (2026-05-15)**:\n- ✅ 更新 DeepSeek API 配置（使用最新 base_url）\n- ✅ 移除已弃用模型（deepseek-chat, deepseek-reasoner）\n- ✅ 仅保留 deepseek-v4-flash（免费）和 deepseek-v4-pro（高级）\n- ✅ 所有模型统一使用 DeepSeek API Key: REDACTED_PROVIDER_API_KEY\n- ✅ 新增聊天记录管理模块（游标分页 + 冷热分离）\n- ✅ 新增优惠券使用记录功能\n- ✅ 新增充值记录真实数据查询\n- ✅ 新增套餐订阅系统（身份标识展示）\n- ✅ 新增用户自定义 API Key 管理（加密存储）⭐NEW\n- ✅ 统一点数体系，新增点数账单查询接口 ⭐NEW\n- ✅ 新增点数余额查询接口 ⭐NEW\n\n**接口总数**: 54个API接口\n\n**主要功能模块**:\n1. 用户认证（6个接口）\n2. API Key管理（4个接口）\n3. 会话管理（4个接口）\n4. 聊天对话（4个接口）\n5. 聊天记录管理（3个接口）\n6. 限流与安全测试（3个接口）\n7. 用户中心（13个接口 - 新增 /points）\n8. 通知与优惠券（6个接口）\n9. 套餐订阅管理（5个接口）\n10. 点数账单管理（2个接口 - 新增）⭐NEW\n11. 用户自定义 API Key 管理（4个接口）",
+    "description": "凌点AI模型调度网关用户接口测试 - 使用 X-User-Token Header 认证\n\n**最新更新 (2026-05-15)**:\n- ✅ 架构重构：拆分为 AI 对话平台（点数制）与 模型商店（API Key 中转）双业务线\n- ✅ 新增平台对话模型配置表 platform_model_config（支持虚拟模型映射）\n- ✅ 新增模型商店相关表（厂商配置、用户 Key、调用日志）\n- ✅ 移除旧版 model_config 及用户自定义 API Key 功能\n- ✅ 统一业务术语：所有对话只扣点数，不扣余额；货币单位统一为中文“元”\n- ✅ 更新 DeepSeek API 配置（仅保留 deepseek-v4-flash 和 deepseek-v4-pro）\n- ✅ 新增聊天记录管理模块（游标分页 + 冷热分离）\n- ✅ 统一点数体系，新增点数账单查询接口\n\n**主要功能模块**:\n1. 用户认证（6个接口）\n2. 平台对话模型列表（/platform-model/list）\n3. 会话管理（4个接口）\n4. 聊天对话（4个接口）\n5. 模型商店（/marketplace/keys, /buy-key）\n6. 用户中心（点数、套餐、账单）\n7. 通知与优惠券（6个接口）",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -187,133 +187,70 @@
       ]
     },
     {
-      "name": "API Key管理",
+      "name": "平台对话模型",
       "item": [
         {
-          "name": "生成API Key",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "var json = pm.response.json();",
-                  "if (json.code === 200 && json.data.apiKey) {",
-                  "  pm.collectionVariables.set('apiKey', json.data.apiKey);",
-                  "  console.log('API Key已保存');",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"我的API Key\",\n  \"rateLimit\": 100\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/api-key/generate",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "api-key", "generate"]
-            }
-          }
-        },
-        {
-          "name": "查询API Key列表",
+          "name": "获取可用模型列表",
           "request": {
             "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
             "url": {
-              "raw": "{{baseUrl}}/api/api-key/list",
+              "raw": "{{baseUrl}}/api/platform-model/list",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "api-key", "list"]
-            }
-          }
-        },
-        {
-          "name": "启用API Key",
-          "request": {
-            "method": "PUT",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/api-key/1/enable",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "api-key", "1", "enable"]
-            }
-          }
-        },
-        {
-          "name": "禁用API Key",
-          "request": {
-            "method": "PUT",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/api-key/1/disable",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "api-key", "1", "disable"]
-            }
-          }
-        },
-        {
-          "name": "更新限流阈值",
-          "request": {
-            "method": "PUT",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/api-key/1/rate-limit?rateLimit=200",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "api-key", "1", "rate-limit"],
-              "query": [{ "key": "rateLimit", "value": "200" }]
-            }
-          }
-        },
-        {
-          "name": "删除API Key",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/api-key/1",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "api-key", "1"]
+              "path": ["api", "platform-model", "list"]
             }
           }
         }
       ]
     },
     {
-      "name": "模型配置",
+      "name": "模型商店",
       "item": [
         {
-          "name": "模型列表",
+          "name": "查询已购 API Key",
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
             "url": {
-              "raw": "{{baseUrl}}/api/model-config/list",
+              "raw": "{{baseUrl}}/api/marketplace/keys",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "model-config", "list"]
+              "path": ["api", "marketplace", "keys"]
+            }
+          }
+        },
+        {
+          "name": "购买 API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Token", "value": "{{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"providerId\": 1,\n  \"packageName\": \"基础版\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/marketplace/buy-key",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "marketplace", "buy-key"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "测试数据管理",
+      "item": [
+        {
+          "name": "重置平台基础数据",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/test-data/reset",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "test-data", "reset"]
             }
           }
         }
@@ -564,8 +501,34 @@
       ]
     },
     {
-      "name": "限流与安全测试",
+      "name": "测试数据管理",
       "item": [
+        {
+          "name": "重置平台基础数据",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/test-data/reset",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "test-data", "reset"]
+            }
+          }
+        },
+        {
+          "name": "修复模型点数配置",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/test-data/fix-points",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "test-data", "fix-points"]
+            }
+          }
+        }
+      ]
+    },
         {
           "name": "快速请求测试（触发限流）",
           "event": [
@@ -610,7 +573,7 @@
                 "type": "text/javascript"
               }
             }
-          ],
+            ],
           "request": {
             "method": "POST",
             "header": [
@@ -1649,6 +1612,129 @@
               "path": ["user", "api-keys", "test"]
             },
             "description": "测试 API Key 的连接有效性\n\n系统会尝试连接对应的 API 服务进行验证\n如果验证失败，会返回具体的错误信息"
+          }
+        }
+      ]
+    },
+    {
+      "name": "AI 文档助手",
+      "item": [
+        {
+          "name": "对话中发送文件 (返回 Markdown)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Token", "value": "{{token}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] },
+                { "key": "question", "value": "解释这段代码", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/with-file",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "with-file"]
+            },
+            "description": "在对话流中嵌入文件（支持 .txt/.md/.java/.py/.cpp/.xlsx/.docx/.html/.css 等），AI 将返回包含代码块渲染的 Markdown 格式回答。"
+          }
+        },
+        {
+          "name": "让 AI 生成文件",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Token", "value": "{{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requirement\": \"写一个 Python 快速排序算法\",\n  \"format\": \"py\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/generate-file",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "generate-file"]
+            },
+            "description": "根据需求生成代码或流程图文件，并存入阿里云 OSS。返回下载链接。"
+          }
+        },
+        {
+          "name": "云端同步对话数据",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Token", "value": "{{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversationId\": 1,\n  \"messages\": []\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/sync",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "sync"]
+            },
+            "description": "将对话记录及关联文件打包成 ZIP 上传至阿里云 OSS 进行备份。"
+          }
+        },
+        {
+          "name": "下载云端对话数据",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/download?syncId=xxx",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "download"],
+              "query": [
+                { "key": "syncId", "value": "xxx" }
+              ]
+            },
+            "description": "从阿里云 OSS 下载打包好的历史对话数据及关联文件。"
+          }
+        },
+        {
+          "name": "加载对话关联文件",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Token", "value": "{{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/load?conversationId=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "load"],
+              "query": [
+                { "key": "conversationId", "value": "1" }
+              ]
+            },
+            "description": "加载对话时，从数据库获取该会话关联的所有文件 URL，供前端预加载。"
+          }
+        },
+        {
+          "name": "导出对话内容为文件 (不收费)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-User-Token", "value": "{{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"public class Hello {\\n    public static void main(String[] args) {\\n        System.out.println(\\\"Hello World\\\");\\n    }\\n}\",\n  \"fileName\": \"Hello.java\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/export-content",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "chat", "export-content"]
+            },
+            "description": "将 AI 输出的代码块或文本直接导出为文件下载，不消耗点数。"
           }
         }
       ]

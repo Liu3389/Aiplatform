@@ -25,14 +25,6 @@ public class ChatRequest {
 
     private String mode;
 
-    private Long userApiKeyId;
-
-    private String customApiKey;
-
-    private String customBaseUrl;
-
-    private String customFormat;
-
     @Data
     public static class ChatMessage {
         private String role;

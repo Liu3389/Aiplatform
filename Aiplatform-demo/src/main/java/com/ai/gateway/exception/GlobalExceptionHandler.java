@@ -65,11 +65,12 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 处理其他未知异常
+     * 处理其他未知异常 (修复 P1-12: 增加 TraceId 关联日志)
      */
     @ExceptionHandler(Exception.class)
     public Result<Void> handleException(Exception e) {
-        log.error("系统异常: {}", e.getMessage(), e);
-        return Result.error(ResultCode.ERROR.getCode(), "系统异常，请联系管理员");
+        String traceId = java.util.UUID.randomUUID().toString().substring(0, 8);
+        log.error("系统异常 [TraceId: {}]: {}", traceId, e.getMessage(), e);
+        return Result.error(ResultCode.ERROR.getCode(), "系统内部错误，请稍后重试 (ID: " + traceId + ")");
     }
 }

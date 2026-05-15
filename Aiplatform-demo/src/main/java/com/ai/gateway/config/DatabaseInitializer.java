@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.stereotype.Component;
 
@@ -49,14 +50,19 @@ public class DatabaseInitializer implements ApplicationRunner {
             schemaPopulator.execute(dataSource);
             log.info("✅ 建表脚本执行成功");
 
-            // 2. 执行init_test_data.sql生成测试数据
+            // 2. 执行init_test_data.sql生成测试数据 (修复 P1-6: 增加文件存在性检查)
             log.info("步骤2: 生成测试数据...");
-            ResourceDatabasePopulator dataPopulator = new ResourceDatabasePopulator();
-            dataPopulator.setContinueOnError(false);
-            dataPopulator.setSeparator(";");
-            dataPopulator.addScript(new ClassPathResource("sql/init_test_data.sql"));
-            dataPopulator.execute(dataSource);
-            log.info("✅ 测试数据生成成功");
+            Resource initTestResource = new ClassPathResource("sql/init_test_data.sql");
+            if (initTestResource.exists()) {
+                ResourceDatabasePopulator dataPopulator = new ResourceDatabasePopulator();
+                dataPopulator.setContinueOnError(false);
+                dataPopulator.setSeparator(";");
+                dataPopulator.addScript(initTestResource);
+                dataPopulator.execute(dataSource);
+                log.info("✅ 测试数据生成成功");
+            } else {
+                log.warn("⚠️ 未找到 init_test_data.sql，跳过测试数据生成");
+            }
 
             log.info("========================================");
             log.info("✅ 测试数据库初始化完成！");

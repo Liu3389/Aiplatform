@@ -21,7 +21,7 @@ public class StatisticsCounterService {
     /**
      * 增加用户总数计数器
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void incrementUserTotal() {
         incrementCounter("USER_TOTAL", 1L);
     }
@@ -29,7 +29,7 @@ public class StatisticsCounterService {
     /**
      * 增加会话总数计数器
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void incrementConversationTotal() {
         incrementCounter("CONVERSATION_TOTAL", 1L);
     }
@@ -37,7 +37,7 @@ public class StatisticsCounterService {
     /**
      * 增加消息总数计数器
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void incrementMessageTotal(Long increment) {
         incrementCounter("MESSAGE_TOTAL", increment);
     }
@@ -45,7 +45,7 @@ public class StatisticsCounterService {
     /**
      * 增加API调用总数计数器
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void incrementApiCallTotal(boolean success) {
         incrementCounter("API_CALL_TOTAL", 1L);
         if (success) {
@@ -58,7 +58,7 @@ public class StatisticsCounterService {
     /**
      * 通用增加计数器方法（原子操作）
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void incrementCounter(String counterType, Long increment) {
         try {
             int rows = counterMapper.incrementCounter(counterType, increment);

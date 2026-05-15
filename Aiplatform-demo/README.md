@@ -1,22 +1,17 @@
-# AI Gateway Platform - AI 模型调度网关与流式对话平台
+# AI Gateway Platform - 凌点AI模型调度网关与流式对话平台
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.x-brightgreen.svg)](https://spring.io/projects/spring-boot)
-[![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://www.oracle.com/java/)
-
-一个基于 Spring Boot 3.2.x 的高性能 AI 模型统一接入网关，支持多厂商模型路由、SSE 流式响应、Redis Lua 分布式限流和**点数计费系统**。
+一个基于 Spring Boot 3.2.x 的高性能 AI 平台，采用**双业务线架构**：
+1. **AI 对话平台（点数制）**：用户充值购买套餐获得点数，在平台内直接进行流式对话。
+2. **模型商店（API Key 中转）**：用户购买 API Key，作为中转商提供主流大模型的调用服务并统计用量。
 
 ## 🚀 核心特性
 
-- ✅ **多厂商模型接入** - 支持 OpenAI、DeepSeek 等主流 AI 模型
-- ✅ **统一点数结算** - deepseek-v4-flash=1点/次，deepseek-v4-pro=3点/次
-- ✅ **每日配额机制** - 普通用户每天自动获得30点（当日有效）
-- ✅ **统一 API 接口** - 兼容 OpenAI 格式，无缝切换模型提供商
-- ✅ **SSE 流式响应** - 基于 SseEmitter 实现实时逐字输出
-- ✅ **分布式限流** - Redis Lua 脚本实现令牌桶算法，按 API Key 粒度限流
-- ✅ **API Key 管理** - 细粒度权限控制、启用/禁用、限流阈值配置
-- ✅ **调用日志追踪** - 完整的请求记录与状态追踪
-- ✅ **全局异常处理** - 统一的错误响应格式
+- ✅ **虚拟模型映射**：前端展示 GPT-4/Claude-3 等主流模型，后端统一路由至 DeepSeek。
+- ✅ **双轨计费体系**：平台对话按次扣除固定点数；模型商店按 Token 消耗实时扣费。
+- ✅ **SSE 流式响应**：基于 SseEmitter 实现实时逐字输出，支持 Markdown 和 Mermaid。
+- ✅ **冷热数据分离**：聊天记录自动归档，支持游标分页查询，提升大数据量性能。
+- ✅ **云端同步备份**：支持对话内容打包 ZIP 存入阿里云 OSS，实现多端同步。
+- ✅ **分布式限流与安全**：Redis Lua 脚本实现原子性点数预扣，防止并发竞态。
 
 ## 🛠️ 技术栈
 
@@ -115,7 +110,6 @@ mvn spring-boot:run
 
 ### 🚀 部署
 - **[docs/guides/DEPLOYMENT.md](docs/guides/DEPLOYMENT.md)** - 生产环境部署指南
-- **[deploy_optimization.sh](deploy_optimization.sh)** - 一键优化部署脚本 ⭐
 
 ### 📊 项目报告
 - **[docs/reports/PROJECT_SUMMARY.md](docs/reports/PROJECT_SUMMARY.md)** - 项目总结和技术亮点
@@ -126,20 +120,54 @@ mvn spring-boot:run
 - **[DAILY_POINTS_SETUP.md](DAILY_POINTS_SETUP.md)** - 每日点数配置指南 ⭐
 - **[POINTS_BASED_CHAT_GUIDE.md](POINTS_BASED_CHAT_GUIDE.md)** - 点数结算说明 ⭐
 - **[DEEPSEEK_SETUP_GUIDE.md](DEEPSEEK_SETUP_GUIDE.md)** - DeepSeek API配置 ⭐
-- **[REDIS_OPTIMIZATION.md](REDIS_OPTIMIZATION.md)** - Redis缓存优化 ⭐
 
 ---
 
-## 📊 接口统计
+### 📊 接口统计
 
-- **用户接口**: 40+ 个（认证、API Key管理、聊天、会话、通知等）
+- **用户接口**: 50+ 个（认证、平台模型、聊天、会话、模型商店、通知等）
 - **管理员接口**: 38 个（用户管理、批量操作、点数管理、会员管理、统计分析等）
-- **总计**: 86+ 个API接口
+- **总计**: 96+ 个API接口
 - **测试覆盖**: ✅ 100% (自动化测试)
 
 ---
 
 ## 📖 API 文档
+
+### 平台对话模型
+
+#### 获取可用模型列表
+```bash
+curl http://localhost:8080/api/platform-model/list \
+  -H "X-User-Token: YOUR_TOKEN"
+```
+
+### 模型商店
+
+#### 查询已购 API Key
+```bash
+curl http://localhost:8080/api/marketplace/keys \
+  -H "X-User-Token: YOUR_TOKEN"
+```
+
+#### 购买 API Key
+```bash
+curl -X POST http://localhost:8080/api/marketplace/buy-key \
+  -H "X-User-Token: YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "providerId": 1,
+    "packageName": "基础版"
+  }'
+```
+
+### 测试数据管理
+
+#### 重置平台基础数据
+```bash
+curl -X POST http://localhost:8080/api/admin/test-data/reset \
+  -H "X-User-Token: YOUR_TOKEN"
+```
 
 ### 用户管理
 
@@ -248,24 +276,16 @@ ai-gateway-platform/
 
 ## 🧪 快速测试
 
-### 自动化测试（推荐）⭐
+**推荐使用 Postman 集合进行接口测试**：
+- **用户接口**: [API_TEST.postman_collection.json](API_TEST.postman_collection.json)
+- **管理员接口**: [ADMIN_API.postman_collection.json](ADMIN_API.postman_collection.json)
 
+**自动化测试脚本**（位于 `scripts/testing/`）：
 ```bash
-# 1. 初始化测试数据
-./scripts/database/init_test_data.sh
-
-# 2. 运行全量API测试（86个接口）
-chmod +x test_all_apis.sh
-./test_all_apis.sh
-
-# 3. 运行权限测试
-chmod +x test_admin_permission.sh
-./test_admin_permission.sh
+# 运行全量API测试
+chmod +x scripts/testing/test_api.sh
+./scripts/testing/test_api.sh
 ```
-
-**预期结果**:
-- 全量测试: 86/86 通过 (100%)
-- 权限测试: 8/8 通过 (100%)
 
 详见: [docs/guides/COMPLETE_TESTING_GUIDE.md](docs/guides/COMPLETE_TESTING_GUIDE.md)
 
@@ -299,7 +319,7 @@ OpenAiChatService
 
 ```
 1. 预扣阶段（请求前）
-   - 估算最大费用（如 0.1 美元）
+   - 估算最大费用（如 0.1 元）
    - Redis Lua 原子性扣款
    - 记录预扣信息（用于回滚）
 

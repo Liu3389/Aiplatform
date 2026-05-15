@@ -5,37 +5,44 @@ import com.ai.gateway.entity.ChatMessageHistory;
 import com.ai.gateway.mapper.ChatMessageMapper;
 import com.ai.gateway.mapper.ChatMessageHistoryMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import lombok.RequiredArgsConstructor;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-/**
- * 聊天消息服务（支持游标分页和冷热分离）
- * 
- * @author AI Gateway Platform
- */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ChatMessageService {
 
     private final ChatMessageMapper chatMessageMapper;
     private final ChatMessageHistoryMapper chatMessageHistoryMapper;
+    private final com.ai.gateway.mapper.ConversationMapper conversationMapper;
     private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
 
-    // Redis缓存前缀
     private static final String CACHE_PREFIX = "chat:messages:";
     private static final long CACHE_TTL_MINUTES = 30;
-
-    // 冷热数据分界线（30天）
     private static final int HOT_DATA_DAYS = 30;
+
+    public ChatMessageService(ChatMessageMapper chatMessageMapper,
+                              ChatMessageHistoryMapper chatMessageHistoryMapper,
+                              com.ai.gateway.mapper.ConversationMapper conversationMapper,
+                              StringRedisTemplate redisTemplate,
+                              ObjectMapper objectMapper) {
+        this.chatMessageMapper = chatMessageMapper;
+        this.chatMessageHistoryMapper = chatMessageHistoryMapper;
+        this.conversationMapper = conversationMapper;
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
+    }
 
     /**
      * 保存消息
@@ -77,32 +84,39 @@ public class ChatMessageService {
      * @return 分页结果
      */
     public List<ChatMessage> getMessagesByCursor(Long conversationId, Long lastId, Integer limit, Long userId) {
-        // 1. 尝试从缓存获取
+        // 修复 P2-7: 增加会话归属权深度校验，防止越权访问
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.ai.gateway.entity.Conversation> convWrapper = 
+            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+        convWrapper.eq(com.ai.gateway.entity.Conversation::getId, conversationId)
+                   .eq(com.ai.gateway.entity.Conversation::getUserId, userId);
+        if (conversationMapper.selectCount(convWrapper) == 0) {
+            log.warn("非法访问尝试: userId={}, conversationId={}", userId, conversationId);
+            return new ArrayList<>();
+        }
+
         String cacheKey = buildCacheKey(conversationId, lastId, limit);
         String cached = redisTemplate.opsForValue().get(cacheKey);
         if (cached != null) {
-            log.info("命中缓存: conversationId={}, lastId={}, limit={}", conversationId, lastId, limit);
-            // 这里简化处理，实际应该反序列化
-            // return deserialize(cached);
+            try {
+                List<ChatMessage> messages = objectMapper.readValue(cached, new TypeReference<List<ChatMessage>>() {});
+                log.info("命中缓存: conversationId={}, lastId={}, limit={}, size={}", conversationId, lastId, limit, messages.size());
+                return messages;
+            } catch (Exception e) {
+                log.warn("缓存反序列化失败，回退到数据库查询: {}", e.getMessage());
+            }
         }
 
-        // 2. 计算冷热分界时间
         LocalDateTime hotDataThreshold = LocalDateTime.now().minusDays(HOT_DATA_DAYS);
 
-        // 3. 先查热数据表
         List<ChatMessage> messages = queryHotMessages(conversationId, lastId, limit, userId, hotDataThreshold);
 
-        // 4. 如果热数据不足，从冷数据表补充
         if (messages.size() < limit && lastId == null) {
-            // 只在首次加载时检查冷数据
             List<ChatMessage> coldMessages = queryColdMessages(conversationId, messages, limit - messages.size(), userId);
             messages.addAll(coldMessages);
         }
 
-        // 5. 按时间倒序排序
-        messages.sort((m1, m2) -> m2.getCreateTime().compareTo(m1.getCreateTime()));
+        Collections.reverse(messages);
 
-        // 6. 存入缓存
         if (!messages.isEmpty()) {
             cacheMessages(cacheKey, messages);
         }
@@ -150,12 +164,13 @@ public class ChatMessageService {
             wrapper.eq(ChatMessageHistory::getConversationId, conversationId)
                    .eq(ChatMessageHistory::getUserId, userId);
 
-            // 如果有热数据，排除已经查到的ID
+            // 优化：使用最早的热数据时间作为游标，避免使用 notIn
             if (!existingMessages.isEmpty()) {
-                List<Long> existingIds = existingMessages.stream()
-                        .map(ChatMessage::getId)
-                        .collect(Collectors.toList());
-                wrapper.notIn(ChatMessageHistory::getId, existingIds);
+                LocalDateTime earliestHotTime = existingMessages.stream()
+                        .map(ChatMessage::getCreateTime)
+                        .min(LocalDateTime::compareTo)
+                        .orElse(LocalDateTime.now());
+                wrapper.lt(ChatMessageHistory::getOriginalCreateTime, earliestHotTime);
             }
 
             // 按原始创建时间倒序
@@ -218,10 +233,30 @@ public class ChatMessageService {
      */
     private void cacheMessages(String cacheKey, List<ChatMessage> messages) {
         try {
-            // 简化处理，实际应该序列化为JSON
-            redisTemplate.opsForValue().set(cacheKey, "cached", CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+            String json = objectMapper.writeValueAsString(messages);
+            redisTemplate.opsForValue().set(cacheKey, json, CACHE_TTL_MINUTES, TimeUnit.MINUTES);
         } catch (Exception e) {
             log.error("缓存消息失败: cacheKey={}", cacheKey, e);
         }
+    }
+
+    public List<String> getFileUrlsByConversationId(Long conversationId) {
+        LambdaQueryWrapper<ChatMessage> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(ChatMessage::getConversationId, conversationId)
+               .isNotNull(ChatMessage::getFileUrls)
+               .select(ChatMessage::getFileUrls);
+        
+        java.util.Set<String> allUrls = new java.util.HashSet<>();
+        for (ChatMessage msg : chatMessageMapper.selectList(wrapper)) {
+            if (msg.getFileUrls() != null) {
+                try {
+                    List<String> urls = objectMapper.readValue(msg.getFileUrls(), new TypeReference<List<String>>() {});
+                    allUrls.addAll(urls);
+                } catch (Exception e) {
+                    log.warn("解析 file_urls 失败: conversationId={}", conversationId, e);
+                }
+            }
+        }
+        return new ArrayList<>(allUrls);
     }
 }

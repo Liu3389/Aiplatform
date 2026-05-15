@@ -35,6 +35,11 @@ spring:
           max-idle: 10
           min-idle: 5
 
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
   type-aliases-package: com.ai.gateway.entity
@@ -63,7 +68,7 @@ app:
 # API 加密配置
 api:
   encryption:
-    key: ${API_ENCRYPTION_KEY:}  # AES-256 密钥（Base64编码），建议通过环境变量设置
+    key: ${API_ENCRYPTION_KEY:7uOekwFsZ1poTzhXDgTVnOrkIy4Hf8wwwrGKh/Cu18Y=}  # AES-256 密钥（Base64编码），建议通过环境变量设置
 
 # CORS 跨域配置
 cors:
@@ -86,3 +91,13 @@ logging:
   pattern:
     console: '{"time":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%-5level","thread":"%thread","logger":"%logger{36}","msg":"%msg"}%n'
     file: '{"time":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%-5level","thread":"%thread","logger":"%logger{36}","msg":"%msg"}%n'
+
+aliyun:
+  oss:
+    endpoint: oss-cn-wuhan-lr.aliyuncs.com
+    access-key-id: LTAI5t9jdQoi8fLUq6BGr7BJ
+    access-key-secret: W4lcE7XPs1bn5mGvhBXOyvAF31onhJ
+    bucket-name: my-ai-platform-docs
+    domain: https://my-ai-platform-docs.oss-cn-wuhan-lr.aliyuncs.com
+
+

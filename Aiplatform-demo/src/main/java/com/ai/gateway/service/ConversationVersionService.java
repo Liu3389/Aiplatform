@@ -22,34 +22,33 @@ public class ConversationVersionService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
-    private static final String CONVERSATION_DATA_PREFIX = "conversation:data:";
-    private static final String CONVERSATION_VERSION_PREFIX = "conversation:version:";
+    // 修复 P1-9: 改为按会话 ID 分 Key 存储，防止单 Key 超过 Redis 512MB 限制
+    private static final String CONVERSATION_PREFIX = "conversation:data:";
+    private static final String VERSION_PREFIX = "conversation:version:";
     private static final long CONVERSATION_TTL_DAYS = 90;
 
     /**
      * 保存对话数据到服务端
-     * @param userId 用户ID
-     * @param conversations 对话列表
-     * @return 版本号
      */
     public long saveConversations(Long userId, List<Map<String, Object>> conversations) {
         if (conversations == null || conversations.isEmpty()) {
             return 0;
         }
         
-        String dataKey = CONVERSATION_DATA_PREFIX + userId;
-        String versionKey = CONVERSATION_VERSION_PREFIX + userId;
-        
         try {
-            // 序列化对话数据
-            String jsonData = objectMapper.writeValueAsString(conversations);
+            // 修复 P1-9: 为每个会话单独存储，而不是存一个巨大的 List
+            for (Map<String, Object> conv : conversations) {
+                String convId = (String) conv.get("id");
+                if (convId != null) {
+                    String key = CONVERSATION_PREFIX + userId + ":" + convId;
+                    String jsonData = objectMapper.writeValueAsString(conv);
+                    redisTemplate.opsForValue().set(key, jsonData, CONVERSATION_TTL_DAYS, TimeUnit.DAYS);
+                }
+            }
             
-            // 生成新版本号（使用时间戳）
             long newVersion = System.currentTimeMillis();
-            
-            // 保存到Redis
-            redisTemplate.opsForValue().set(dataKey, jsonData, CONVERSATION_TTL_DAYS, TimeUnit.DAYS);
-            redisTemplate.opsForValue().set(versionKey, String.valueOf(newVersion), CONVERSATION_TTL_DAYS, TimeUnit.DAYS);
+            redisTemplate.opsForValue().set(VERSION_PREFIX + userId, String.valueOf(newVersion), 
+                                            CONVERSATION_TTL_DAYS, TimeUnit.DAYS);
             
             log.info("对话数据保存成功: userId={}, conversationCount={}, version={}", 
                     userId, conversations.size(), newVersion);
@@ -68,19 +67,22 @@ public class ConversationVersionService {
      */
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> getConversations(Long userId) {
-        String dataKey = CONVERSATION_DATA_PREFIX + userId;
-        String jsonData = redisTemplate.opsForValue().get(dataKey);
+        // 修复 P1-9: 从多个 Key 中读取并合并
+        java.util.Set<String> keys = redisTemplate.keys(CONVERSATION_PREFIX + userId + ":*");
+        if (keys == null || keys.isEmpty()) return new ArrayList<>();
         
-        if (jsonData == null || jsonData.isEmpty()) {
-            return new ArrayList<>();
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (String key : keys) {
+            String jsonData = redisTemplate.opsForValue().get(key);
+            if (jsonData != null) {
+                try {
+                    result.add(objectMapper.readValue(jsonData, Map.class));
+                } catch (Exception e) {
+                    log.warn("解析会话数据失败: key={}", key);
+                }
+            }
         }
-        
-        try {
-            return objectMapper.readValue(jsonData, List.class);
-        } catch (Exception e) {
-            log.error("获取对话数据失败: userId={}", userId, e);
-            return new ArrayList<>();
-        }
+        return result;
     }
 
     /**
@@ -119,12 +121,12 @@ public class ConversationVersionService {
      * @param userId 用户ID
      */
     public void clearConversations(Long userId) {
-        String dataKey = CONVERSATION_DATA_PREFIX + userId;
-        String versionKey = CONVERSATION_VERSION_PREFIX + userId;
-        
-        redisTemplate.delete(dataKey);
-        redisTemplate.delete(versionKey);
-        
+        // 修复 P1-9: 删除该用户下所有会话 Key
+        java.util.Set<String> keys = redisTemplate.keys(CONVERSATION_PREFIX + userId + ":*");
+        if (keys != null && !keys.isEmpty()) {
+            redisTemplate.delete(keys);
+        }
+        redisTemplate.delete(VERSION_PREFIX + userId);
         log.info("对话数据已清空: userId={}", userId);
     }
 
