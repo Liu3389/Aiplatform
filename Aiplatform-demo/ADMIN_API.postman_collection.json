@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AI Gateway - Admin API",
-    "description": "管理员后台接口测试集合\n\n**包含功能**:\n- ✅ 系统统计（2个接口）\n- ✅ 用户管理（7个接口：基础查询、高级筛选、详情、状态切换、充值、角色分配、密码重置）\n- ✅ 批量操作（3个接口：封禁/解封、发放点数、开通会员）\n- ✅ 点数管理（2个接口：增减点数、设置免费次数）\n- ✅ 会员管理（3个接口：等级调整、有效期设置、批量开通）\n- ✅ 操作日志查询（1个接口）\n- ✅ 通知管理（6个接口：未读数、列表、已读、全部已读、删除、最新通知）\n- ✅ 统计分析（4个接口：日/周/月查询、CSV导出）\n\n**总计**: 28个API接口\n\n**权限要求**: ADMIN 或 SUPER_ADMIN\n\n**使用说明**:\n1. 先设置环境变量 adminToken（通过登录获取）\n2. 所有需要管理员权限的接口会自动在Header中添加 X-User-Token\n3. 通知相关接口不需要管理员权限，普通用户也可访问",
+    "description": "管理员后台接口测试集合\n\n**最新更新 (2026-05-15)**:\n- ✅ 系统统计（5个接口）\n- ✅ 核心统计（3个新接口：仪表盘、用户统计、对话统计）⭐NEW\n- ✅ 用户管理（8个接口：基础查询、高级筛选、详情、状态切换、充值、角色分配、撤销角色、密码重置）\n- ✅ 批量操作（3个接口：封禁/解封、发放点数、开通会员）\n- ✅ 点数管理（2个接口：增减点数、设置免费次数）\n- ✅ 会员管理（3个接口：等级调整、有效期设置、批量开通）\n- ✅ 操作日志查询（1个接口）\n- ✅ 通知管理（6个接口：未读数、列表、已读、全部已读、删除、最新通知）\n- ✅ 统计分析（4个接口：日/周/月查询、CSV导出）\n- ✅ 优惠券管理（1个接口：发放优惠券）\n- ✅ 通知发送（1个接口：发送系统通知）\n- ✅ 套餐模板管理（6个接口：列表、详情、创建、更新、上架/下架、删除）⭐NEW\n\n**总计**: 44个API接口\n\n**权限要求**: ADMIN 或 SUPER_ADMIN（通知相关接口除外）\n\n**安全增强 (2026-05-15)**:\n- ✅ 统一使用 @RequireAdmin 注解进行权限控制\n- ✅ 关键操作自动记录管理员操作日志\n- ✅ 操作日志包含 IP 地址、User-Agent、操作详情\n- ✅ 支持成功/失败操作的全量审计追踪\n\n**使用说明**:\n1. 先设置环境变量 adminToken（通过登录获取）\n2. 所有需要管理员权限的接口会自动在Header中添加 X-User-Token\n3. 通知相关接口不需要管理员权限，普通用户也可访问\n4. 所有管理员操作都会被自动记录到操作日志中",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -41,7 +41,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/stats",
+              "raw": "{{baseUrl}}/api/admin/stats",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "stats"]
             },
@@ -55,7 +55,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/analytics/full?days=7&months=6",
+              "raw": "{{baseUrl}}/api/admin/analytics/full?days=7&months=6",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "analytics", "full"],
               "query": [
@@ -74,6 +74,55 @@
             "description": "获取完整的分析数据，包括每日用量、模型使用、小时流量、Top用户、收入趋势、用户增长"
           },
           "response": []
+        },
+        {
+          "name": "获取仪表盘统计数据 ⭐NEW",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/statistics/dashboard?period=7d",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "dashboard"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "7d",
+                  "description": "时间范围：7d（近7天）或 30d（近30天）"
+                }
+              ]
+            },
+            "description": "获取仪表盘核心统计数据\n\n返回数据包括：\n- 总注册用户数\n- 今日新增用户数\n- 总会话数\n- 今日会话数\n- 今日活跃用户数\n- 系统运行状态\n- 用户新增趋势\n- 对话量趋势\n- 活跃用户趋势\n- 快速统计（总消息数、点数消耗、API成功率等）\n\n数据从Redis缓存获取，响应速度毫秒级"
+          },
+          "response": []
+        },
+        {
+          "name": "获取用户统计数据 ⭐NEW",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/statistics/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "users"]
+            },
+            "description": "获取用户维度统计数据\n\n返回数据包括：\n- 总用户数\n- 今日新增用户\n- 近7天活跃用户\n- 近30天未登录用户（流失用户）\n- 用户状态分布\n- 用户分层（高频/中频/低频/未活跃）\n\n数据从Redis缓存获取，1小时更新一次"
+          },
+          "response": []
+        },
+        {
+          "name": "获取对话统计数据 ⭐NEW",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/statistics/conversations",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "conversations"]
+            },
+            "description": "获取对话维度统计数据\n\n返回数据包括：\n- 总会话数\n- 总消息数\n- 平均每会话消息数\n- 平均单次对话时长\n- 今日会话数\n- 今日消息数\n- 模型调用统计（总调用次数、成功率、模型分布、热门模型排行）\n\n数据从Redis缓存获取，1小时更新一次"
+          },
+          "response": []
         }
       ]
     },
@@ -86,7 +135,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/users?page=1&size=20&search=&membership=&status=",
+              "raw": "{{baseUrl}}/api/admin/users?page=1&size=20&search=&membership=&status=",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "users"],
               "query": [
@@ -127,7 +176,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/users/advanced?page=1&size=20&membership=vip&minBalance=100&maxBalance=500&startDate=2026-05-01&endDate=2026-05-14",
+              "raw": "{{baseUrl}}/api/admin/users/advanced?page=1&size=20&membership=vip&minBalance=100&maxBalance=500&startDate=2026-05-01&endDate=2026-05-14",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "users", "advanced"],
               "query": [
@@ -188,7 +237,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/user/1",
+              "raw": "{{baseUrl}}/api/admin/user/1",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "user", "1"]
             },
@@ -211,7 +260,7 @@
               "raw": "{\n  \"userId\": 1,\n  \"status\": \"DISABLED\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/admin/user/status",
+              "raw": "{{baseUrl}}/api/admin/user/status",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "user", "status"]
             },
@@ -234,7 +283,7 @@
               "raw": "{\n  \"userId\": 1,\n  \"amount\": 100.00\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/admin/user/recharge",
+              "raw": "{{baseUrl}}/api/admin/user/recharge",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "user", "recharge"]
             },
@@ -257,7 +306,7 @@
               "raw": "{\n  \"userId\": 1,\n  \"role\": \"ADMIN\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/admin/assign-role",
+              "raw": "{{baseUrl}}/api/admin/assign-role",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "assign-role"]
             },
@@ -280,7 +329,30 @@
               "raw": "{\n  \"userId\": 1\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/admin/revoke-role",
+              "raw": "{{baseUrl}}/api/admin/revoke-role",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "revoke-role"]
+            },
+            "description": "撤销用户的管理员角色，降级为普通用户"
+          },
+          "response": []
+        },
+        {
+          "name": "撤销管理员角色",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/revoke-role",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "revoke-role"]
             },
@@ -303,7 +375,7 @@
               "raw": "{\n  \"userId\": 1,\n  \"password\": \"newPassword123\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/admin/reset-password",
+              "raw": "{{baseUrl}}/api/admin/reset-password",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "reset-password"]
             },
@@ -331,7 +403,7 @@
               "raw": "{\n  \"userIds\": [1, 2, 3],\n  \"status\": 0\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/admin/batch/update-status",
+              "raw": "{{baseUrl}}/api/admin/batch/update-status",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "batch", "update-status"]
             },
@@ -354,7 +426,7 @@
               "raw": "{\n  \"userIds\": [1, 2, 3],\n  \"points\": 100.000\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/admin/batch/grant-points",
+              "raw": "{{baseUrl}}/api/admin/batch/grant-points",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "batch", "grant-points"]
             },
@@ -377,7 +449,7 @@
               "raw": "{\n  \"userIds\": [1, 2, 3],\n  \"membership\": \"vip\",\n  \"days\": 30\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/admin/batch/activate-membership",
+              "raw": "{{baseUrl}}/api/admin/batch/activate-membership",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "batch", "activate-membership"]
             },
@@ -405,7 +477,7 @@
               "raw": "{\n  \"userId\": 1,\n  \"points\": 50.000,\n  \"reason\": \"活动奖励\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/admin/points/adjust",
+              "raw": "{{baseUrl}}/api/admin/points/adjust",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "points", "adjust"]
             },
@@ -428,7 +500,7 @@
               "raw": "{\n  \"userId\": 1,\n  \"count\": 10\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/admin/points/set-free-count",
+              "raw": "{{baseUrl}}/api/admin/points/set-free-count",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "points", "set-free-count"]
             },
@@ -456,7 +528,7 @@
               "raw": "{\n  \"userId\": 1,\n  \"membership\": \"vip\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/admin/membership/update",
+              "raw": "{{baseUrl}}/api/admin/membership/update",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "membership", "update"]
             },
@@ -479,7 +551,7 @@
               "raw": "{\n  \"userId\": 1,\n  \"expireTime\": \"2026-12-31T23:59:59\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/admin/membership/set-expire-time",
+              "raw": "{{baseUrl}}/api/admin/membership/set-expire-time",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "membership", "set-expire-time"]
             },
@@ -502,7 +574,7 @@
               "raw": "{\n  \"userIds\": [1, 2, 3],\n  \"membership\": \"vip\",\n  \"days\": 30\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/admin/batch/activate-membership",
+              "raw": "{{baseUrl}}/api/admin/batch/activate-membership",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "batch", "activate-membership"]
             },
@@ -521,7 +593,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/logs?page=1&size=50&adminId=&operationType=&startDate=&endDate=",
+              "raw": "{{baseUrl}}/api/admin/logs?page=1&size=50&adminId=&operationType=&startDate=&endDate=",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "logs"],
               "query": [
@@ -559,7 +631,7 @@
                 }
               ]
             },
-            "description": "查询管理员操作日志，支持多维度筛选"
+            "description": "查询管理员操作日志，支持多维度筛选\n\n返回数据包括：\n- 管理员ID和用户名\n- 操作类型（USER_MANAGE/POINTS_MANAGE/MEMBERSHIP_MANAGE/BATCH_OPERATION等）\n- 操作动作（TOGGLE_STATUS/RECHARGE/GRANT_POINTS等）\n- 目标用户ID列表\n- 操作详情（JSON格式）\n- IP地址和User-Agent\n- 操作结果（SUCCESS/FAILED）\n- 错误信息（失败时）\n- 操作时间\n\n注意：所有管理员操作都会自动记录到此日志中"
           },
           "response": []
         }
@@ -574,7 +646,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/notifications/unread-count",
+              "raw": "{{baseUrl}}/api/admin/notifications/unread-count",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "notifications", "unread-count"]
             },
@@ -588,7 +660,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/notifications?page=1&size=20&isRead=",
+              "raw": "{{baseUrl}}/api/admin/notifications?page=1&size=20&isRead=",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "notifications"],
               "query": [
@@ -618,7 +690,7 @@
             "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/notifications/1/read",
+              "raw": "{{baseUrl}}/api/admin/notifications/1/read",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "notifications", "1", "read"]
             },
@@ -632,7 +704,7 @@
             "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/notifications/read-all",
+              "raw": "{{baseUrl}}/api/admin/notifications/read-all",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "notifications", "read-all"]
             },
@@ -646,7 +718,7 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/notifications/1",
+              "raw": "{{baseUrl}}/api/admin/notifications/1",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "notifications", "1"]
             },
@@ -660,7 +732,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/notifications/latest?limit=5",
+              "raw": "{{baseUrl}}/api/admin/notifications/latest?limit=5",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "notifications", "latest"],
               "query": [
@@ -686,7 +758,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/statistics/daily?startDate=2026-05-01&endDate=2026-05-14",
+              "raw": "{{baseUrl}}/api/admin/statistics/daily?startDate=2026-05-01&endDate=2026-05-14",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "statistics", "daily"],
               "query": [
@@ -712,7 +784,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/statistics/weekly?weeks=4",
+              "raw": "{{baseUrl}}/api/admin/statistics/weekly?weeks=4",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "statistics", "weekly"],
               "query": [
@@ -733,7 +805,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/statistics/monthly?months=6",
+              "raw": "{{baseUrl}}/api/admin/statistics/monthly?months=6",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "statistics", "monthly"],
               "query": [
@@ -754,7 +826,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/admin/statistics/export?type=user&startDate=2026-05-01&endDate=2026-05-14",
+              "raw": "{{baseUrl}}/api/admin/statistics/export?type=user&startDate=2026-05-01&endDate=2026-05-14",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "statistics", "export"],
               "query": [
@@ -774,6 +846,381 @@
               ]
             },
             "description": "导出CSV格式的统计报表\n\ntype可选值：\n- user：用户统计数据\n- revenue：营收统计数据\n- business：业务统计数据"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📈 统计分析",
+      "item": [
+        {
+          "name": "按日查询统计数据",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/statistics/daily?startDate=2026-05-01&endDate=2026-05-14",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "daily"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "2026-05-01",
+                  "description": "开始日期"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-05-14",
+                  "description": "结束日期"
+                }
+              ]
+            },
+            "description": "按日查询平台统计数据"
+          },
+          "response": []
+        },
+        {
+          "name": "按周查询统计数据",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/statistics/weekly?weeks=4",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "weekly"],
+              "query": [
+                {
+                  "key": "weeks",
+                  "value": "4",
+                  "description": "最近N周"
+                }
+              ]
+            },
+            "description": "按周查询平台统计数据"
+          },
+          "response": []
+        },
+        {
+          "name": "按月查询统计数据",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/statistics/monthly?months=6",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "monthly"],
+              "query": [
+                {
+                  "key": "months",
+                  "value": "6",
+                  "description": "最近N个月"
+                }
+              ]
+            },
+            "description": "按月查询平台统计数据"
+          },
+          "response": []
+        },
+        {
+          "name": "导出统计报表（CSV）",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/statistics/export?type=user&startDate=2026-05-01&endDate=2026-05-14",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "export"],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "user",
+                  "description": "报表类型：user/revenue/business"
+                },
+                {
+                  "key": "startDate",
+                  "value": "2026-05-01",
+                  "description": "开始日期"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-05-14",
+                  "description": "结束日期"
+                }
+              ]
+            },
+            "description": "导出统计报表为CSV格式\n\ntype可选值：\n- user：用户统计\n- revenue：收入统计\n- business：业务统计"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🎫 优惠券与通知发送",
+      "item": [
+        {
+          "name": "发放优惠券",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100,\n  \"thresholdAmount\": 0,\n  \"applicablePlan\": null,\n  \"expireTime\": \"2026-12-31T23:59:59\",\n  \"target\": \"all\",\n  \"membership\": \"vip\",\n  \"days\": 7\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/coupons/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "coupons", "send"]
+            },
+            "description": "向用户发放优惠券\n\ntarget可选值：\n- all：所有用户\n- membership：指定会员等级（需传membership参数）\n- new_users：最近N天注册用户（需传days参数）"
+          },
+          "response": []
+        },
+        {
+          "name": "发送系统通知",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"系统维护通知\",\n  \"content\": \"系统将于今晚22:00-24:00进行维护\",\n  \"type\": \"system\",\n  \"target\": \"all\",\n  \"membership\": \"vip\",\n  \"days\": 7\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/notifications/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "notifications", "send"]
+            },
+            "description": "向用户发送系统通知\n\ntype可选值：system/info/warning/error\ntarget可选值：all/membership/new_users"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🎫 优惠券使用记录（用户）",
+      "item": [
+        {
+          "name": "获取我的优惠券",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/my-coupons",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "my-coupons"]
+            },
+            "description": "获取当前用户的优惠券列表"
+          },
+          "response": []
+        },
+        {
+          "name": "获取优惠券使用记录",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/coupon-usage-records",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "coupon-usage-records"]
+            },
+            "description": "获取当前用户的优惠券使用历史记录"
+          },
+          "response": []
+        },
+        {
+          "name": "使用优惠券充值",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100,\n  \"couponId\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/user/recharge-with-coupon",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "recharge-with-coupon"]
+            },
+            "description": "使用优惠券进行充值，可享受优惠折扣"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📦 套餐模板管理（管理员）",
+      "item": [
+        {
+          "name": "获取套餐列表",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/packages/list?includeInactive=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "packages", "list"],
+              "query": [
+                {
+                  "key": "includeInactive",
+                  "value": "false",
+                  "description": "是否包含下架的套餐"
+                }
+              ]
+            },
+            "description": "获取所有上架的套餐模板列表"
+          },
+          "response": []
+        },
+        {
+          "name": "获取套餐详情",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/packages/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "packages", "1"]
+            },
+            "description": "根据ID获取套餐模板详情"
+          },
+          "response": []
+        },
+        {
+          "name": "创建套餐模板",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"packageCode\": \"vip\",\n  \"packageName\": \"VIP套餐\",\n  \"description\": \"高级VIP套餐\",\n  \"identityLabel\": \"至尊会员\",\n  \"points\": 1000,\n  \"price\": 199.9,\n  \"durationDays\": 30,\n  \"dailyCallLimit\": 500,\n  \"monthlyCallLimit\": 15000,\n  \"maxTokensPerCall\": 16384,\n  \"priorityLevel\": 2,\n  \"features\": \"{\\\"support\\\":\\\"专属技术支持\\\"}\",\n  \"sortOrder\": 5\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/packages/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "packages", "create"]
+            },
+            "description": "创建新的套餐模板"
+          },
+          "response": []
+        },
+        {
+          "name": "更新套餐模板",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": 1,\n  \"packageName\": \"升级版套餐\",\n  \"price\": 299.9,\n  \"points\": 1500\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/packages/update",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "packages", "update"]
+            },
+            "description": "更新套餐模板信息"
+          },
+          "response": []
+        },
+        {
+          "name": "上架/下架套餐",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": 1,\n  \"status\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/packages/toggle-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "packages", "toggle-status"]
+            },
+            "description": "上架(status=1)或下架(status=0)套餐"
+          },
+          "response": []
+        },
+        {
+          "name": "删除套餐模板",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/packages/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "packages", "1"]
+            },
+            "description": "删除指定的套餐模板"
           },
           "response": []
         }

@@ -1,8 +1,10 @@
 package com.ai.gateway.service;
 
 import com.ai.gateway.entity.Coupon;
+import com.ai.gateway.entity.CouponUsageRecord;
 import com.ai.gateway.entity.User;
 import com.ai.gateway.mapper.CouponMapper;
+import com.ai.gateway.mapper.CouponUsageRecordMapper;
 import com.ai.gateway.mapper.UserMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,7 @@ import java.util.UUID;
 public class CouponService {
 
     private final CouponMapper couponMapper;
+    private final CouponUsageRecordMapper couponUsageRecordMapper;
     private final UserMapper userMapper;
 
     public List<Coupon> listByUser(Long userId) {
@@ -28,6 +31,16 @@ public class CouponService {
         wrapper.eq(Coupon::getUserId, userId)
                .orderByDesc(Coupon::getCreateTime);
         return couponMapper.selectList(wrapper);
+    }
+
+    /**
+     * 获取用户优惠券使用记录
+     */
+    public List<CouponUsageRecord> listUsageRecords(Long userId) {
+        LambdaQueryWrapper<CouponUsageRecord> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(CouponUsageRecord::getUserId, userId)
+               .orderByDesc(CouponUsageRecord::getUsageTime);
+        return couponUsageRecordMapper.selectList(wrapper);
     }
 
     @Transactional
@@ -85,7 +98,8 @@ public class CouponService {
     }
 
     @Transactional
-    public BigDecimal useCoupon(Long userId, Long couponId, BigDecimal orderAmount, String plan) {
+    public BigDecimal useCoupon(Long userId, Long couponId, BigDecimal orderAmount, String plan, 
+                                String orderType, String orderId) {
         Coupon c = couponMapper.selectById(couponId);
         if (c == null || !c.getUserId().equals(userId)) throw new RuntimeException("代金卷不存在");
         if (Boolean.TRUE.equals(c.getUsed())) throw new RuntimeException("代金卷已使用");
@@ -97,10 +111,30 @@ public class CouponService {
             throw new RuntimeException("此代金卷仅适用于 " + c.getApplicablePlan() + " 套餐");
 
         BigDecimal discount = c.getAmount().min(orderAmount);
+        BigDecimal actualAmount = orderAmount.subtract(discount);
+        
+        // 标记优惠券为已使用
         c.setUsed(true);
         c.setUsedTime(LocalDateTime.now());
         couponMapper.updateById(c);
-        log.info("代金卷已使用: userId={}, couponId={}, discount={}", userId, couponId, discount);
+        
+        // 记录优惠券使用历史
+        CouponUsageRecord usageRecord = new CouponUsageRecord();
+        usageRecord.setUserId(userId);
+        usageRecord.setCouponId(couponId);
+        usageRecord.setCouponCode(c.getCouponCode());
+        usageRecord.setCouponAmount(c.getAmount());
+        usageRecord.setOrderType(orderType != null ? orderType : "RECHARGE");
+        usageRecord.setOrderId(orderId);
+        usageRecord.setOrderAmount(orderAmount);
+        usageRecord.setDiscountAmount(discount);
+        usageRecord.setActualAmount(actualAmount);
+        usageRecord.setUsageTime(LocalDateTime.now());
+        usageRecord.setRemark("优惠券使用 - " + (plan != null ? plan : "通用"));
+        couponUsageRecordMapper.insert(usageRecord);
+        
+        log.info("代金卷已使用: userId={}, couponId={}, discount={}, orderType={}, orderId={}", 
+                userId, couponId, discount, orderType, orderId);
         return discount;
     }
 }

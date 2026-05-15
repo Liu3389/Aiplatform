@@ -3,8 +3,12 @@ package com.ai.gateway.service;
 import com.ai.gateway.common.ResultCode;
 import com.ai.gateway.dto.UserLoginRequest;
 import com.ai.gateway.dto.UserRegisterRequest;
+import com.ai.gateway.entity.BillingRecord;
+import com.ai.gateway.entity.PointsBill;
 import com.ai.gateway.entity.User;
 import com.ai.gateway.exception.BusinessException;
+import com.ai.gateway.mapper.BillingRecordMapper;
+import com.ai.gateway.mapper.PointsBillMapper;
 import com.ai.gateway.mapper.UserMapper;
 import com.ai.gateway.vo.UserInfoVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -21,6 +25,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -28,6 +33,10 @@ import java.util.concurrent.TimeUnit;
 public class UserService {
 
     private final UserMapper userMapper;
+    private final BillingRecordMapper billingRecordMapper;
+    private final PointsBillMapper pointsBillMapper;
+    private final CouponService couponService;
+    private final PointsService pointsService;
     private final BillingService billingService;
     private final StringRedisTemplate redisTemplate;
     private final FreeLimitService freeLimitService;
@@ -166,9 +175,84 @@ public class UserService {
         userMapper.updateById(user);
 
         billingService.syncUserBalanceToRedis(userId, balanceAfter);
+        
+        // 注意：充值只增加余额（balance），不直接增加点数
+        // 用户需要使用余额购买套餐来获得点数和会员权益
+        // 套餐制度：越贵的套餐越划算（例如：100元=1500点，比10元=100点更优惠）
 
         log.info("用户充值成功: userId={}, amount={}, balanceBefore={}, balanceAfter={}",
                 userId, amount, balanceBefore, balanceAfter);
+    }
+
+    /**
+     * 使用优惠券充值
+     * @param userId 用户ID
+     * @param amount 充值金额
+     * @param couponId 优惠券ID（可选）
+     * @return 充值结果信息
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> rechargeWithCoupon(Long userId, BigDecimal amount, Long couponId) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(ResultCode.USER_NOT_FOUND);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        BigDecimal discount = BigDecimal.ZERO;
+        BigDecimal actualAmount = amount;
+
+        // 如果提供了优惠券ID，则使用优惠券
+        if (couponId != null) {
+            try {
+                // 使用优惠券，orderType为RECHARGE，orderId为时间戳生成的订单号
+                String orderId = "RECHARGE_" + System.currentTimeMillis();
+                discount = couponService.useCoupon(userId, couponId, amount, null, "RECHARGE", orderId);
+                actualAmount = amount.subtract(discount);
+                
+                result.put("couponUsed", true);
+                result.put("discount", discount);
+                result.put("orderId", orderId);
+                
+                log.info("充值使用优惠券: userId={}, couponId={}, discount={}, actualAmount={}", 
+                        userId, couponId, discount, actualAmount);
+            } catch (Exception e) {
+                log.warn("优惠券使用失败，将按原价充值: {}", e.getMessage());
+                result.put("couponUsed", false);
+                result.put("discount", BigDecimal.ZERO);
+                result.put("message", "优惠券使用失败: " + e.getMessage());
+            }
+        } else {
+            result.put("couponUsed", false);
+            result.put("discount", BigDecimal.ZERO);
+        }
+
+        // 执行充值（实际支付金额）
+        BigDecimal balanceBefore = user.getBalance();
+        BigDecimal balanceAfter = balanceBefore.add(actualAmount);
+
+        user.setBalance(balanceAfter);
+        userMapper.updateById(user);
+
+        billingService.syncUserBalanceToRedis(userId, balanceAfter);
+        
+        // 记录点数账单（如果有实际充值金额）
+        if (actualAmount.compareTo(BigDecimal.ZERO) > 0) {
+            String businessId = "recharge_" + System.currentTimeMillis();
+            pointsService.addPoints(userId, actualAmount, "RECHARGE", businessId, 
+                    "充值" + (discount.compareTo(BigDecimal.ZERO) > 0 ? "（使用优惠券优惠" + discount + "）" : ""), null);
+        }
+
+        result.put("success", true);
+        result.put("amount", amount);
+        result.put("actualAmount", actualAmount);
+        result.put("balanceBefore", balanceBefore);
+        result.put("balanceAfter", balanceAfter);
+
+        log.info("用户充值成功: userId={}, amount={}, discount={}, actualAmount={}, balanceBefore={}, balanceAfter={}",
+                userId, amount, discount, actualAmount, balanceBefore, balanceAfter);
+
+        return result;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -466,22 +550,34 @@ public class UserService {
     }
 
     public List<Map<String, Object>> getRechargeRecords(Long userId, int page, int size) {
+        // 计算偏移量
+        int offset = (page - 1) * size;
+        
+        // 查询点数账单中的充值记录
+        LambdaQueryWrapper<PointsBill> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PointsBill::getUserId, userId)
+               .eq(PointsBill::getChangeType, "RECHARGE")
+               .orderByDesc(PointsBill::getCreateTime)
+               .last("LIMIT " + size + " OFFSET " + offset);
+        
+        List<PointsBill> rechargeBills = pointsBillMapper.selectList(wrapper);
+        
         List<Map<String, Object>> records = new ArrayList<>();
-        Random random = new Random();
-        LocalDateTime now = LocalDateTime.now();
-
-        for (int i = 0; i < Math.min(size, 20); i++) {
+        for (PointsBill bill : rechargeBills) {
             Map<String, Object> record = new HashMap<>();
-            record.put("id", userId * 1000 + i);
-            record.put("amount", BigDecimal.valueOf(random.nextInt(500) + 10));
-            record.put("balanceBefore", BigDecimal.valueOf(random.nextInt(1000)));
-            record.put("balanceAfter", BigDecimal.valueOf(random.nextInt(1000) + 510));
-            record.put("paymentMethod", random.nextBoolean() ? "Alipay" : "WeChat");
+            record.put("id", bill.getId());
+            record.put("amount", bill.getPointsChange()); // 充值金额（点数）
+            record.put("balanceBefore", bill.getBalanceBefore());
+            record.put("balanceAfter", bill.getBalanceAfter());
+            record.put("paymentMethod", "POINTS"); // 点数充值
             record.put("status", "COMPLETED");
-            record.put("createTime", now.minusDays(random.nextInt(90)).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+            record.put("description", bill.getDescription());
+            record.put("businessId", bill.getBusinessId());
+            record.put("createTime", bill.getCreateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
             records.add(record);
         }
-
+        
+        log.info("查询充值记录: userId={}, page={}, size={}, count={}", userId, page, size, records.size());
         return records;
     }
 

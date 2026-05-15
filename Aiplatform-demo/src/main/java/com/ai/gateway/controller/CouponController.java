@@ -1,11 +1,11 @@
 package com.ai.gateway.controller;
 
+import com.ai.gateway.annotation.RequireAdmin;
 import com.ai.gateway.common.Result;
 import com.ai.gateway.entity.Coupon;
 import com.ai.gateway.service.CouponService;
 import com.ai.gateway.service.SystemNotificationService;
 import com.ai.gateway.service.TokenService;
-import com.ai.gateway.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -23,7 +23,6 @@ public class CouponController {
     private final CouponService couponService;
     private final SystemNotificationService notificationService;
     private final TokenService tokenService;
-    private final UserService userService;
 
     @GetMapping("/user/my-coupons")
     public Result<List<Coupon>> listUserCoupons(@RequestHeader("X-User-Token") String token) {
@@ -32,12 +31,19 @@ public class CouponController {
         return Result.success(couponService.listByUser(userId));
     }
 
+    @GetMapping("/user/coupon-usage-records")
+    public Result<List<com.ai.gateway.entity.CouponUsageRecord>> listCouponUsageRecords(
+            @RequestHeader("X-User-Token") String token) {
+        Long userId = tokenService.getUserIdFromToken(token);
+        if (userId == null) return Result.error(401, "Token无效");
+        return Result.success(couponService.listUsageRecords(userId));
+    }
+
     @PostMapping("/admin/coupons/send")
+    @RequireAdmin
     public Result<Map<String, Object>> adminSendCoupons(
             @RequestHeader("X-User-Token") String token,
             @RequestBody Map<String, Object> body) {
-        Long adminId = tokenService.getUserIdFromToken(token);
-        if (!userService.isAdmin(adminId)) return Result.error(403, "无权限");
 
         BigDecimal amount = new BigDecimal(body.get("amount").toString());
         BigDecimal threshold = body.containsKey("thresholdAmount") && body.get("thresholdAmount") != null
@@ -63,11 +69,10 @@ public class CouponController {
     }
 
     @PostMapping("/admin/notifications/send")
+    @RequireAdmin
     public Result<Map<String, Object>> adminSendNotification(
             @RequestHeader("X-User-Token") String token,
             @RequestBody Map<String, Object> body) {
-        Long adminId = tokenService.getUserIdFromToken(token);
-        if (!userService.isAdmin(adminId)) return Result.error(403, "无权限");
 
         String title = (String) body.get("title");
         String content = (String) body.get("content");

@@ -199,13 +199,23 @@ public class PointsService {
      * @param pageSize 每页大小
      * @return 账单列表
      */
-    public List<PointsBill> getPointsBillList(Long userId, int page, int pageSize) {
-        LambdaQueryWrapper<PointsBill> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(PointsBill::getUserId, userId)
-               .orderByDesc(PointsBill::getCreateTime)
-               .last("LIMIT " + ((page - 1) * pageSize) + ", " + pageSize);
+    public com.baomidou.mybatisplus.extension.plugins.pagination.Page<PointsBill> getPointsBillList(
+            Long userId, int page, int pageSize, String changeType) {
         
-        return pointsBillMapper.selectList(wrapper);
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<PointsBill> pageParam = 
+            new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(page, pageSize);
+        
+        LambdaQueryWrapper<PointsBill> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PointsBill::getUserId, userId);
+        
+        // 如果指定了变动类型，进行筛选
+        if (changeType != null && !changeType.isEmpty()) {
+            wrapper.eq(PointsBill::getChangeType, changeType);
+        }
+        
+        wrapper.orderByDesc(PointsBill::getCreateTime);
+        
+        return pointsBillMapper.selectPage(pageParam, wrapper);
     }
 
     /**

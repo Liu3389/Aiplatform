@@ -3,7 +3,6 @@ package com.ai.gateway.service;
 import com.ai.gateway.entity.AdminOperationLog;
 import com.ai.gateway.mapper.AdminOperationLogMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -13,7 +12,6 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,11 +23,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AdminOperationLogService {
 
-    private final AdminOperationLogMapper operationLogMapper;
+    private final AdminOperationLogMapper adminOperationLogMapper;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * 记录操作日志
+     * 记录管理员操作日志
      */
     public void logOperation(Long adminId, String adminUsername, String operationType, 
                             String operationAction, List<Long> targetUserIds, 
@@ -41,17 +39,21 @@ public class AdminOperationLogService {
             logEntity.setOperationType(operationType);
             logEntity.setOperationAction(operationAction);
             
-            // 目标用户ID列表转JSON
+            // 将目标用户ID列表转为JSON
             if (targetUserIds != null && !targetUserIds.isEmpty()) {
                 logEntity.setTargetUserIds(objectMapper.writeValueAsString(targetUserIds));
             }
             
-            // 操作详情转JSON
+            // 将操作详情转为JSON
             if (detail != null && !detail.isEmpty()) {
                 logEntity.setOperationDetail(objectMapper.writeValueAsString(detail));
             }
             
-            // 获取请求IP和User-Agent
+            logEntity.setResult(result);
+            logEntity.setErrorMessage(errorMessage);
+            logEntity.setCreateTime(LocalDateTime.now());
+            
+            // 获取请求信息
             ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
             if (attributes != null) {
                 HttpServletRequest request = attributes.getRequest();
@@ -59,16 +61,12 @@ public class AdminOperationLogService {
                 logEntity.setUserAgent(request.getHeader("User-Agent"));
             }
             
-            logEntity.setResult(result);
-            logEntity.setErrorMessage(errorMessage);
-            logEntity.setCreateTime(LocalDateTime.now());
-            
-            operationLogMapper.insert(logEntity);
-            
-            log.info("操作日志记录成功: admin={}, type={}, action={}, result={}", 
-                    adminUsername, operationType, operationAction, result);
+            adminOperationLogMapper.insert(logEntity);
+            log.info("管理员操作日志记录成功: adminId={}, type={}, action={}, result={}", 
+                    adminId, operationType, operationAction, result);
+                    
         } catch (Exception e) {
-            log.error("记录操作日志失败", e);
+            log.error("记录管理员操作日志失败", e);
         }
     }
 
@@ -76,20 +74,16 @@ public class AdminOperationLogService {
      * 记录成功操作
      */
     public void logSuccess(Long adminId, String adminUsername, String operationType, 
-                          String operationAction, List<Long> targetUserIds, 
-                          Map<String, Object> detail) {
-        logOperation(adminId, adminUsername, operationType, operationAction, 
-                    targetUserIds, detail, "SUCCESS", null);
+                          String operationAction, List<Long> targetUserIds, Map<String, Object> detail) {
+        logOperation(adminId, adminUsername, operationType, operationAction, targetUserIds, detail, "SUCCESS", null);
     }
 
     /**
      * 记录失败操作
      */
     public void logFailure(Long adminId, String adminUsername, String operationType, 
-                          String operationAction, List<Long> targetUserIds, 
-                          Map<String, Object> detail, String errorMessage) {
-        logOperation(adminId, adminUsername, operationType, operationAction, 
-                    targetUserIds, detail, "FAILED", errorMessage);
+                          String operationAction, List<Long> targetUserIds, Map<String, Object> detail, String errorMessage) {
+        logOperation(adminId, adminUsername, operationType, operationAction, targetUserIds, detail, "FAILED", errorMessage);
     }
 
     /**
@@ -117,10 +111,12 @@ public class AdminOperationLogService {
         
         wrapper.orderByDesc(AdminOperationLog::getCreateTime);
         
-        Page<AdminOperationLog> logPage = new Page<>(page, size);
-        Page<AdminOperationLog> result = operationLogMapper.selectPage(logPage, wrapper);
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<AdminOperationLog> logPage = 
+            new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(page, size);
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<AdminOperationLog> result = 
+            adminOperationLogMapper.selectPage(logPage, wrapper);
         
-        Map<String, Object> response = new HashMap<>();
+        Map<String, Object> response = new java.util.HashMap<>();
         response.put("records", result.getRecords());
         response.put("total", result.getTotal());
         response.put("page", page);

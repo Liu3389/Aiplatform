@@ -7,12 +7,24 @@
 
 -- 1. 清空所有表数据（按依赖关系逆序删除）
 SET FOREIGN_KEY_CHECKS = 0;
-TRUNCATE TABLE `billing_record`;
-TRUNCATE TABLE `call_log`;
-TRUNCATE TABLE `api_key`;
-TRUNCATE TABLE `user`;
-TRUNCATE TABLE `model_config`;
-TRUNCATE TABLE `points_bill`;
+
+-- 使用DELETE代替TRUNCATE，并忽略错误
+DELETE FROM `billing_record`;
+DELETE FROM `call_log`;
+DELETE FROM `api_key`;
+DELETE FROM `user_api_key`;
+DELETE FROM `user`;
+DELETE FROM `model_config`;
+DELETE FROM `points_bill`;
+DELETE FROM `conversation`;
+DELETE FROM `chat_message`;
+DELETE FROM `chat_message_history`;
+DELETE FROM `coupon`;
+DELETE FROM `system_notification`;
+DELETE FROM `user_notification`;
+DELETE FROM `admin_operation_log`;
+DELETE FROM `platform_statistics`;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- ============================================
@@ -128,7 +140,7 @@ INSERT INTO `api_key` (`api_key`, `user_id`, `name`, `status`, `rate_limit`) VAL
 ('sk-admin10-key1-mnopqr901234', 15, 'Admin10-Key1', 1, 500),
 ('sk-admin10-key2-stuvwx567890', 15, 'Admin10-Key2', 1, 500);
 
--- 测试用户的API Keys (20人 x 2 = 40个，仅展示前10个作为示例)
+-- 测试用户的API Keys (20人 x 2 = 40个)
 INSERT INTO `api_key` (`api_key`, `user_id`, `name`, `status`, `rate_limit`) VALUES
 ('sk-testuser01-key1-yzabcd123456', 16, 'TestUser01-Key1', 1, 100),
 ('sk-testuser01-key2-efghij789012', 16, 'TestUser01-Key2', 1, 100),
@@ -139,14 +151,44 @@ INSERT INTO `api_key` (`api_key`, `user_id`, `name`, `status`, `rate_limit`) VAL
 ('sk-testuser04-key1-ijklmn789012', 19, 'TestUser04-Key1', 1, 100),
 ('sk-testuser04-key2-opqrst345678', 19, 'TestUser04-Key2', 1, 100),
 ('sk-testuser05-key1-uvwxyz901234', 20, 'TestUser05-Key1', 1, 100),
-('sk-testuser05-key2-abcdef567890', 20, 'TestUser05-Key2', 1, 100);
+('sk-testuser05-key2-abcdef567890', 20, 'TestUser05-Key2', 1, 100),
+('sk-testuser06-key1-ghijkl123456', 21, 'TestUser06-Key1', 1, 100),
+('sk-testuser06-key2-mnopqr789012', 21, 'TestUser06-Key2', 1, 100),
+('sk-testuser07-key1-stuvwx345678', 22, 'TestUser07-Key1', 1, 100),
+('sk-testuser07-key2-yzabcd901234', 22, 'TestUser07-Key2', 1, 100),
+('sk-testuser08-key1-efghij567890', 23, 'TestUser08-Key1', 1, 100),
+('sk-testuser08-key2-klmnop123456', 23, 'TestUser08-Key2', 1, 100),
+('sk-testuser09-key1-qrstuv789012', 24, 'TestUser09-Key1', 1, 100),
+('sk-testuser09-key2-wxyzab345678', 24, 'TestUser09-Key2', 1, 100),
+('sk-testuser10-key1-cdefgh901234', 25, 'TestUser10-Key1', 1, 100),
+('sk-testuser10-key2-ijklmn567890', 25, 'TestUser10-Key2', 1, 100),
+('sk-testuser11-key1-opqrst123456', 26, 'TestUser11-Key1', 1, 100),
+('sk-testuser11-key2-uvwxyz789012', 26, 'TestUser11-Key2', 1, 100),
+('sk-testuser12-key1-abcdef345678', 27, 'TestUser12-Key1', 1, 100),
+('sk-testuser12-key2-ghijkl901234', 27, 'TestUser12-Key2', 1, 100),
+('sk-testuser13-key1-mnopqr567890', 28, 'TestUser13-Key1', 1, 100),
+('sk-testuser13-key2-stuvwx123456', 28, 'TestUser13-Key2', 1, 100),
+('sk-testuser14-key1-yzabcd789012', 29, 'TestUser14-Key1', 1, 100),
+('sk-testuser14-key2-efghij345678', 29, 'TestUser14-Key2', 1, 100),
+('sk-testuser15-key1-klmnop901234', 30, 'TestUser15-Key1', 1, 100),
+('sk-testuser15-key2-qrstuv567890', 30, 'TestUser15-Key2', 1, 100),
+('sk-testuser16-key1-wxyzab123456', 31, 'TestUser16-Key1', 1, 100),
+('sk-testuser16-key2-cdefgh789012', 31, 'TestUser16-Key2', 1, 100),
+('sk-testuser17-key1-ijklmn345678', 32, 'TestUser17-Key1', 1, 100),
+('sk-testuser17-key2-opqrst901234', 32, 'TestUser17-Key2', 1, 100),
+('sk-testuser18-key1-uvwxyz567890', 33, 'TestUser18-Key1', 1, 100),
+('sk-testuser18-key2-abcdef123456', 33, 'TestUser18-Key2', 1, 100),
+('sk-testuser19-key1-ghijkl789012', 34, 'TestUser19-Key1', 1, 100),
+('sk-testuser19-key2-mnopqr345678', 34, 'TestUser19-Key2', 1, 100),
+('sk-testuser20-key1-stuvwx901234', 35, 'TestUser20-Key1', 1, 100),
+('sk-testuser20-key2-yzabcd567890', 35, 'TestUser20-Key2', 1, 100);
 
 -- ============================================
--- 7. 生成调用日志测试数据 (100条)
+-- 7. 生成调用日志测试数据 (15条)
 -- ============================================
 -- 为不同用户生成各种模型的调用记录
 INSERT INTO `call_log` (`api_key`, `user_id`, `model`, `input_tokens`, `output_tokens`, `cost`, `duration`, `status`, `error_message`) VALUES
--- 成功调用示例 (50条)
+-- 成功调用示例 (10条)
 ('sk-testuser01-key1-yzabcd123456', 16, 'deepseek-v4-flash', 150, 300, 0.000000, 1200, 1, NULL),
 ('sk-testuser01-key1-yzabcd123456', 16, 'deepseek-v4-flash', 200, 450, 0.000000, 1500, 1, NULL),
 ('sk-testuser01-key2-efghij789012', 16, 'gpt-3.5-turbo', 180, 320, 0.000820, 1800, 1, NULL),
@@ -158,12 +200,12 @@ INSERT INTO `call_log` (`api_key`, `user_id`, `model`, `input_tokens`, `output_t
 ('sk-testuser05-key1-uvwxyz901234', 20, 'gpt-3.5-turbo', 160, 280, 0.000720, 1600, 1, NULL),
 ('sk-admin01-key1-ijklmn123456', 6, 'deepseek-v4-pro', 500, 1000, 0.000150, 5000, 1, NULL),
 
--- 失败调用示例 (10条)
-('sk-testuser06-key1-xxxxxx', 21, 'gpt-4o', 0, 0, 0.000000, 0, 0, 'API Key无效'),
-('sk-testuser07-key1-xxxxxx', 22, 'deepseek-chat', 0, 0, 0.000000, 0, 0, '余额不足'),
-('sk-testuser08-key1-xxxxxx', 23, 'gpt-3.5-turbo', 0, 0, 0.000000, 0, 0, '超时错误'),
-('sk-testuser09-key1-xxxxxx', 24, 'claude-opus-4.7', 0, 0, 0.000000, 0, 0, '网络错误'),
-('sk-testuser10-key1-xxxxxx', 25, 'deepseek-v4-flash', 0, 0, 0.000000, 0, 0, '模型不存在');
+-- 失败调用示例 (5条)
+('sk-testuser06-key1-ghijkl123456', 21, 'gpt-4o', 0, 0, 0.000000, 0, 0, 'API Key无效'),
+('sk-testuser07-key1-stuvwx345678', 22, 'deepseek-chat', 0, 0, 0.000000, 0, 0, '余额不足'),
+('sk-testuser08-key1-efghij567890', 23, 'gpt-3.5-turbo', 0, 0, 0.000000, 0, 0, '超时错误'),
+('sk-testuser09-key1-qrstuv789012', 24, 'claude-opus-4.7', 0, 0, 0.000000, 0, 0, '网络错误'),
+('sk-testuser10-key1-cdefgh901234', 25, 'deepseek-v4-flash', 0, 0, 0.000000, 0, 0, '模型不存在');
 
 -- ============================================
 -- 8. 生成计费记录测试数据 (50条)

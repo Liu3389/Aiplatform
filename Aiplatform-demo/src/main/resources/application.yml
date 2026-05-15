@@ -9,9 +9,9 @@ spring:
 
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3307/ai_gateway?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://localhost:3306/ai_gateway?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
-    password: root123
+    password: 123456
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
@@ -59,6 +59,11 @@ billing:
 # 应用配置
 app:
   init-test-data: false  # 是否每次启动时重置数据库并生成测试数据（默认false，开发时可设为true）
+
+# API 加密配置
+api:
+  encryption:
+    key: ${API_ENCRYPTION_KEY:}  # AES-256 密钥（Base64编码），建议通过环境变量设置
 
 logging:
   level:

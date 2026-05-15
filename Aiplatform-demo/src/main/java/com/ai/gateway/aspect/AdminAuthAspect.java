@@ -1,6 +1,7 @@
 package com.ai.gateway.aspect;
 
 import com.ai.gateway.annotation.RequireAdmin;
+import com.ai.gateway.common.ResultCode;
 import com.ai.gateway.entity.User;
 import com.ai.gateway.exception.BusinessException;
 import com.ai.gateway.service.TokenService;
@@ -57,7 +58,8 @@ public class AdminAuthAspect {
         
         String role = user.getRole();
         if (!"ADMIN".equals(role) && !"SUPER_ADMIN".equals(role)) {
-            throw new BusinessException("权限不足，需要管理员角色");
+            log.warn("权限不足: userId={}, role={}, path={}", userId, role, request.getRequestURI());
+            throw new BusinessException(ResultCode.FORBIDDEN, "权限不足，需要管理员角色");
         }
         
         log.debug("管理员权限验证通过: userId={}, role={}", userId, role);

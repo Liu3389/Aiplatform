@@ -1,6 +1,7 @@
 package com.ai.gateway.controller;
 
 import com.ai.gateway.common.Result;
+import com.ai.gateway.service.PointsService;
 import com.ai.gateway.service.TokenService;
 import com.ai.gateway.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,7 @@ public class UserController {
 
     private final UserService userService;
     private final TokenService tokenService;
+    private final PointsService pointsService;
 
     @PostMapping("/recharge")
     public Result<Void> recharge(@RequestHeader("X-User-Token") String token, @RequestParam BigDecimal amount) {
@@ -25,6 +27,23 @@ public class UserController {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) return Result.error("充值金额必须大于0");
         userService.recharge(userId, amount);
         return Result.success("充值成功", null);
+    }
+
+    @PostMapping("/recharge-with-coupon")
+    public Result<Map<String, Object>> rechargeWithCoupon(
+            @RequestHeader("X-User-Token") String token,
+            @RequestBody Map<String, Object> body) {
+        Long userId = tokenService.getUserIdFromToken(token);
+        if (userId == null) return Result.error(401, "Token无效或已过期");
+        
+        BigDecimal amount = new BigDecimal(body.get("amount").toString());
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) return Result.error("充值金额必须大于0");
+        
+        Long couponId = body.containsKey("couponId") && body.get("couponId") != null 
+                ? Long.valueOf(body.get("couponId").toString()) : null;
+        
+        Map<String, Object> result = userService.rechargeWithCoupon(userId, amount, couponId);
+        return Result.success(result);
     }
 
     @PostMapping("/change-password")
@@ -179,6 +198,26 @@ public class UserController {
         Long userId = tokenService.getUserIdFromToken(token);
         if (userId == null) return Result.error(401, "Token无效或已过期");
         return Result.success(userService.getRechargeRecords(userId, page, size));
+    }
+
+    /**
+     * 获取点数账单列表（统一点数体系）
+     * 包含充值、消费、赠送等所有点数变动记录
+     */
+    @GetMapping("/points-bills")
+    public Result<?> getPointsBills(
+            @RequestHeader("X-User-Token") String token,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String changeType) {
+        Long userId = tokenService.getUserIdFromToken(token);
+        if (userId == null) return Result.error(401, "Token无效或已过期");
+        
+        // 调用 PointsService 查询点数账单
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<com.ai.gateway.entity.PointsBill> billPage = 
+            pointsService.getPointsBillList(userId, page, size, changeType);
+        
+        return Result.success(billPage);
     }
 
     @PostMapping("/invoice/apply")

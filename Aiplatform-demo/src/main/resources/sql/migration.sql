@@ -20,6 +20,6 @@ ALTER TABLE `call_log` ADD INDEX IF NOT EXISTS `idx_call_user_model` (`user_id`,
 ALTER TABLE `call_log` ADD INDEX IF NOT EXISTS `idx_call_status` (`status`);
 ALTER TABLE `model_config` ADD INDEX IF NOT EXISTS `idx_model_status` (`status`);
 
--- 用户点数字段
-ALTER TABLE `user` ADD COLUMN IF NOT EXISTS `user_points` int NOT NULL DEFAULT 0 COMMENT '用户点数余额';
+-- 注意：用户点数字段已在 schema.sql 中定义为 `points` decimal(10,3)
+-- 不需要再添加 user_points 字段，避免重复
 

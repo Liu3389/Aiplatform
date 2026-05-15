@@ -171,11 +171,12 @@ public class NotificationService {
      * @param userId 用户ID
      */
     @Transactional
-    public void deleteNotification(Long notificationId, Long userId) {
+    public boolean deleteNotification(Long notificationId, Long userId) {
         UserNotification notification = notificationMapper.selectById(notificationId);
         
         if (notification == null) {
-            throw new RuntimeException("通知不存在");
+            log.warn("通知不存在: notificationId={}", notificationId);
+            return false;
         }
         
         if (!notification.getUserId().equals(userId)) {
@@ -184,6 +185,7 @@ public class NotificationService {
         
         notificationMapper.deleteById(notificationId);
         log.info("通知删除成功: notificationId={}, userId={}", notificationId, userId);
+        return true;
     }
 
     /**

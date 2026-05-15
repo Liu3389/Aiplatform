@@ -31,11 +31,11 @@ import java.util.concurrent.Executor;
 @RequiredArgsConstructor
 public class OpenAiChatService {
 
+    // DeepSeek 模型名称映射（已弃用 deepseek-chat 和 deepseek-reasoner）
+    // 当前可用模型：deepseek-v4-flash, deepseek-v4-pro
     private static final Map<String, String> MODEL_NAME_MAPPING = Map.of(
-        "deepseek-chat", "deepseek-chat",
-        "deepseek-reasoner", "deepseek-chat",
-        "deepseek-v4-pro", "deepseek-chat",
-        "deepseek-v4-flash", "deepseek-chat"
+        "deepseek-v4-flash", "deepseek-v4-flash",
+        "deepseek-v4-pro", "deepseek-v4-pro"
     );
 
     private final ModelConfigService modelConfigService;

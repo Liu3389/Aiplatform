@@ -4,16 +4,21 @@ import com.ai.gateway.annotation.RequireAdmin;
 import com.ai.gateway.common.Result;
 import com.ai.gateway.service.AdminOperationLogService;
 import com.ai.gateway.service.AdminService;
+import com.ai.gateway.service.DailyPointsService;
 import com.ai.gateway.service.NotificationService;
 import com.ai.gateway.service.StatisticsService;
 import com.ai.gateway.service.TokenService;
 import com.ai.gateway.service.UserService;
 import com.ai.gateway.vo.SystemStatsVO;
+import com.ai.gateway.vo.DashboardStatsVO;
+import com.ai.gateway.vo.UserStatsVO;
+import com.ai.gateway.vo.ConversationStatsVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
@@ -28,6 +33,7 @@ public class AdminController {
     private final NotificationService notificationService;
     private final TokenService tokenService;
     private final StatisticsService statisticsService;
+    private final DailyPointsService dailyPointsService;
 
     @RequireAdmin
     @GetMapping("/stats")
@@ -62,15 +68,45 @@ public class AdminController {
     public Result<Void> toggleUserStatus(
             @RequestHeader("X-User-Token") String token,
             @RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
-        String status = (String) body.get("status");
         
-        if (userId == null || status == null) {
-            return Result.error(400, "参数不完整");
+        Long adminId = tokenService.getUserIdFromToken(token);
+        String adminUsername = "admin"; // TODO: 从 token 中获取用户名
+        
+        // 参数验证
+        if (body == null || !body.containsKey("userId") || !body.containsKey("status")) {
+            return Result.error(400, "参数不完整，需要userId和status");
         }
         
-        userService.toggleUserStatus(userId, status);
-        return Result.success("操作成功", null);
+        try {
+            Long userId = Long.valueOf(body.get("userId").toString());
+            String status = (String) body.get("status");
+            
+            if (userId == null || status == null) {
+                return Result.error(400, "参数不完整");
+            }
+            
+            userService.toggleUserStatus(userId, status);
+            
+            // 记录操作日志
+            Map<String, Object> detail = new HashMap<>();
+            detail.put("userId", userId);
+            detail.put("status", status);
+            operationLogService.logSuccess(adminId, adminUsername, "USER_MANAGE", 
+                    "TOGGLE_STATUS", java.util.Arrays.asList(userId), detail);
+            
+            return Result.success("操作成功", null);
+        } catch (Exception e) {
+            log.error("切换用户状态失败: {}", e.getMessage());
+            
+            // 记录失败日志
+            Long userId = body.containsKey("userId") ? Long.valueOf(body.get("userId").toString()) : null;
+            Map<String, Object> detail = new HashMap<>();
+            detail.put("userId", userId);
+            operationLogService.logFailure(adminId, adminUsername, "USER_MANAGE", 
+                    "TOGGLE_STATUS", userId != null ? java.util.Arrays.asList(userId) : null, detail, e.getMessage());
+            
+            return Result.error(500, "操作失败: " + e.getMessage());
+        }
     }
 
     @RequireAdmin
@@ -78,19 +114,30 @@ public class AdminController {
     public Result<Void> rechargeUser(
             @RequestHeader("X-User-Token") String token,
             @RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
-        BigDecimal amount = new BigDecimal(body.get("amount").toString());
         
-        if (userId == null || amount == null) {
-            return Result.error(400, "参数不完整");
+        // 参数验证
+        if (body == null || !body.containsKey("userId") || !body.containsKey("amount")) {
+            return Result.error(400, "参数不完整，需要userId和amount");
         }
         
-        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            return Result.error(400, "充值金额必须大于0");
+        try {
+            Long userId = Long.valueOf(body.get("userId").toString());
+            BigDecimal amount = new BigDecimal(body.get("amount").toString());
+            
+            if (userId == null || amount == null) {
+                return Result.error(400, "参数不完整");
+            }
+            
+            if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+                return Result.error(400, "充值金额必须大于0");
+            }
+            
+            userService.recharge(userId, amount);
+            return Result.success("充值成功", null);
+        } catch (Exception e) {
+            log.error("给用户充值失败: {}", e.getMessage());
+            return Result.error(500, "充值失败: " + e.getMessage());
         }
-        
-        userService.recharge(userId, amount);
-        return Result.success("充值成功", null);
     }
 
     @RequireAdmin
@@ -166,6 +213,41 @@ public class AdminController {
         return Result.success(result);
     }
 
+    /**
+     * 获取仪表盘统计数据（核心）
+     * @param period 时间范围：7d/30d
+     */
+    @RequireAdmin
+    @GetMapping("/statistics/dashboard")
+    public Result<DashboardStatsVO> getDashboardStats(
+            @RequestHeader("X-User-Token") String token,
+            @RequestParam(defaultValue = "7d") String period) {
+        DashboardStatsVO stats = statisticsService.getDashboardStats(period);
+        return Result.success(stats);
+    }
+
+    /**
+     * 获取用户统计数据（核心）
+     */
+    @RequireAdmin
+    @GetMapping("/statistics/users")
+    public Result<UserStatsVO> getUserStats(
+            @RequestHeader("X-User-Token") String token) {
+        UserStatsVO stats = statisticsService.getUserStats();
+        return Result.success(stats);
+    }
+
+    /**
+     * 获取对话统计数据（核心）
+     */
+    @RequireAdmin
+    @GetMapping("/statistics/conversations")
+    public Result<ConversationStatsVO> getConversationStats(
+            @RequestHeader("X-User-Token") String token) {
+        ConversationStatsVO stats = statisticsService.getConversationStats();
+        return Result.success(stats);
+    }
+
     // ==================== 批量操作接口 ====================
 
     /**
@@ -178,11 +260,19 @@ public class AdminController {
             @RequestBody Map<String, Object> body) {
         
         @SuppressWarnings("unchecked")
-        java.util.List<Long> userIds = (java.util.List<Long>) body.get("userIds");
+        java.util.List<Object> userIdsObj = (java.util.List<Object>) body.get("userIds");
         Integer status = (Integer) body.get("status");
         
-        if (userIds == null || userIds.isEmpty()) {
+        if (userIdsObj == null || userIdsObj.isEmpty()) {
             return Result.error(400, "用户ID列表不能为空");
+        }
+        
+        // 将Object列表转换为Long列表（兼容Integer和Long）
+        java.util.List<Long> userIds = new java.util.ArrayList<>();
+        for (Object obj : userIdsObj) {
+            if (obj instanceof Number) {
+                userIds.add(((Number) obj).longValue());
+            }
         }
         
         int successCount = adminService.batchUpdateStatus(userIds, status);
@@ -204,11 +294,19 @@ public class AdminController {
             @RequestBody Map<String, Object> body) {
         
         @SuppressWarnings("unchecked")
-        java.util.List<Long> userIds = (java.util.List<Long>) body.get("userIds");
+        java.util.List<Object> userIdsObj = (java.util.List<Object>) body.get("userIds");
         BigDecimal points = new BigDecimal(body.get("points").toString());
         
-        if (userIds == null || userIds.isEmpty()) {
+        if (userIdsObj == null || userIdsObj.isEmpty()) {
             return Result.error(400, "用户ID列表不能为空");
+        }
+        
+        // 将Object列表转换为Long列表（兼容Integer和Long）
+        java.util.List<Long> userIds = new java.util.ArrayList<>();
+        for (Object obj : userIdsObj) {
+            if (obj instanceof Number) {
+                userIds.add(((Number) obj).longValue());
+            }
         }
         
         int successCount = adminService.batchGrantPoints(userIds, points);
@@ -222,6 +320,32 @@ public class AdminController {
     }
 
     // ==================== 点数管理接口 ====================
+
+    /**
+     * 手动触发每日点数发放（用于测试或补发）
+     */
+    @RequireAdmin
+    @PostMapping("/points/distribute-daily")
+    public Result<Map<String, Object>> distributeDailyPoints(
+            @RequestHeader("X-User-Token") String token,
+            @RequestBody(required = false) Map<String, Object> body) {
+        
+        Long userId = null;
+        if (body != null && body.containsKey("userId")) {
+            userId = Long.valueOf(body.get("userId").toString());
+        }
+        
+        dailyPointsService.manualDistributePoints(userId);
+        
+        Map<String, Object> data = new java.util.HashMap<>();
+        if (userId != null) {
+            data.put("message", "已给用户 " + userId + " 发放30点");
+        } else {
+            data.put("message", "已给所有用户发放30点");
+        }
+        
+        return Result.success("点数发放成功", data);
+    }
 
     /**
      * 手动增减用户点数
@@ -305,12 +429,20 @@ public class AdminController {
             @RequestBody Map<String, Object> body) {
         
         @SuppressWarnings("unchecked")
-        java.util.List<Long> userIds = (java.util.List<Long>) body.get("userIds");
+        java.util.List<Object> userIdsObj = (java.util.List<Object>) body.get("userIds");
         String membership = (String) body.get("membership");
         Integer days = (Integer) body.get("days");
         
-        if (userIds == null || userIds.isEmpty()) {
+        if (userIdsObj == null || userIdsObj.isEmpty()) {
             return Result.error(400, "用户ID列表不能为空");
+        }
+        
+        // 将Object列表转换为Long列表（兼容Integer和Long）
+        java.util.List<Long> userIds = new java.util.ArrayList<>();
+        for (Object obj : userIdsObj) {
+            if (obj instanceof Number) {
+                userIds.add(((Number) obj).longValue());
+            }
         }
         
         int successCount = adminService.batchActivateMembership(userIds, membership, days);
@@ -435,7 +567,10 @@ public class AdminController {
             return Result.error(401, "Token无效或已过期");
         }
         
-        notificationService.deleteNotification(id, userId);
+        boolean deleted = notificationService.deleteNotification(id, userId);
+        if (!deleted) {
+            return Result.success("通知不存在或已删除", null);
+        }
         return Result.success("删除成功", null);
     }
 

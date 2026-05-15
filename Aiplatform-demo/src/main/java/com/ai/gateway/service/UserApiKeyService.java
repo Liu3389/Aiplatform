@@ -5,13 +5,16 @@ import cn.hutool.http.HttpResponse;
 import com.ai.gateway.entity.UserApiKey;
 import com.ai.gateway.exception.BusinessException;
 import com.ai.gateway.mapper.UserApiKeyMapper;
+import com.ai.gateway.util.AesGcmUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.crypto.SecretKey;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -24,6 +27,16 @@ public class UserApiKeyService {
 
     private final UserApiKeyMapper userApiKeyMapper;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    
+    @Value("${api.encryption.key:}")
+    private String encryptionKeyBase64;
+    
+    private SecretKey getEncryptionKey() {
+        if (encryptionKeyBase64 == null || encryptionKeyBase64.isEmpty()) {
+            throw new BusinessException("API 加密密钥未配置，请在 application.yml 中配置 api.encryption.key");
+        }
+        return AesGcmUtil.loadKeyFromBase64(encryptionKeyBase64);
+    }
 
     private static final Map<String, String> PROVIDER_BASE_URLS = new HashMap<>();
     static {
@@ -42,7 +55,14 @@ public class UserApiKeyService {
                .orderByDesc(UserApiKey::getCreateTime);
         List<UserApiKey> keys = userApiKeyMapper.selectList(wrapper);
         for (UserApiKey k : keys) {
-            k.setApiKey(maskApiKey(k.getApiKey()));
+            // 解密后脱敏显示
+            try {
+                String decryptedKey = AesGcmUtil.decrypt(k.getApiKey(), getEncryptionKey());
+                k.setApiKey(maskApiKey(decryptedKey));
+            } catch (Exception e) {
+                log.error("解密 API Key 失败: keyId={}", k.getId(), e);
+                k.setApiKey("****解密失败****");
+            }
         }
         return keys;
     }
@@ -53,13 +73,9 @@ public class UserApiKeyService {
 
         String testBaseUrl = resolveBaseUrl(provider, baseUrl);
 
-        try {
-            testConnection(provider, testBaseUrl, apiKey);
-        } catch (Exception e) {
-            log.warn("API Key 验证失败: provider={}, error={}", provider, e.getMessage());
-            throw new BusinessException("API Key 验证失败: " + e.getMessage() + "。请检查 Key 格式和有效性。");
-        }
-
+        // 尝试验证API Key，但失败时不阻止保存（降级处理）
+        boolean verified = testConnectionWithFallback(provider, testBaseUrl, apiKey);
+        
         long count = userApiKeyMapper.selectCount(
                 new LambdaQueryWrapper<UserApiKey>()
                         .eq(UserApiKey::getUserId, userId)
@@ -72,13 +88,22 @@ public class UserApiKeyService {
         entity.setUserId(userId);
         entity.setProvider(provider);
         entity.setDisplayName(displayName != null && !displayName.isBlank() ? displayName : provider);
-        entity.setApiKey(apiKey);
+        
+        // 加密存储 API Key
+        try {
+            String encryptedKey = AesGcmUtil.encrypt(apiKey, getEncryptionKey());
+            entity.setApiKey(encryptedKey);
+        } catch (Exception e) {
+            log.error("加密 API Key 失败", e);
+            throw new BusinessException("API Key 加密失败，请稍后重试");
+        }
+        
         entity.setBaseUrl(testBaseUrl);
         entity.setCreateTime(LocalDateTime.now());
         entity.setUpdateTime(LocalDateTime.now());
         userApiKeyMapper.insert(entity);
 
-        log.info("用户API Key添加成功: userId={}, provider={}, keyId={}", userId, provider, entity.getId());
+        log.info("用户API Key添加成功: userId={}, provider={}, keyId={}, verified={}", userId, provider, entity.getId(), verified);
 
         entity.setApiKey(maskApiKey(apiKey));
         return entity;
@@ -99,12 +124,34 @@ public class UserApiKeyService {
         if (key == null || !key.getUserId().equals(userId)) {
             throw new BusinessException("API Key 不存在");
         }
+        // 解密 API Key 供使用
+        try {
+            String decryptedKey = AesGcmUtil.decrypt(key.getApiKey(), getEncryptionKey());
+            key.setApiKey(decryptedKey);
+        } catch (Exception e) {
+            log.error("解密 API Key 失败: keyId={}", keyId, e);
+            throw new BusinessException("API Key 解密失败");
+        }
         return key;
     }
 
     private String resolveBaseUrl(String provider, String baseUrl) {
         if (baseUrl != null && !baseUrl.isBlank()) return baseUrl;
         return PROVIDER_BASE_URLS.getOrDefault(provider.toLowerCase(), "https://api.openai.com");
+    }
+
+    /**
+     * 测试连接（带降级处理）
+     * 如果验证失败，不阻止保存，只记录警告日志
+     */
+    private boolean testConnectionWithFallback(String provider, String baseUrl, String apiKey) {
+        try {
+            testConnection(provider, baseUrl, apiKey);
+            return true;
+        } catch (Exception e) {
+            log.warn("API Key 验证失败，但仍允许保存: provider={}, error={}", provider, e.getMessage());
+            return false;
+        }
     }
 
     private void testConnection(String provider, String baseUrl, String apiKey) {
@@ -182,3 +229,5 @@ public class UserApiKeyService {
         return key.substring(0, 4) + "****" + key.substring(key.length() - 4);
     }
 }
+
+
