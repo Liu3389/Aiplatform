@@ -26,6 +26,9 @@ public class FreeLimitService {
     private final UserService userService;
     private DefaultRedisScript<Long> freeLimitScript;
 
+    private static final String MEMBERSHIP_CACHE_PREFIX = "membership:";
+    private static final long MEMBERSHIP_TTL_HOURS = 1;
+
     @PostConstruct
     public void init() {
         freeLimitScript = new DefaultRedisScript<>();
@@ -113,11 +116,23 @@ public class FreeLimitService {
     }
 
     private String getMembership(Long userId) {
+        String cacheKey = MEMBERSHIP_CACHE_PREFIX + userId;
+        String cached = redisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+        
         try {
             User user = userService.getUserEntityById(userId);
-            return user != null && user.getMembership() != null ? user.getMembership() : "free";
+            String membership = user != null && user.getMembership() != null ? user.getMembership() : "free";
+            redisTemplate.opsForValue().set(cacheKey, membership, MEMBERSHIP_TTL_HOURS, TimeUnit.HOURS);
+            return membership;
         } catch (Exception e) {
             return "free";
         }
+    }
+
+    public void clearMembershipCache(Long userId) {
+        redisTemplate.delete(MEMBERSHIP_CACHE_PREFIX + userId);
     }
 }

@@ -1,27 +1,26 @@
 -- ============================================
 -- AI Gateway Platform - 海量测试数据脚本
--- 版本: v4.0 (2026-05-15)
+-- 版本: v4.1 (2026-05-16) - 修复表名和列名、移除硬编码密钥
 -- 说明: 插入足够多的测试数据覆盖所有业务场景
 -- 密码: Test@123456 (BCrypt: $2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy)
--- 真实 DeepSeek API Key: REDACTED_PROVIDER_API_KEY
+-- API Key 使用环境变量占位符: ${DEEPSEEK_API_KEY}
 -- ============================================
 
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- 修复 P0-3: 增加 DELETE 逻辑，防止主键冲突
-DELETE FROM `model_config`;
+DELETE FROM `platform_model_config`;
 DELETE FROM `package_template`;
 DELETE FROM `user`;
-DELETE FROM `user_api_key`;
 DELETE FROM `conversation`;
 DELETE FROM `chat_message`;
 
 -- ============================================
 -- 1. 模型配置 (只配置 deepseek-v4-flash)
 -- ============================================
-INSERT INTO `model_config` (`id`, `model_name`, `provider`, `base_url`, `api_key`, `input_price`, `output_price`, `points_mode`, `points_per_request`, `status`) VALUES
-(1, 'deepseek-v4-flash', 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0.000000, 0.000000, 'FREE', 0.000, 1),
-(2, 'deepseek-v4-pro',   'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY',   0.000000, 0.000000, 'PREMIUM', 3.000, 1);
+INSERT INTO `platform_model_config` (`id`, `display_name`, `actual_model`, `fixed_points`, `provider`, `base_url`, `api_key`, `status`, `sort_order`) VALUES
+(1, 'DeepSeek-V4-Flash', 'deepseek-v4-flash', 1.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', '${DEEPSEEK_API_KEY:your-api-key-here}', 1, 1),
+(2, 'DeepSeek-V4-Pro',   'deepseek-v4-pro',   3.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', '${DEEPSEEK_API_KEY:your-api-key-here}', 1, 2);
 
 -- ============================================
 -- 2. 套餐模板

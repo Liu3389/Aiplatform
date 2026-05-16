@@ -7,6 +7,7 @@ import com.ai.gateway.service.AdminOperationLogService;
 import com.ai.gateway.service.AdminService;
 import com.ai.gateway.service.DailyPointsService;
 import com.ai.gateway.service.NotificationService;
+import com.ai.gateway.service.SseConnectionManager;
 import com.ai.gateway.service.StatisticsService;
 import com.ai.gateway.service.TokenService;
 import com.ai.gateway.service.UserService;
@@ -39,6 +40,7 @@ public class AdminController {
     private final StatisticsService statisticsService;
     private final DailyPointsService dailyPointsService;
     private final StringRedisTemplate redisTemplate;
+    private final SseConnectionManager sseConnectionManager;
 
     @RequireAdmin
     @GetMapping("/stats")

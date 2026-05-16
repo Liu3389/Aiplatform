@@ -6,6 +6,7 @@ import com.ai.gateway.entity.UserSubscription;
 import com.ai.gateway.mapper.UserMapper;
 import com.ai.gateway.mapper.UserSubscriptionMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,10 +39,11 @@ public class UserSubscriptionService {
         LambdaQueryWrapper<UserSubscription> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(UserSubscription::getUserId, userId)
                .eq(UserSubscription::getStatus, "ACTIVE")
-               .orderByDesc(UserSubscription::getStartTime)
-               .last("LIMIT 1");
+               .orderByDesc(UserSubscription::getStartTime);
         
-        UserSubscription subscription = userSubscriptionMapper.selectOne(wrapper);
+        Page<UserSubscription> page = new Page<>(1, 1);
+        List<UserSubscription> list = userSubscriptionMapper.selectList(page, wrapper);
+        UserSubscription subscription = list.isEmpty() ? null : list.get(0);
         
         // 检查是否过期
         if (subscription != null && subscription.getExpireTime() != null 

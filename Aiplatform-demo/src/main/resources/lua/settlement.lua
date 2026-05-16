@@ -1,49 +1,37 @@
--- 结算Lua脚本（实际扣费，退还多余预扣金额）
--- KEYS[1]: 用户余额Key (ai_gateway:user_balance:{userId})
--- KEYS[2]: 预扣记录Key (ai_gateway:billing_pre_deduct:{requestId})
--- ARGV[1]: 用户ID
--- ARGV[2]: 实际消费金额（字符串格式）
--- ARGV[3]: 请求ID
+-- 原子结算脚本
+-- 解决 settlePoints 方法中 读-读-计算-写 四步非原子操作导致的并发余额不一致问题
+-- KEYS[1]: 用户点数 key (ai_gateway:points:{userId})
+-- KEYS[2]: 预扣记录 key (ai_gateway:pre_deduct:{userId}:{sessionId})
+-- ARGV[1]: 实际消耗点数
+-- 返回: {1, 结算后余额} 成功 | {0, 'no_pre_deduct'} 无预扣记录 | {-1, error_msg} 异常
 
-local balanceKey = KEYS[1]
+local pointsKey = KEYS[1]
 local preDeductKey = KEYS[2]
-local userId = ARGV[1]
-local actualCostStr = ARGV[2]
-local requestId = ARGV[3]
+local actualConsumed = tonumber(ARGV[1])
 
--- 获取预扣金额
-local preDeductAmountStr = redis.call('GET', preDeductKey)
-if preDeductAmountStr == false then
-    -- 预扣记录不存在，无法结算
-    return {0, "0", "0"}
+-- 读取预扣记录
+local preDeductAmount = redis.call('GET', preDeductKey)
+if not preDeductAmount then
+    return {0, 'no_pre_deduct'}
 end
 
--- 获取当前余额
-local currentBalanceStr = redis.call('GET', balanceKey)
-if currentBalanceStr == false then
-    currentBalanceStr = "0"
+local preDeducted = tonumber(preDeductAmount)
+
+-- 读取当前余额
+local currentPointsStr = redis.call('GET', pointsKey)
+local currentPoints = 0
+if currentPointsStr then
+    currentPoints = tonumber(currentPointsStr)
 end
 
--- 转换为数字进行计算
-local preDeductAmount = tonumber(preDeductAmountStr)
-local currentBalance = tonumber(currentBalanceStr)
-local actualCost = tonumber(actualCostStr)
+-- 计算差值: 预扣 - 实际 = 应退还(正数) 或 应补扣(负数)
+local difference = preDeducted - actualConsumed
+local balanceAfter = currentPoints + difference
 
--- 计算差额（预扣金额 - 实际消费金额）
-local difference = preDeductAmount - actualCost
-
--- 退还差额到余额
-local newBalance = currentBalance + difference
--- 如果余额为负数，置为0（防止异常情况导致负余额）
-if newBalance < 0 then
-    newBalance = 0
-end
--- 保留6位小数，避免浮点数精度问题
-newBalance = string.format("%.6f", newBalance)
-redis.call('SET', balanceKey, newBalance)
+-- 写回余额
+redis.call('SET', pointsKey, tostring(balanceAfter))
 
 -- 删除预扣记录
 redis.call('DEL', preDeductKey)
 
--- 返回成功、新余额和退还金额
-return {1, newBalance, tostring(difference)}
+return {1, tostring(balanceAfter)}

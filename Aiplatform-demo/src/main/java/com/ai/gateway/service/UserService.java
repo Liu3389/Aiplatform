@@ -12,6 +12,7 @@ import com.ai.gateway.mapper.PointsBillMapper;
 import com.ai.gateway.mapper.UserMapper;
 import com.ai.gateway.vo.UserInfoVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -45,6 +46,7 @@ public class UserService {
     private final ConversationVersionService conversationVersionService;
     private final com.ai.gateway.mapper.ConversationMapper conversationMapper;
     private final com.ai.gateway.mapper.ChatMessageMapper chatMessageMapper;
+    private final com.ai.gateway.util.RedisScanUtil redisScanUtil;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private static final String BIND_CODE_PREFIX = "bind:code:";
     private static final String TFA_SECRET_PREFIX = "2fa:secret:";
@@ -482,20 +484,18 @@ public class UserService {
 
     public List<Map<String, Object>> getLoginDevices(Long userId) {
         String pattern = LOGIN_DEVICE_PREFIX + userId + ":*";
-        Set<String> keys = redisTemplate.keys(pattern);
+        Set<String> keys = redisScanUtil.scanKeys(pattern);
 
         List<Map<String, Object>> devices = new ArrayList<>();
-        if (keys != null) {
-            for (String key : keys) {
-                String deviceInfo = redisTemplate.opsForValue().get(key);
-                if (deviceInfo != null) {
-                    String deviceId = key.substring(key.lastIndexOf(":") + 1);
-                    Map<String, Object> device = new HashMap<>();
-                    device.put("deviceId", deviceId);
-                    device.put("info", deviceInfo);
-                    device.put("lastActive", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-                    devices.add(device);
-                }
+        for (String key : keys) {
+            String deviceInfo = redisTemplate.opsForValue().get(key);
+            if (deviceInfo != null) {
+                String deviceId = key.substring(key.lastIndexOf(":") + 1);
+                Map<String, Object> device = new HashMap<>();
+                device.put("deviceId", deviceId);
+                device.put("info", deviceInfo);
+                device.put("lastActive", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+                devices.add(device);
             }
         }
 
@@ -519,11 +519,11 @@ public class UserService {
 
     public void removeAllLoginDevices(Long userId, boolean exceptCurrent) {
         String pattern = LOGIN_DEVICE_PREFIX + userId + ":*";
-        Set<String> keys = redisTemplate.keys(pattern);
-        if (keys != null) {
-            if (exceptCurrent) {
-                keys.removeIf(k -> k.endsWith(":current"));
-            }
+        Set<String> keys = redisScanUtil.scanKeys(pattern);
+        if (exceptCurrent) {
+            keys.removeIf(k -> k.endsWith(":current"));
+        }
+        if (!keys.isEmpty()) {
             redisTemplate.delete(keys);
         }
         log.info("移除所有登录设备: userId={}, exceptCurrent={}", userId, exceptCurrent);
@@ -550,17 +550,17 @@ public class UserService {
     }
 
     public List<Map<String, Object>> getRechargeRecords(Long userId, int page, int size) {
-        // 计算偏移量
-        int offset = (page - 1) * size;
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        int safePage = Math.max(page, 1);
         
-        // 查询点数账单中的充值记录
+        Page<PointsBill> pageObj = new Page<>(safePage, safeSize);
         LambdaQueryWrapper<PointsBill> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PointsBill::getUserId, userId)
                .eq(PointsBill::getChangeType, "RECHARGE")
-               .orderByDesc(PointsBill::getCreateTime)
-               .last("LIMIT " + Math.min(Math.max(size, 1), 100) + " OFFSET " + Math.max(offset, 0));
+               .orderByDesc(PointsBill::getCreateTime);
         
-        List<PointsBill> rechargeBills = pointsBillMapper.selectList(wrapper);
+        Page<PointsBill> resultPage = pointsBillMapper.selectPage(pageObj, wrapper);
+        List<PointsBill> rechargeBills = resultPage.getRecords();
         
         List<Map<String, Object>> records = new ArrayList<>();
         for (PointsBill bill : rechargeBills) {
@@ -814,10 +814,12 @@ public class UserService {
             wrapper.eq(com.ai.gateway.entity.ChatMessage::getConversationId, conversationId)
                    .eq(com.ai.gateway.entity.ChatMessage::getUserId, userId)
                    .eq(com.ai.gateway.entity.ChatMessage::getRole, "user")
-                   .orderByAsc(com.ai.gateway.entity.ChatMessage::getId)
-                   .last("LIMIT 1");
+                   .orderByAsc(com.ai.gateway.entity.ChatMessage::getId);
             
-            com.ai.gateway.entity.ChatMessage firstMsg = chatMessageMapper.selectOne(wrapper);
+            com.baomidou.mybatisplus.extension.plugins.pagination.Page<com.ai.gateway.entity.ChatMessage> page = 
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 1);
+            java.util.List<com.ai.gateway.entity.ChatMessage> firstMsgList = chatMessageMapper.selectList(page, wrapper);
+            com.ai.gateway.entity.ChatMessage firstMsg = firstMsgList.isEmpty() ? null : firstMsgList.get(0);
             if (firstMsg != null && firstMsg.getContent() != null) {
                 String prompt = "请用不超过10个字概括以下对话内容：" + firstMsg.getContent().substring(0, Math.min(50, firstMsg.getContent().length()));
                 // 这里简化处理，实际应调用 AI 服务

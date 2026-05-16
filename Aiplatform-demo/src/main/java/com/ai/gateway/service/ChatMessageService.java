@@ -5,6 +5,7 @@ import com.ai.gateway.entity.ChatMessageHistory;
 import com.ai.gateway.mapper.ChatMessageMapper;
 import com.ai.gateway.mapper.ChatMessageHistoryMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +16,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -27,6 +29,7 @@ public class ChatMessageService {
     private final com.ai.gateway.mapper.ConversationMapper conversationMapper;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final com.ai.gateway.util.RedisScanUtil redisScanUtil;
 
     private static final String CACHE_PREFIX = "chat:messages:";
     private static final long CACHE_TTL_MINUTES = 30;
@@ -36,12 +39,14 @@ public class ChatMessageService {
                               ChatMessageHistoryMapper chatMessageHistoryMapper,
                               com.ai.gateway.mapper.ConversationMapper conversationMapper,
                               StringRedisTemplate redisTemplate,
-                              ObjectMapper objectMapper) {
+                              ObjectMapper objectMapper,
+                              com.ai.gateway.util.RedisScanUtil redisScanUtil) {
         this.chatMessageMapper = chatMessageMapper;
         this.chatMessageHistoryMapper = chatMessageHistoryMapper;
         this.conversationMapper = conversationMapper;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.redisScanUtil = redisScanUtil;
     }
 
     /**
@@ -97,6 +102,10 @@ public class ChatMessageService {
         String cacheKey = buildCacheKey(conversationId, lastId, limit);
         String cached = redisTemplate.opsForValue().get(cacheKey);
         if (cached != null) {
+            if ("[]".equals(cached)) {
+                log.info("命中空值缓存: conversationId={}, lastId={}, limit={}", conversationId, lastId, limit);
+                return new ArrayList<>();
+            }
             try {
                 List<ChatMessage> messages = objectMapper.readValue(cached, new TypeReference<List<ChatMessage>>() {});
                 log.info("命中缓存: conversationId={}, lastId={}, limit={}, size={}", conversationId, lastId, limit, messages.size());
@@ -119,6 +128,8 @@ public class ChatMessageService {
 
         if (!messages.isEmpty()) {
             cacheMessages(cacheKey, messages);
+        } else {
+            redisTemplate.opsForValue().set(cacheKey, "[]", 5, TimeUnit.MINUTES);
         }
 
         log.info("查询聊天记录: conversationId={}, lastId={}, limit={}, resultSize={}", 
@@ -143,10 +154,11 @@ public class ChatMessageService {
         }
 
         // 按ID倒序（等同于时间倒序，因为ID是自增的）
-        wrapper.orderByDesc(ChatMessage::getId)
-               .last("LIMIT " + Math.min(Math.max(limit, 1), 100));
+        wrapper.orderByDesc(ChatMessage::getId);
 
-        return chatMessageMapper.selectList(wrapper);
+        int safeLimit = Math.min(Math.max(limit, 1), 100);
+        Page<ChatMessage> page = new Page<>(1, safeLimit);
+        return chatMessageMapper.selectList(page, wrapper);
     }
 
     /**
@@ -174,10 +186,11 @@ public class ChatMessageService {
             }
 
             // 按原始创建时间倒序
-            wrapper.orderByDesc(ChatMessageHistory::getOriginalCreateTime)
-                   .last("LIMIT " + Math.min(Math.max(needCount, 1), 100));
+            wrapper.orderByDesc(ChatMessageHistory::getOriginalCreateTime);
 
-            List<ChatMessageHistory> historyMessages = chatMessageHistoryMapper.selectList(wrapper);
+            int safeLimit = Math.min(Math.max(needCount, 1), 100);
+            Page<ChatMessageHistory> page = new Page<>(1, safeLimit);
+            List<ChatMessageHistory> historyMessages = chatMessageHistoryMapper.selectList(page, wrapper);
 
             // 转换为 ChatMessage 对象
             return historyMessages.stream().map(history -> {
@@ -217,7 +230,7 @@ public class ChatMessageService {
      */
     private void clearCache(Long conversationId) {
         String pattern = CACHE_PREFIX + conversationId + ":*";
-        redisTemplate.delete(redisTemplate.keys(pattern));
+        redisScanUtil.deleteByPattern(pattern);
         log.debug("清除会话缓存: conversationId={}", conversationId);
     }
 
@@ -234,7 +247,8 @@ public class ChatMessageService {
     private void cacheMessages(String cacheKey, List<ChatMessage> messages) {
         try {
             String json = objectMapper.writeValueAsString(messages);
-            redisTemplate.opsForValue().set(cacheKey, json, CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+            long randomOffset = ThreadLocalRandom.current().nextInt(0, (int)(CACHE_TTL_MINUTES * 0.2));
+            redisTemplate.opsForValue().set(cacheKey, json, CACHE_TTL_MINUTES + randomOffset, TimeUnit.MINUTES);
         } catch (Exception e) {
             log.error("缓存消息失败: cacheKey={}", cacheKey, e);
         }

@@ -48,14 +48,20 @@ public class PointsService {
     private static final String POINTS_PRE_DEDUCT_PREFIX = "points:pre_deduct:";
 
     private DefaultRedisScript<List> pointsBillingScript;
+    private DefaultRedisScript<List> settlementScript;
 
     @PostConstruct
     public void init() {
         pointsBillingScript = new DefaultRedisScript<>();
         pointsBillingScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/points_billing.lua")));
-        // 修复编译警告：显式指定泛型类型
         pointsBillingScript.setResultType((Class<List>) (Class<?>) List.class);
+
+        settlementScript = new DefaultRedisScript<>();
+        settlementScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/settlement.lua")));
+        settlementScript.setResultType((Class<List>) (Class<?>) List.class);
+
         log.info("点数计费Lua脚本加载成功");
+        log.info("点数结算Lua脚本加载成功");
     }
 
     /**
@@ -176,28 +182,36 @@ public class PointsService {
                 log.warn("结算时预扣记录不存在: userId={}, requestId={}", userId, requestId);
                 return false;
             }
-
             BigDecimal preDeductAmount = new BigDecimal(preDeductStr);
-            BigDecimal difference = preDeductAmount.subtract(actual);
 
-            String currentPointsStr = redisTemplate.opsForValue().get(pointsKey);
-            BigDecimal currentPoints = currentPointsStr != null ? new BigDecimal(currentPointsStr) : BigDecimal.ZERO;
-            BigDecimal balanceAfter = currentPoints.add(difference).setScale(3, RoundingMode.HALF_DOWN);
+            List<Object> result = redisTemplate.execute(
+                settlementScript,
+                List.of(pointsKey, preDeductKey),
+                actual.toPlainString()
+            );
 
-            if (balanceAfter.compareTo(BigDecimal.ZERO) < 0) {
-                balanceAfter = BigDecimal.ZERO;
+            if (result == null || result.isEmpty()) {
+                log.error("结算Lua脚本返回空: userId={}, requestId={}", userId, requestId);
+                return false;
             }
 
-            redisTemplate.opsForValue().set(pointsKey, balanceAfter.toPlainString());
-            redisTemplate.delete(preDeductKey);
+            long success = ((Number) result.get(0)).longValue();
+            if (success != 1) {
+                log.warn("结算失败: userId={}, requestId={}, reason={}", userId, requestId, result.get(1));
+                return false;
+            }
 
-            recordBill(userId, "SETTLE", actual.negate(), currentPoints, balanceAfter,
+            String balanceAfterStr = result.get(1).toString();
+            BigDecimal balanceAfter = new BigDecimal(balanceAfterStr).setScale(3, RoundingMode.HALF_DOWN);
+            BigDecimal difference = preDeductAmount.subtract(actual);
+
+            recordBill(userId, "SETTLE", actual.negate(), balanceAfter.subtract(difference), balanceAfter,
                        requestId, "对话结算: " + modelName + " (预扣:" + preDeductAmount + ", 实际:" + actual + ")",
                        modelName, null);
 
             updateUserPointsInDB(userId, balanceAfter);
 
-            log.info("点数结算成功: userId={}, preDeduct={}, actual={}, difference={}, balance={}",
+            log.info("点数结算成功(Lua): userId={}, preDeduct={}, actual={}, difference={}, balance={}",
                     userId, preDeductAmount, actual, difference, balanceAfter);
             return true;
         } catch (Exception e) {
@@ -316,10 +330,10 @@ public class PointsService {
         recordBill(userId, changeType, addPoints, currentPoints, currentPoints.add(addPoints), 
                    businessId, description, null, expireTime);
         
-        double increment = addPoints.doubleValue();
-        Double newBalanceDouble = redisTemplate.opsForValue().increment(key, increment);
-        BigDecimal newBalance = BigDecimal.valueOf(newBalanceDouble != null ? newBalanceDouble : 0)
-                .setScale(3, RoundingMode.HALF_DOWN);
+        String currentStr = redisTemplate.opsForValue().get(key);
+        BigDecimal current = currentStr != null ? new BigDecimal(currentStr) : BigDecimal.ZERO;
+        BigDecimal newBalance = current.add(addPoints).setScale(3, RoundingMode.HALF_DOWN);
+        redisTemplate.opsForValue().set(key, newBalance.toPlainString());
         
         updateUserPointsInDB(userId, newBalance);
         

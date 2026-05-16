@@ -20,12 +20,14 @@ import java.util.concurrent.TimeUnit;
 public class ConversationVersionService {
 
     private final StringRedisTemplate redisTemplate;
+    private final com.ai.gateway.util.RedisScanUtil redisScanUtil;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
-    // 修复 P1-9: 改为按会话 ID 分 Key 存储，防止单 Key 超过 Redis 512MB 限制
     private static final String CONVERSATION_PREFIX = "conversation:data:";
     private static final String VERSION_PREFIX = "conversation:version:";
+    private static final String UPDATE_LOCK_PREFIX = "lock:conversation:update:";
     private static final long CONVERSATION_TTL_DAYS = 90;
+    private static final long UPDATE_LOCK_SECONDS = 10;
 
     /**
      * 保存对话数据到服务端
@@ -67,9 +69,8 @@ public class ConversationVersionService {
      */
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> getConversations(Long userId) {
-        // 修复 P1-9: 从多个 Key 中读取并合并
-        java.util.Set<String> keys = redisTemplate.keys(CONVERSATION_PREFIX + userId + ":*");
-        if (keys == null || keys.isEmpty()) return new ArrayList<>();
+        java.util.Set<String> keys = redisScanUtil.scanKeys(CONVERSATION_PREFIX + userId + ":*");
+        if (keys.isEmpty()) return new ArrayList<>();
         
         List<Map<String, Object>> result = new ArrayList<>();
         for (String key : keys) {
@@ -121,11 +122,7 @@ public class ConversationVersionService {
      * @param userId 用户ID
      */
     public void clearConversations(Long userId) {
-        // 修复 P1-9: 删除该用户下所有会话 Key
-        java.util.Set<String> keys = redisTemplate.keys(CONVERSATION_PREFIX + userId + ":*");
-        if (keys != null && !keys.isEmpty()) {
-            redisTemplate.delete(keys);
-        }
+        redisScanUtil.deleteByPattern(CONVERSATION_PREFIX + userId + ":*");
         redisTemplate.delete(VERSION_PREFIX + userId);
         log.info("对话数据已清空: userId={}", userId);
     }
@@ -142,31 +139,36 @@ public class ConversationVersionService {
             return getVersion(userId);
         }
         
-        // 获取现有对话
-        List<Map<String, Object>> existingConversations = getConversations(userId);
+        String lockKey = UPDATE_LOCK_PREFIX + userId;
+        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", UPDATE_LOCK_SECONDS, TimeUnit.SECONDS);
+        if (!Boolean.TRUE.equals(acquired)) {
+            throw new RuntimeException("对话正在同步中，请稍后重试");
+        }
         
-        // 合并对话（根据conversationId去重和更新）
-        for (Map<String, Object> newConv : newConversations) {
-            String newConvId = (String) newConv.get("id");
-            boolean found = false;
+        try {
+            List<Map<String, Object>> existingConversations = getConversations(userId);
             
-            for (int i = 0; i < existingConversations.size(); i++) {
-                String existingConvId = (String) existingConversations.get(i).get("id");
-                if (existingConvId != null && existingConvId.equals(newConvId)) {
-                    // 更新现有对话
-                    existingConversations.set(i, newConv);
-                    found = true;
-                    break;
+            for (Map<String, Object> newConv : newConversations) {
+                String newConvId = (String) newConv.get("id");
+                boolean found = false;
+                
+                for (int i = 0; i < existingConversations.size(); i++) {
+                    String existingConvId = (String) existingConversations.get(i).get("id");
+                    if (existingConvId != null && existingConvId.equals(newConvId)) {
+                        existingConversations.set(i, newConv);
+                        found = true;
+                        break;
+                    }
+                }
+                
+                if (!found) {
+                    existingConversations.add(newConv);
                 }
             }
             
-            if (!found) {
-                // 添加新对话
-                existingConversations.add(newConv);
-            }
+            return saveConversations(userId, existingConversations);
+        } finally {
+            redisTemplate.delete(lockKey);
         }
-        
-        // 保存更新后的对话
-        return saveConversations(userId, existingConversations);
     }
 }

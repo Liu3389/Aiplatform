@@ -243,6 +243,7 @@ CREATE TABLE IF NOT EXISTS `points_bill` (
   `description` VARCHAR(500) DEFAULT NULL COMMENT '业务描述',
   `model_name` VARCHAR(100) DEFAULT NULL COMMENT '模型名称',
   `expire_time` DATETIME DEFAULT NULL COMMENT '点数过期时间',
+  `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
@@ -400,45 +401,26 @@ CREATE TABLE IF NOT EXISTS `statistics_counter` (
   UNIQUE KEY `uk_counter_type` (`counter_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='实时计数器表';
 
-CREATE TABLE IF NOT EXISTS `user_retention_statistics` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `stat_date` date NOT NULL COMMENT '统计日期',
-  `new_users` int NOT NULL DEFAULT 0 COMMENT '当日新增用户数',
-  `retained_day1` int NOT NULL DEFAULT 0 COMMENT '次日留存用户数',
-  `retained_day7` int NOT NULL DEFAULT 0 COMMENT '7日留存用户数',
-  `retained_day30` int NOT NULL DEFAULT 0 COMMENT '30日留存用户数',
-  `retention_rate_day1` decimal(5,2) NOT NULL DEFAULT 0.00 COMMENT '次日留存率',
-  `retention_rate_day7` decimal(5,2) NOT NULL DEFAULT 0.00 COMMENT '7日留存率',
-  `retention_rate_day30` decimal(5,2) NOT NULL DEFAULT 0.00 COMMENT '30日留存率',
-  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+CREATE TABLE IF NOT EXISTS `platform_statistics` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `stat_date` DATE NOT NULL COMMENT '统计日期',
+  `total_users` INT NOT NULL DEFAULT 0 COMMENT '总用户数',
+  `new_users` INT NOT NULL DEFAULT 0 COMMENT '新增用户数',
+  `active_users` INT NOT NULL DEFAULT 0 COMMENT '活跃用户数',
+  `retained_users` INT NOT NULL DEFAULT 0 COMMENT '留存用户数',
+  `total_calls` BIGINT NOT NULL DEFAULT 0 COMMENT '总对话次数',
+  `total_tokens` BIGINT NOT NULL DEFAULT 0 COMMENT '总Token消耗',
+  `total_points_consumed` DECIMAL(12,3) NOT NULL DEFAULT 0.000 COMMENT '总点数消耗',
+  `total_revenue` DECIMAL(12,3) NOT NULL DEFAULT 0.000 COMMENT '总营收金额',
+  `recharge_amount` DECIMAL(12,3) NOT NULL DEFAULT 0.000 COMMENT '充值金额',
+  `package_sales` INT NOT NULL DEFAULT 0 COMMENT '套餐销量',
+  `avg_order_value` DECIMAL(10,3) NOT NULL DEFAULT 0.000 COMMENT '平均客单价',
+  `model_usage` JSON DEFAULT NULL COMMENT '各模型使用量（JSON格式）',
+  `hourly_traffic` JSON DEFAULT NULL COMMENT '小时流量分布（JSON格式）',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_stat_date` (`stat_date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户留存统计表';
-
-CREATE TABLE IF NOT EXISTS `hot_questions_statistics` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `stat_date` date NOT NULL COMMENT '统计日期',
-  `question_hash` varchar(64) NOT NULL COMMENT '问题哈希值',
-  `question_preview` varchar(255) NOT NULL COMMENT '问题预览',
-  `occurrence_count` int NOT NULL DEFAULT 0 COMMENT '出现次数',
-  `unique_users` int NOT NULL DEFAULT 0 COMMENT '提问的唯一用户数',
-  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  PRIMARY KEY (`id`),
-  KEY `idx_stat_date` (`stat_date`),
-  KEY `idx_occurrence` (`occurrence_count`),
-  UNIQUE KEY `uk_date_question` (`stat_date`, `question_hash`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='热门问题统计表';
-
-CREATE TABLE IF NOT EXISTS `content_safety_statistics` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `stat_date` date NOT NULL COMMENT '统计日期',
-  `sensitive_word_trigger` int NOT NULL DEFAULT 0 COMMENT '敏感词触发次数',
-  `violation_report` int NOT NULL DEFAULT 0 COMMENT '违规举报数',
-  `violation_handled` int NOT NULL DEFAULT 0 COMMENT '已处理违规数',
-  `blocked_messages` int NOT NULL DEFAULT 0 COMMENT '被拦截消息数',
-  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_stat_date` (`stat_date`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='内容安全统计表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='平台统计数据表';
 
 SET FOREIGN_KEY_CHECKS = 1;

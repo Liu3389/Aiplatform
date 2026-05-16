@@ -1,12 +1,14 @@
 package com.ai.gateway.service;
 
+import com.ai.gateway.util.RedisScanUtil;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -18,7 +20,8 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class StatisticsCacheService {
     
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final StringRedisTemplate redisTemplate;
+    private final RedisScanUtil redisScanUtil;
     private final ObjectMapper objectMapper;
     
     // Redis Key前缀
@@ -39,7 +42,8 @@ public class StatisticsCacheService {
         String key = DASHBOARD_CACHE + period;
         try {
             String json = objectMapper.writeValueAsString(data);
-            redisTemplate.opsForValue().set(key, json, DAILY_TTL, TimeUnit.SECONDS);
+            long randomOffset = ThreadLocalRandom.current().nextInt(0, (int)(DAILY_TTL * 0.1));
+            redisTemplate.opsForValue().set(key, json, DAILY_TTL + randomOffset, TimeUnit.SECONDS);
             log.debug("缓存仪表盘数据: {}", key);
         } catch (JsonProcessingException e) {
             log.error("缓存仪表盘数据失败", e);
@@ -53,10 +57,9 @@ public class StatisticsCacheService {
     public <T> T getDashboardStats(String period, Class<T> clazz) {
         String key = DASHBOARD_CACHE + period;
         try {
-            Object cached = redisTemplate.opsForValue().get(key);
+            String cached = redisTemplate.opsForValue().get(key);
             if (cached != null) {
-                String json = cached.toString();
-                return objectMapper.readValue(json, clazz);
+                return objectMapper.readValue(cached, clazz);
             }
         } catch (Exception e) {
             log.error("获取缓存仪表盘数据失败", e);
@@ -121,7 +124,8 @@ public class StatisticsCacheService {
     private void cacheObject(String key, Object data, long ttl) {
         try {
             String json = objectMapper.writeValueAsString(data);
-            redisTemplate.opsForValue().set(key, json, ttl, TimeUnit.SECONDS);
+            long randomOffset = ThreadLocalRandom.current().nextInt(0, (int)(ttl * 0.1));
+            redisTemplate.opsForValue().set(key, json, ttl + randomOffset, TimeUnit.SECONDS);
             log.debug("缓存数据: {}, TTL: {}s", key, ttl);
         } catch (JsonProcessingException e) {
             log.error("缓存数据失败: {}", key, e);
@@ -134,10 +138,9 @@ public class StatisticsCacheService {
     @SuppressWarnings("unchecked")
     private <T> T getObject(String key, Class<T> clazz) {
         try {
-            Object cached = redisTemplate.opsForValue().get(key);
+            String cached = redisTemplate.opsForValue().get(key);
             if (cached != null) {
-                String json = cached.toString();
-                return objectMapper.readValue(json, clazz);
+                return objectMapper.readValue(cached, clazz);
             }
         } catch (Exception e) {
             log.error("获取缓存数据失败: {}", key, e);
@@ -149,7 +152,7 @@ public class StatisticsCacheService {
      * 清除所有统计缓存
      */
     public void clearAllCache() {
-        redisTemplate.delete(redisTemplate.keys(CACHE_PREFIX + "*"));
+        redisScanUtil.deleteByPattern(CACHE_PREFIX + "*");
         log.info("清除所有统计缓存");
     }
     
@@ -158,7 +161,7 @@ public class StatisticsCacheService {
      */
     public void clearCache(String type) {
         String pattern = CACHE_PREFIX + type + ":*";
-        redisTemplate.delete(redisTemplate.keys(pattern));
+        redisScanUtil.deleteByPattern(pattern);
         log.info("清除缓存: {}", type);
     }
 }

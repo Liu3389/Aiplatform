@@ -2,103 +2,121 @@ package com.ai.gateway.service;
 
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * SSE连接管理服务 - 支持断线重连 (修复 P1-8: 当前为僵尸代码，待后续流式功能启用)
+ * SSE连接管理服务 — 支持断线重连
+ * 
+ * 优化点：
+ * 1. 限制最大并发连接数，防止内存溢出
+ * 2. 定时清理超时未响应的连接
+ * 3. 记录连接统计信息用于监控
  */
 @Slf4j
 @Service
 public class SseConnectionManager {
 
-    // 存储活跃的SSE连接
     private final Map<String, SseEmitter> activeConnections = new ConcurrentHashMap<>();
-    
-    // 存储未完成的响应数据（用于重连后继续发送）
     private final Map<String, PendingResponse> pendingResponses = new ConcurrentHashMap<>();
+    private final Map<String, Long> connectionTimestamps = new ConcurrentHashMap<>();
+    
+    private static final int MAX_CONNECTIONS = 500;
+    private static final long CONNECTION_TIMEOUT_MILLIS = 120_000;
+    
+    private final AtomicInteger totalCreated = new AtomicInteger(0);
+    private final AtomicInteger totalCompleted = new AtomicInteger(0);
+    private final AtomicInteger totalTimeout = new AtomicInteger(0);
 
-    /**
-     * 注册SSE连接
-     * @param connectionId 连接ID
-     * @param emitter SSE发射器
-     */
     public void registerConnection(String connectionId, SseEmitter emitter) {
-        activeConnections.put(connectionId, emitter);
+        if (activeConnections.size() >= MAX_CONNECTIONS) {
+            log.warn("SSE连接数已达上限: {}", MAX_CONNECTIONS);
+            try {
+                emitter.send(SseEmitter.event().name("error").data(Map.of("message", "服务器繁忙，请稍后重试")));
+                emitter.complete();
+            } catch (IOException e) {
+                log.error("发送拒绝事件失败", e);
+            }
+            return;
+        }
         
-        // 设置完成回调
+        activeConnections.put(connectionId, emitter);
+        connectionTimestamps.put(connectionId, System.currentTimeMillis());
+        totalCreated.incrementAndGet();
+        
         emitter.onCompletion(() -> {
             activeConnections.remove(connectionId);
             pendingResponses.remove(connectionId);
-            log.info("SSE连接已关闭: connectionId={}", connectionId);
+            connectionTimestamps.remove(connectionId);
+            totalCompleted.incrementAndGet();
+            log.debug("SSE连接已关闭: connectionId={}, active={}", connectionId, activeConnections.size());
         });
         
-        // 设置超时回调
         emitter.onTimeout(() -> {
             activeConnections.remove(connectionId);
-            log.warn("SSE连接超时: connectionId={}", connectionId);
+            pendingResponses.remove(connectionId);
+            connectionTimestamps.remove(connectionId);
+            totalTimeout.incrementAndGet();
+            log.warn("SSE连接超时: connectionId={}, active={}", connectionId, activeConnections.size());
         });
         
-        // 设置错误回调
         emitter.onError((ex) -> {
             activeConnections.remove(connectionId);
+            pendingResponses.remove(connectionId);
+            connectionTimestamps.remove(connectionId);
             log.error("SSE连接错误: connectionId={}", connectionId, ex);
         });
         
-        log.info("SSE连接已注册: connectionId={}", connectionId);
+        log.debug("SSE连接已注册: connectionId={}, active={}", connectionId, activeConnections.size());
     }
 
-    /**
-     * 保存未完成的响应数据
-     * @param connectionId 连接ID
-     * @param response 响应数据
-     */
     public void savePendingResponse(String connectionId, PendingResponse response) {
         pendingResponses.put(connectionId, response);
     }
 
-    /**
-     * 获取未完成的响应数据
-     * @param connectionId 连接ID
-     * @return 未完成的响应数据
-     */
     public PendingResponse getPendingResponse(String connectionId) {
         return pendingResponses.get(connectionId);
     }
 
-    /**
-     * 清除未完成的响应数据
-     * @param connectionId 连接ID
-     */
     public void clearPendingResponse(String connectionId) {
         pendingResponses.remove(connectionId);
     }
 
-    /**
-     * 检查连接是否活跃
-     * @param connectionId 连接ID
-     * @return 是否活跃
-     */
     public boolean isConnectionActive(String connectionId) {
         return activeConnections.containsKey(connectionId);
     }
 
-    /**
-     * 获取活跃连接数
-     * @return 活跃连接数
-     */
     public int getActiveConnectionCount() {
         return activeConnections.size();
     }
 
-    /**
-     * 关闭指定连接
-     * @param connectionId 连接ID
-     */
+    public Map<String, Object> getStats() {
+        return Map.of(
+            "active", activeConnections.size(),
+            "totalCreated", totalCreated.get(),
+            "totalCompleted", totalCompleted.get(),
+            "totalTimeout", totalTimeout.get()
+        );
+    }
+
+    @Scheduled(fixedRate = 30000)
+    public void cleanupStaleConnections() {
+        long now = System.currentTimeMillis();
+        activeConnections.forEach((id, emitter) -> {
+            Long timestamp = connectionTimestamps.get(id);
+            if (timestamp != null && now - timestamp > CONNECTION_TIMEOUT_MILLIS) {
+                log.warn("清理超时SSE连接: connectionId={}, age={}ms", id, now - timestamp);
+                closeConnection(id);
+            }
+        });
+    }
+
     public void closeConnection(String connectionId) {
         SseEmitter emitter = activeConnections.remove(connectionId);
         if (emitter != null) {
@@ -109,11 +127,9 @@ public class SseConnectionManager {
             }
         }
         pendingResponses.remove(connectionId);
+        connectionTimestamps.remove(connectionId);
     }
 
-    /**
-     * 待响应数据类
-     */
     @Data
     public static class PendingResponse {
         private String requestId;

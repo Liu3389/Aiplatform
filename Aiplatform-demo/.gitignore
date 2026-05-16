@@ -39,3 +39,18 @@ logs/
 *.swp
 *.swo
 *~
+*.pid
+*.pyc
+__pycache__/
+
+# One-time scripts
+check_*.py
+fix_*.py
+verify_*.py
+
+# Reports (keep docs/ only)
+CONSISTENCY_CHECK_REPORT.md
+OPTIMIZATION_COMPLETION_SUMMARY.md
+REDIS_OPTIMIZATION.md
+TRANSACTIONAL_ROLLBACK_FIX_COMPLETE.md
+problem.md

@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -75,8 +77,9 @@ public class PlatformModelService {
         if (config != null) {
             try {
                 String json = objectMapper.writeValueAsString(config);
-                redisTemplate.opsForValue().set(cacheKey, json, 30, TimeUnit.MINUTES);
-                localCache.put(displayName, config); // 存入本地缓存
+                long randomOffset = ThreadLocalRandom.current().nextInt(0, 6);
+                redisTemplate.opsForValue().set(cacheKey, json, 30 + randomOffset, TimeUnit.MINUTES);
+                localCache.put(displayName, config);
             } catch (Exception e) {
                 log.error("缓存模型配置失败", e);
             }
@@ -89,8 +92,25 @@ public class PlatformModelService {
      */
     public BigDecimal getModelPointsCost(PlatformModelConfig config) {
         if (config == null || config.getFixedPoints() == null) {
-            return new BigDecimal("3"); // 默认 3 点
+            return new BigDecimal("3");
         }
         return config.getFixedPoints();
+    }
+
+    @PostConstruct
+    public void warmupCache() {
+        try {
+            List<PlatformModelConfig> models = listEnabledModels();
+            for (PlatformModelConfig config : models) {
+                String cacheKey = MODEL_CACHE_KEY + config.getDisplayName();
+                String json = objectMapper.writeValueAsString(config);
+                long randomOffset = ThreadLocalRandom.current().nextInt(0, 6);
+                redisTemplate.opsForValue().set(cacheKey, json, 30 + randomOffset, TimeUnit.MINUTES);
+                localCache.put(config.getDisplayName(), config);
+            }
+            log.info("模型配置缓存预热完成: {} 个模型", models.size());
+        } catch (Exception e) {
+            log.error("模型配置缓存预热失败", e);
+        }
     }
 }

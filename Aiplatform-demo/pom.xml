@@ -133,7 +133,7 @@
             <version>0.21.0</version>
         </dependency>
 
-        <!-- Caffeine 本地缓存 -->
+        <!-- Caffeine 本地缓存（版本由 spring-boot-starter-parent 管理） -->
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>

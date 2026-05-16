@@ -5,6 +5,7 @@ import com.ai.gateway.entity.ChatMessageHistory;
 import com.ai.gateway.mapper.ChatMessageMapper;
 import com.ai.gateway.mapper.ChatMessageHistoryMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -48,10 +49,10 @@ public class DataArchiveService {
             while (true) {
                 // 分批查询需要归档的消息
                 LambdaQueryWrapper<ChatMessage> wrapper = new LambdaQueryWrapper<>();
-                wrapper.lt(ChatMessage::getCreateTime, archiveThreshold)
-                       .last("LIMIT " + Math.min(Math.max(batchSize, 1), 1000));
+                wrapper.lt(ChatMessage::getCreateTime, archiveThreshold);
 
-                List<ChatMessage> messagesToArchive = chatMessageMapper.selectList(wrapper);
+                Page<ChatMessage> page = new Page<>(1, batchSize);
+                List<ChatMessage> messagesToArchive = chatMessageMapper.selectList(page, wrapper);
 
                 if (messagesToArchive.isEmpty()) {
                     break;
@@ -79,7 +80,7 @@ public class DataArchiveService {
                     for (int i = 0; i < historyMessages.size(); i += 500) {
                         int end = Math.min(i + 500, historyMessages.size());
                         List<ChatMessageHistory> batch = historyMessages.subList(i, end);
-                        batch.forEach(chatMessageHistoryMapper::insert);
+                        chatMessageHistoryMapper.insertBatch(batch);
                     }
                 }
 

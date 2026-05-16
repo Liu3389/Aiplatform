@@ -198,9 +198,10 @@ public class NotificationService {
         LambdaQueryWrapper<UserNotification> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(UserNotification::getUserId, userId)
                .eq(UserNotification::getIsRead, 0)
-               .orderByDesc(UserNotification::getCreateTime)
-               .last("LIMIT " + Math.min(Math.max(limit, 1), 100));
+               .orderByDesc(UserNotification::getCreateTime);
         
-        return notificationMapper.selectList(wrapper);
+        int safeLimit = Math.min(Math.max(limit, 1), 100);
+        Page<UserNotification> page = new Page<>(1, safeLimit);
+        return notificationMapper.selectList(page, wrapper);
     }
 }

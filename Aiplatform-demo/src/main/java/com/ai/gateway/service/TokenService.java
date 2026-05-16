@@ -75,8 +75,6 @@ public class TokenService {
         if (ttl != null && ttl > 0 && ttl < REFRESH_THRESHOLD_HOURS * 3600) {
             redisTemplate.expire(key, TOKEN_TTL_HOURS, TimeUnit.HOURS);
             log.info("Token续期: ttl={}s", ttl);
-        } else {
-            redisTemplate.expire(key, TOKEN_TTL_HOURS, TimeUnit.HOURS);
         }
         return token;
     }

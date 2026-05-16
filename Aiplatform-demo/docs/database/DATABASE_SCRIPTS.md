@@ -12,10 +12,16 @@
 
 所有 SQL 脚本已整合并归档在 `src/main/resources/sql/` 目录：
 
-- **[schema.sql](../../src/main/resources/sql/schema.sql)**: **核心建表脚本**。包含用户、模型（平台对话与商店配置）、会话（冷热分离）、计费、统计等所有业务模块的完整表结构及索引优化。
-- **[init_test_data.sql](../../src/main/resources/sql/init_test_data.sql)**: **测试数据脚本**。插入初始的平台模型映射、厂商配置及套餐模板。支持幂等执行，可随时重置。
+| 文件 | 用途 | 适用场景 |
+| :--- | :--- | :--- |
+| **[schema.sql](../../src/main/resources/sql/schema.sql)** | 核心建表脚本（22 张表） | 全新部署 / 生产环境初始化 |
+| **[rebuild.sql](../../src/main/resources/sql/rebuild.sql)** ⭐ | **一键重建脚本**（建表 + 测试数据） | 开发环境快速搭建 |
+| **[init_data.sql](../../src/main/resources/sql/init_data.sql)** | 数据初始化脚本（含测试用户） | 注入完整测试数据 |
+| **[init_test_data.sql](../../src/main/resources/sql/init_test_data.sql)** | 轻量测试数据脚本 | 最小化快速重置 |
+| **[migration_v3.1.sql](../../src/main/resources/sql/migration_v3.1.sql)** | v3.0 → v3.1 增量迁移 | 版本升级 |
+| **[testdata_large.sql](../../src/main/resources/sql/testdata_large.sql)** | 海量测试数据（50 用户） | 性能测试 / 压测 |
 
-> **注意**: 之前的多个临时迁移脚本（migration_*.sql）和修复脚本已合并至上述两个核心文件中。此外，我们新增了**动态测试数据管理接口**，方便开发调试。
+> **注意**: 所有脚本均使用 `SET FOREIGN_KEY_CHECKS = 0` 确保幂等执行，可随时安全重置。API Key 使用 `${DEEPSEEK_API_KEY}` 占位符，部署时替换为实际值。
 
 ## 🛠️ 动态测试数据管理
 
@@ -99,7 +105,7 @@
 1. 检查 MySQL 连接状态
 2. 创建 `ai_gateway` 数据库
 3. 导入 `schema.sql` 定义的所有表结构和索引
-4. 验证表数量是否正确（预期 23 张表）
+4. 验证表数量是否正确（预期 22 张表）
 
 ### 2. init_data.sql (数据初始化)
 
@@ -122,19 +128,25 @@ mysql -h localhost -P 3307 -u root -p123456 ai_gateway < src/main/resources/sql/
 
 ## 使用场景建议
 
-### 场景1: 全新部署
+### 场景1: 一键重建（推荐开发环境）⭐
+```bash
+# 一键完成建表 + 测试数据注入
+mysql -h localhost -P 3307 -u root -p123456 ai_gateway < src/main/resources/sql/rebuild.sql
+```
+
+### 场景2: 全新部署
 ```bash
 # 1. 初始化数据库结构
-./init_local_db.sh
+mysql -h localhost -P 3307 -u root -p123456 < src/main/resources/sql/schema.sql
 
 # 2. 注入基础配置和测试数据
 mysql -h localhost -P 3307 -u root -p123456 ai_gateway < src/main/resources/sql/init_data.sql
 ```
 
-### 场景2: 生产环境初始化
+### 场景3: 生产环境初始化
 ```bash
-# 仅执行 init_db.sh 创建表结构，不执行 init_data.sql
-./init_db.sh
+# 仅执行 schema.sql 创建表结构，不注入测试数据
+mysql -h YOUR_HOST -u YOUR_USER -p ai_gateway < src/main/resources/sql/schema.sql
 ```
 
 
@@ -167,8 +179,8 @@ mysql -h localhost -P 3307 -u root -p123456 ai_gateway < src/main/resources/sql/
 
 ## 最佳实践
 
-1. **开发环境**: 使用 `init_test_data.sh` 快速搭建测试环境
-2. **测试环境**: 定期使用 `clear_test_data.sh` + `init_test_data.sh` 重置数据
+1. **开发环境**: 使用 `rebuild.sql` 一键重建数据库环境
+2. **测试环境**: 使用 `rebuild.sql` 或 `init_test_data.sql` 定期重置数据
 3. **生产环境**: 仅使用 `init_db.sh` 或 `init_local_db.sh` 初始化表结构
 4. **版本升级**: 按顺序执行新的migration脚本
 5. **数据备份**: 定期备份数据库，特别是在执行 destructive 操作前

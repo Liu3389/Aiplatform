@@ -1,6 +1,6 @@
 -- ============================================
 -- AI Gateway Platform - 数据初始化脚本 (Init Data)
--- 版本: v3.0 (2026-05-15)
+-- 版本: v3.1 (2026-05-16) - 修复表名和列名与 schema 不一致的问题
 -- 说明: 包含默认模型配置、管理员账户及测试用户数据
 -- 密码: Test@123456 (BCrypt加密)
 -- ============================================
@@ -9,6 +9,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 
 -- 1. 清空现有数据（按依赖关系逆序）
 DELETE FROM `user_notification`;
+DELETE FROM `system_notification`;
 DELETE FROM `admin_operation_log`;
 DELETE FROM `billing_record`;
 DELETE FROM `call_log`;
@@ -17,21 +18,23 @@ DELETE FROM `chat_message`;
 DELETE FROM `chat_message_history`;
 DELETE FROM `conversation`;
 DELETE FROM `api_key`;
-DELETE FROM `user_api_key`;
 DELETE FROM `coupon_usage_record`;
 DELETE FROM `coupon`;
 DELETE FROM `user_subscription`;
 DELETE FROM `user`;
-DELETE FROM `model_config`;
+DELETE FROM `user_marketplace_key`;
+DELETE FROM `marketplace_usage_log`;
+DELETE FROM `marketplace_provider`;
+DELETE FROM `platform_model_config`;
 DELETE FROM `package_template`;
 DELETE FROM `daily_statistics`;
 DELETE FROM `statistics_counter`;
+DELETE FROM `platform_statistics`;
 
--- 2. 初始化模型配置 (DeepSeek)
--- 修复 P0-2: 统一使用占位符，确保与 testdata_large.sql 行为一致
-INSERT INTO `model_config` (`model_name`, `provider`, `base_url`, `api_key`, `input_price`, `output_price`, `points_mode`, `points_per_request`, `status`) VALUES
-('deepseek-v4-flash', 'deepseek', 'https://api.deepseek.com/v1/chat/completions', '${DEEPSEEK_API_KEY:your-api-key-here}', 0.000000, 0.000000, 'FREE', 0.000, 1),
-('deepseek-v4-pro',   'deepseek', 'https://api.deepseek.com/v1/chat/completions', '${DEEPSEEK_API_KEY:your-api-key-here}', 0.000000, 0.000000, 'PREMIUM', 3.000, 1);
+-- 2. 初始化平台对话模型配置
+INSERT INTO `platform_model_config` (`display_name`, `actual_model`, `fixed_points`, `provider`, `base_url`, `api_key`, `status`, `sort_order`) VALUES
+('DeepSeek-V4-Flash', 'deepseek-v4-flash', 1.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', '${DEEPSEEK_API_KEY:your-api-key-here}', 1, 1),
+('DeepSeek-V4-Pro',   'deepseek-v4-pro',   3.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', '${DEEPSEEK_API_KEY:your-api-key-here}', 1, 2);
 
 -- 3. 初始化套餐模板
 INSERT INTO `package_template` (`package_code`, `package_name`, `description`, `identity_label`, `points`, `price`, `duration_days`, `daily_call_limit`, `monthly_call_limit`, `max_tokens_per_call`, `priority_level`, `features`, `status`, `sort_order`) VALUES

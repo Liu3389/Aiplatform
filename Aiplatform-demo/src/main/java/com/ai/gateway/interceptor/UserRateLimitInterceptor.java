@@ -13,7 +13,12 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 用户限流拦截器 - 防止恶意刷接口和爬虫
+ * 用户限流拦截器 — 滑动窗口算法
+ * 
+ * 使用 Redis ZSet 实现滑动窗口限流，相比固定窗口计数器：
+ * 1. 支持突发流量（窗口边界平滑过渡）
+ * 2. 不会出现窗口切换时的双倍请求
+ * 3. 更精确的请求频率控制
  */
 @Slf4j
 @Component
@@ -24,8 +29,8 @@ public class UserRateLimitInterceptor implements HandlerInterceptor {
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     private static final String USER_RATE_LIMIT_PREFIX = "rate_limit:user:";
-    private static final int MAX_REQUESTS_PER_MINUTE = 60; // 每分钟最大请求数
-    private static final long WINDOW_SECONDS = 60; // 时间窗口60秒
+    private static final int MAX_REQUESTS_PER_MINUTE = 60;
+    private static final long WINDOW_MILLIS = 60_000;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
@@ -35,15 +40,16 @@ public class UserRateLimitInterceptor implements HandlerInterceptor {
         }
         
         String key = USER_RATE_LIMIT_PREFIX + userId;
+        long now = System.currentTimeMillis();
         
-        Long currentCount = redisTemplate.opsForValue().increment(key);
+        redisTemplate.opsForZSet().add(key, String.valueOf(now), (double) now);
+        redisTemplate.opsForZSet().removeRangeByScore(key, 0, now - WINDOW_MILLIS);
         
-        if (currentCount != null && currentCount == 1) {
-            redisTemplate.expire(key, WINDOW_SECONDS, TimeUnit.SECONDS);
-        }
+        Long count = redisTemplate.opsForZSet().zCard(key);
+        redisTemplate.expire(key, 65, TimeUnit.SECONDS);
         
-        if (currentCount != null && currentCount > MAX_REQUESTS_PER_MINUTE) {
-            log.warn("用户请求频率过高: userId={}, count={}", userId, currentCount);
+        if (count != null && count > MAX_REQUESTS_PER_MINUTE) {
+            log.warn("用户请求频率过高(滑动窗口): userId={}, count={}", userId, count);
             
             response.setStatus(429);
             response.setContentType("application/json;charset=UTF-8");
