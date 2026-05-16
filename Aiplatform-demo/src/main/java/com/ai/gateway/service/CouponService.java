@@ -62,12 +62,25 @@ public class CouponService {
     @Transactional(rollbackFor = Exception.class)
     public int sendToAllUsers(BigDecimal amount, BigDecimal thresholdAmount,
                                String applicablePlan, LocalDateTime expireTime) {
-        List<User> users = userMapper.selectList(new LambdaQueryWrapper<>());
-        for (User u : users) {
-            createCoupon(u.getId(), amount, thresholdAmount, applicablePlan, expireTime);
+        Long totalCount = userMapper.selectCount(new LambdaQueryWrapper<>());
+        if (totalCount > 10000) {
+            log.warn("目标用户数量过大({}), 建议分批发送", totalCount);
+            throw new RuntimeException("目标用户数量超过10000，请分批发送");
         }
-        log.info("群发代金卷完成: count={}, amount={}", users.size(), amount);
-        return users.size();
+        
+        List<User> users = userMapper.selectList(new LambdaQueryWrapper<>());
+        int sentCount = 0;
+        int skipCount = 0;
+        for (User u : users) {
+            if (hasUnusedCoupon(u.getId(), amount, applicablePlan)) {
+                skipCount++;
+                continue;
+            }
+            createCoupon(u.getId(), amount, thresholdAmount, applicablePlan, expireTime);
+            sentCount++;
+        }
+        log.info("群发代金卷完成: sent={}, skipped={}, amount={}", sentCount, skipCount, amount);
+        return sentCount;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -75,12 +88,25 @@ public class CouponService {
                                  String applicablePlan, LocalDateTime expireTime) {
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(User::getMembership, membership);
-        List<User> users = userMapper.selectList(wrapper);
-        for (User u : users) {
-            createCoupon(u.getId(), amount, thresholdAmount, applicablePlan, expireTime);
+        Long totalCount = userMapper.selectCount(wrapper);
+        if (totalCount > 10000) {
+            log.warn("目标用户数量过大({}), 建议分批发送", totalCount);
+            throw new RuntimeException("目标用户数量超过10000，请分批发送");
         }
-        log.info("按会员发代金卷完成: membership={}, count={}, amount={}", membership, users.size(), amount);
-        return users.size();
+        
+        List<User> users = userMapper.selectList(wrapper);
+        int sentCount = 0;
+        int skipCount = 0;
+        for (User u : users) {
+            if (hasUnusedCoupon(u.getId(), amount, applicablePlan)) {
+                skipCount++;
+                continue;
+            }
+            createCoupon(u.getId(), amount, thresholdAmount, applicablePlan, expireTime);
+            sentCount++;
+        }
+        log.info("按会员发代金卷完成: membership={}, sent={}, skipped={}, amount={}", membership, sentCount, skipCount, amount);
+        return sentCount;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -89,12 +115,41 @@ public class CouponService {
         LocalDateTime since = LocalDateTime.now().minusDays(days);
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.ge(User::getCreateTime, since);
-        List<User> users = userMapper.selectList(wrapper);
-        for (User u : users) {
-            createCoupon(u.getId(), amount, thresholdAmount, applicablePlan, expireTime);
+        Long totalCount = userMapper.selectCount(wrapper);
+        if (totalCount > 10000) {
+            log.warn("目标用户数量过大({}), 建议分批发送", totalCount);
+            throw new RuntimeException("目标用户数量超过10000，请分批发送");
         }
-        log.info("按新用户发代金卷完成: days={}, count={}, amount={}", days, users.size(), amount);
-        return users.size();
+        
+        List<User> users = userMapper.selectList(wrapper);
+        int sentCount = 0;
+        int skipCount = 0;
+        for (User u : users) {
+            if (hasUnusedCoupon(u.getId(), amount, applicablePlan)) {
+                skipCount++;
+                continue;
+            }
+            createCoupon(u.getId(), amount, thresholdAmount, applicablePlan, expireTime);
+            sentCount++;
+        }
+        log.info("按新用户发代金卷完成: days={}, sent={}, skipped={}, amount={}", days, sentCount, skipCount, amount);
+        return sentCount;
+    }
+
+    /**
+     * 检查用户是否已有相同面额和套餐的未使用优惠券（防重领）
+     */
+    private boolean hasUnusedCoupon(Long userId, BigDecimal amount, String applicablePlan) {
+        LambdaQueryWrapper<Coupon> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Coupon::getUserId, userId)
+               .eq(Coupon::getAmount, amount)
+               .eq(Coupon::getUsed, false);
+        if (applicablePlan == null || applicablePlan.isEmpty()) {
+            wrapper.and(w -> w.isNull(Coupon::getApplicablePlan).or().eq(Coupon::getApplicablePlan, ""));
+        } else {
+            wrapper.eq(Coupon::getApplicablePlan, applicablePlan);
+        }
+        return couponMapper.selectCount(wrapper) > 0;
     }
 
     @Transactional(rollbackFor = Exception.class)

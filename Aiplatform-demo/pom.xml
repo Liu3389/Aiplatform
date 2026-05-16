@@ -132,6 +132,12 @@
             <artifactId>commonmark</artifactId>
             <version>0.21.0</version>
         </dependency>
+
+        <!-- Caffeine 本地缓存 -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
     </dependencies> <!-- 确保这里有闭合标签 -->
 
     

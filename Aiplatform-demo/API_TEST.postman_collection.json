@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AI Gateway Platform API - 用户接口",
-    "description": "凌点AI模型调度网关用户接口测试 - 使用 X-User-Token Header 认证\n\n**最新更新 (2026-05-15)**:\n- ✅ 架构重构：拆分为 AI 对话平台（点数制）与 模型商店（API Key 中转）双业务线\n- ✅ 新增平台对话模型配置表 platform_model_config（支持虚拟模型映射）\n- ✅ 新增模型商店相关表（厂商配置、用户 Key、调用日志）\n- ✅ 移除旧版 model_config 及用户自定义 API Key 功能\n- ✅ 统一业务术语：所有对话只扣点数，不扣余额；货币单位统一为中文“元”\n- ✅ 更新 DeepSeek API 配置（仅保留 deepseek-v4-flash 和 deepseek-v4-pro）\n- ✅ 新增聊天记录管理模块（游标分页 + 冷热分离）\n- ✅ 统一点数体系，新增点数账单查询接口\n\n**主要功能模块**:\n1. 用户认证（6个接口）\n2. 平台对话模型列表（/platform-model/list）\n3. 会话管理（4个接口）\n4. 聊天对话（4个接口）\n5. 模型商店（/marketplace/keys, /buy-key）\n6. 用户中心（点数、套餐、账单）\n7. 通知与优惠券（6个接口）",
+    "description": "凌点AI模型调度网关用户接口测试 - 使用 X-User-Token Header 认证\n\n**最新更新 (2026-05-15)**:\n- ✅ 架构重构：拆分为 AI 对话平台（点数制）与 模型商店（API Key 中转）双业务线\n- ✅ 新增平台对话模型配置表 platform_model_config（支持虚拟模型映射，多厂商路由）\n- ✅ 新增模型商店相关表（marketplace_provider, user_marketplace_key, usage_log）\n- ✅ 移除旧版 model_config 及用户自定义 API Key 功能\n- ✅ 统一业务术语：所有对话只扣点数，不扣余额；货币单位统一为中文“元”\n- ✅ 更新 DeepSeek API 配置（仅保留 deepseek-v4-flash 和 deepseek-v4-pro）\n- ✅ 新增聊天记录管理模块（游标分页 + 冷热分离）\n- ✅ 统一点数体系，新增点数账单查询接口\n\n**主要功能模块**:\n1. 用户认证（6个接口）\n2. 平台对话模型列表（/platform-model/list）\n3. 会话管理（4个接口）\n4. 聊天对话（4个接口）\n5. 模型商店（/marketplace/keys, /buy-key）\n6. 用户中心（点数、套餐、账单）\n7. 通知与优惠券（6个接口）",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -61,15 +61,26 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"Test@123456\",\n  \"email\": \"test@example.com\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/register",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "register"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
             }
           }
         },
@@ -110,8 +121,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -119,8 +136,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "login"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
             }
           }
         },
@@ -129,13 +152,25 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/userinfo",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "userinfo"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "userinfo"
+              ]
             }
           }
         },
@@ -144,13 +179,25 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/balance",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "balance"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "balance"
+              ]
             }
           }
         },
@@ -159,13 +206,25 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/refresh-token",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "refresh-token"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh-token"
+              ]
             }
           }
         },
@@ -174,13 +233,25 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/logout",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "logout"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
             }
           }
         }
@@ -193,29 +264,87 @@
           "name": "获取可用模型列表",
           "request": {
             "method": "GET",
-            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/platform-model/list",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "platform-model", "list"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform-model",
+                "list"
+              ]
+            }
+          }
+        },
+        {
+          "name": "非流式对话（平台模式）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"gpt-4o\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"你好\"\n    }\n  ],\n  \"stream\": false,\n  \"temperature\": 0.7\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/completions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "completions"
+              ]
             }
           }
         }
       ]
     },
     {
-      "name": "模型商店",
+      "name": "模型商店 ⚠️ 已搁置",
       "item": [
         {
           "name": "查询已购 API Key",
           "request": {
             "method": "GET",
-            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/marketplace/keys",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "marketplace", "keys"]
-            }
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "marketplace",
+                "keys"
+              ]
+            },
+            "description": "⚠️ 该功能已搁置，当前返回开发中提示"
           }
         },
         {
@@ -223,8 +352,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -232,9 +367,16 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/marketplace/buy-key",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "marketplace", "buy-key"]
-            }
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "marketplace",
+                "buy-key"
+              ]
+            },
+            "description": "⚠️ 该功能已搁置，当前返回开发中提示"
           }
         }
       ]
@@ -246,11 +388,47 @@
           "name": "重置平台基础数据",
           "request": {
             "method": "POST",
-            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/admin/test-data/reset",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "test-data", "reset"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "test-data",
+                "reset"
+              ]
+            }
+          }
+        },
+        {
+          "name": "修复模型点数配置",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/test-data/fix-points",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "test-data",
+                "fix-points"
+              ]
             }
           }
         }
@@ -264,13 +442,26 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/conversations",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "conversations"]
+              "raw": "{{baseUrl}}/api/user/conversations/fetch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "conversations",
+                "fetch"
+              ]
             }
           }
         },
@@ -279,18 +470,34 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"conversations\": [\n    {\n      \"id\": \"conv-001\",\n      \"title\": \"测试对话\",\n      \"messages\": [],\n      \"createTime\": \"2026-05-14T10:00:00\"\n    }\n  ],\n  \"version\": 0\n}"
+              "raw": "[\n  {\n    \"id\": \"conv-001\",\n    \"title\": \"测试对话\",\n    \"messages\": [],\n    \"createTime\": \"2026-05-14T10:00:00\"\n  }\n]"
             },
             "url": {
-              "raw": "{{baseUrl}}/api/conversations",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "conversations"]
+              "raw": "{{baseUrl}}/api/user/conversations/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "conversations",
+                "sync"
+              ]
             }
           }
         },
@@ -299,14 +506,26 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/conversations/version?localVersion=0",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "conversations", "version"],
-              "query": [{ "key": "localVersion", "value": "0" }]
+              "raw": "{{baseUrl}}/api/user/conversations/version",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "conversations",
+                "version"
+              ]
             }
           }
         },
@@ -315,28 +534,26 @@
           "request": {
             "method": "DELETE",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/conversations/clear",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "conversations", "clear"]
-            }
-          }
-        },
-        {
-          "name": "检查会话状态",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/session/status",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "session", "status"]
+              "raw": "{{baseUrl}}/api/user/conversations/clear",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "conversations",
+                "clear"
+              ]
             }
           }
         }
@@ -350,10 +567,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-API-Key", "value": "{{apiKey}}" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -361,8 +586,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/chat/completions",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "chat", "completions"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "completions"
+              ]
             }
           }
         },
@@ -371,10 +602,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-API-Key", "value": "{{apiKey}}" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -382,20 +621,34 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/chat/stream",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "chat", "stream"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "stream"
+              ]
             }
           }
         },
         {
-          "name": "自定义模型 - 非流式对话",
+          "name": "自定义模型 - 非流式对话（平台模式）",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-API-Key", "value": "{{apiKey}}" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -403,21 +656,38 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/chat/completions",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "chat", "completions"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "completions"
+              ]
             }
           }
         },
         {
-          "name": "SSE断线重连测试",
+          "name": "SSE断线重连测试（平台模式）",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-API-Key", "value": "{{apiKey}}" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" },
-              { "key": "Last-Event-ID", "value": "{{lastEventId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              },
+              {
+                "key": "Last-Event-ID",
+                "value": "{{lastEventId}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -425,10 +695,275 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/chat/stream",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "chat", "stream"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "stream"
+              ]
             }
           }
+        },
+        {
+          "name": "带文件对话",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "question",
+                  "value": "请分析这个文件的内容",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/with-file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "with-file"
+              ]
+            },
+            "description": "上传文件并与AI对话，返回Markdown格式回答"
+          },
+          "response": []
+        },
+        {
+          "name": "AI生成文件",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requirement\": \"生成一份关于AI发展趋势的报告\",\n  \"format\": \"md\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/generate-file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "generate-file"
+              ]
+            },
+            "description": "根据用户需求让AI生成指定格式文件，支持md/txt/csv/json格式"
+          },
+          "response": []
+        },
+        {
+          "name": "同步对话数据到阿里云",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversationId\": 1,\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"你好\"},\n    {\"role\": \"assistant\", \"content\": \"你好！有什么可以帮助你的？\"}\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "sync"
+              ]
+            },
+            "description": "将对话数据打包为ZIP同步到阿里云OSS"
+          },
+          "response": []
+        },
+        {
+          "name": "导出对话内容为文件",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"# 对话导出示例\\n\\n这是一段对话内容。\",\n  \"format\": \"md\",\n  \"fileName\": \"my_conversation\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/export-content",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "export-content"
+              ]
+            },
+            "description": "导出对话中的代码块或内容为文件，不收费"
+          },
+          "response": []
+        },
+        {
+          "name": "加载对话关联文件",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/chat/load?conversationId=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "chat",
+                "load"
+              ],
+              "query": [
+                {
+                  "key": "conversationId",
+                  "value": "1",
+                  "description": "会话ID"
+                }
+              ]
+            },
+            "description": "加载对话时同步从阿里云加载关联文件"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📄 AI文档交互",
+      "item": [
+        {
+          "name": "AI文档对话",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "question",
+                  "value": "请总结这个文档的主要内容",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai-doc/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai-doc",
+                "chat"
+              ]
+            },
+            "description": "上传文件并与AI进行文档级交互"
+          },
+          "response": []
+        },
+        {
+          "name": "导出AI结果",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"# AI分析结果\\n\\n这是AI对文档的分析结果。\",\n  \"format\": \"md\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai-doc/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai-doc",
+                "export"
+              ]
+            },
+            "description": "将AI结果导出为指定格式文件"
+          },
+          "response": []
         }
       ]
     },
@@ -440,13 +975,28 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/user/conversations/1/messages/latest?limit=10",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "user", "conversations", "1", "messages", "latest"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "conversations",
+                "1",
+                "messages",
+                "latest"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -464,9 +1014,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -474,8 +1033,16 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/user/conversations/messages/page",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "user", "conversations", "messages", "page"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "conversations",
+                "messages",
+                "page"
+              ]
             },
             "description": "用户上翻加载更多历史记录时调用\n\n参数说明：\n- conversationId: 会话ID\n- lastId: 上一页最后一条记录的ID（游标）\n- limit: 每页条数（默认10）\n\n返回：\n- messages: 消息列表\n- hasMore: 是否有更多数据\n- nextCursorId: 下一页游标ID"
           },
@@ -486,13 +1053,27 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "X-Device-Id",
+                "value": "{{deviceId}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/user/conversations/cache/clear",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "user", "conversations", "cache", "clear"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "conversations",
+                "cache",
+                "clear"
+              ]
             },
             "description": "切换账号时调用，强制删除Redis中的聊天记录缓存\n\n防止账号串号，确保新账号不会看到旧账号的缓存数据"
           },
@@ -501,904 +1082,30 @@
       ]
     },
     {
-      "name": "测试数据管理",
-      "item": [
-        {
-          "name": "重置平台基础数据",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/test-data/reset",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "test-data", "reset"]
-            }
-          }
-        },
-        {
-          "name": "修复模型点数配置",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "X-User-Token", "value": "{{token}}" }],
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/test-data/fix-points",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "admin", "test-data", "fix-points"]
-            }
-          }
-        }
-      ]
-    },
-        {
-          "name": "快速请求测试（触发限流）",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "var status = pm.response.code;",
-                  "if (status === 429) {",
-                  "  console.log('⚠️ 已触发限流：' + pm.response.text());",
-                  "} else if (status === 200) {",
-                  "  console.log('✅ 请求成功');",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" },
-              { "key": "X-User-Id", "value": "{{userId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/userinfo",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "userinfo"]
-            }
-          }
-        },
-        {
-          "name": "异地登录测试（设备A）",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "console.log('设备A登录成功，记录token和deviceId');"
-                ],
-                "type": "text/javascript"
-              }
-            }
-            ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Device-Id", "value": "device-a-test-001" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"Test@123456\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "login"]
-            }
-          }
-        },
-        {
-          "name": "异地登录测试（设备B - 踢掉设备A）",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "console.log('设备B登录成功，设备A应被踢下线');"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Device-Id", "value": "device-b-test-002" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"Test@123456\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "login"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "👤 用户中心",
-      "item": [
-        {
-          "name": "充值",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/recharge?amount=100",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "recharge"],
-              "query": [{ "key": "amount", "value": "100" }]
-            },
-            "description": "用户充值（增加余额 balance）\n\n⚠️ 重要说明：\n- 充值只增加人民币余额（balance），不直接增加点数\n- 需要使用余额购买套餐才能获得点数和会员权益\n- 套餐制度：越贵的套餐越划算（例如：100元=1500点，比10元=100点更优惠）\n\n使用流程：\n1. 充值 → 增加 balance\n2. 购买套餐 → 从 balance 扣款，获得 points + 会员权益\n\n参数：\n- amount: 充值金额（元），必须大于0"
-          }
-        },
-        {
-          "name": "使用优惠券充值",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"amount\": 100,\n  \"couponId\": 1\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/recharge-with-coupon",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "recharge-with-coupon"]
-            },
-            "description": "使用优惠券充值（增加余额 balance）\n\n⚠️ 重要说明：\n- 充值只增加人民币余额，不直接增加点数\n- 优惠券用于减少实际支付金额\n- 需要使用余额购买套餐才能获得点数\n\n请求体：\n- amount: 充值金额（元）\n- couponId: 优惠券ID（可选）\n\n返回数据：\n- success: 是否成功\n- amount: 原始金额\n- actualAmount: 实际支付金额（扣除优惠后）\n- discount: 优惠金额\n- balanceBefore: 充值前余额\n- balanceAfter: 充值后余额"
-          }
-        },
-        {
-          "name": "修改密码",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"oldPassword\": \"Test@123456\",\n  \"newPassword\": \"NewPass@123\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/change-password",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "change-password"]
-            }
-          }
-        },
-        {
-          "name": "获取用户信息",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/info",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "info"]
-            }
-          }
-        },
-        {
-          "name": "查询余额",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/balance",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "balance"]
-            }
-          }
-        },
-        {
-          "name": "查询点数余额",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/points",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "points"]
-            }
-          },
-          "response": [],
-          "event": [],
-          "description": "查询当前用户的点数余额\n\n返回数据：\n- 当前点数余额（保留三位小数）\n- 从 Redis 读取，性能高\n- 如果 Redis 不存在，自动从数据库同步"
-        },
-        {
-          "name": "获取免费额度",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/free-quota",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "free-quota"]
-            }
-          }
-        },
-        {
-          "name": "绑定邮箱",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"test@example.com\",\n  \"code\": \"123456\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/bind-email",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "bind-email"]
-            }
-          }
-        },
-        {
-          "name": "绑定手机号",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"13800138000\",\n  \"code\": \"123456\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/bind-phone",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "bind-phone"]
-            }
-          }
-        },
-        {
-          "name": "发送绑定验证码",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"type\": \"email\",\n  \"target\": \"test@example.com\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/send-bind-code",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "send-bind-code"]
-            }
-          }
-        },
-        {
-          "name": "启用2FA",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/2fa/enable",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "2fa", "enable"]
-            }
-          }
-        },
-        {
-          "name": "禁用2FA",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"code\": \"123456\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/2fa/disable",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "2fa", "disable"]
-            }
-          }
-        },
-        {
-          "name": "验证2FA",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"code\": \"123456\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/2fa/verify",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "2fa", "verify"]
-            }
-          }
-        },
-        {
-          "name": "获取2FA状态",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/2fa/status",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "2fa", "status"]
-            }
-          }
-        },
-        {
-          "name": "获取登录设备列表",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/login-devices",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "login-devices"]
-            }
-          }
-        },
-        {
-          "name": "移除登录设备",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"deviceId\": \"device-a-test-001\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/login-devices/remove",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "login-devices", "remove"]
-            }
-          }
-        },
-        {
-          "name": "移除所有登录设备",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"exceptCurrent\": \"true\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/login-devices/remove-all",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "login-devices", "remove-all"]
-            }
-          }
-        },
-        {
-          "name": "注销账户",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"password\": \"Test@123456\",\n  \"confirm\": \"DELETE\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/delete-account",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "delete-account"]
-            }
-          }
-        },
-        {
-          "name": "获取充值记录",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/recharge-records?page=1&size=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "recharge-records"],
-              "query": [
-                { "key": "page", "value": "1" },
-                { "key": "size", "value": "20" }
-              ]
-            }
-          }
-        },
-        {
-          "name": "申请发票",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"invoiceType\": \"personal\",\n  \"title\": \"个人\",\n  \"taxNumber\": \"\",\n  \"amount\": 100\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/invoice/apply",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "invoice", "apply"]
-            }
-          }
-        },
-        {
-          "name": "获取我的优惠券",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/coupons",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "coupons"]
-            }
-          }
-        },
-        {
-          "name": "使用优惠券",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"code\": \"COUPON123\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/coupons/use",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "coupons", "use"]
-            }
-          }
-        },
-        {
-          "name": "兑换优惠券",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"redeemCode\": \"REDEEM456\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/coupons/redeem",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "coupons", "redeem"]
-            }
-          }
-        },
-        {
-          "name": "获取优惠券使用记录",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/coupon-usage-records",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "coupon-usage-records"]
-            }
-          }
-        },
-        {
-          "name": "获取订阅信息",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/subscription",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "subscription"]
-            }
-          }
-        },
-        {
-          "name": "订阅套餐",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"plan\": \"vip\",\n  \"paymentMethod\": \"alipay\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/subscription/subscribe",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "subscription", "subscribe"]
-            }
-          }
-        },
-        {
-          "name": "取消订阅",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/subscription/cancel",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "subscription", "cancel"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "💬 对话管理（新版）",
-      "item": [
-        {
-          "name": "同步对话数据",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "[{\n  \"id\": \"conv-001\",\n  \"title\": \"测试对话\",\n  \"messages\": [],\n  \"createTime\": \"2026-05-14T10:00:00\"\n}]"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/conversations/sync",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "conversations", "sync"]
-            }
-          }
-        },
-        {
-          "name": "获取对话数据",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/conversations/fetch",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "conversations", "fetch"]
-            }
-          }
-        },
-        {
-          "name": "获取对话版本号",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/conversations/version",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "conversations", "version"]
-            }
-          }
-        },
-        {
-          "name": "清空对话数据",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/conversations/clear",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "conversations", "clear"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "🔔 通知管理",
-      "item": [
-        {
-          "name": "获取通知列表",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/notifications?unreadOnly=false",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "notifications"],
-              "query": [{ "key": "unreadOnly", "value": "false" }]
-            }
-          }
-        },
-        {
-          "name": "获取未读通知数量",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/notifications/unread-count",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "notifications", "unread-count"]
-            }
-          }
-        },
-        {
-          "name": "标记通知为已读",
-          "request": {
-            "method": "PUT",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/notifications/1/read",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "notifications", "1", "read"]
-            }
-          }
-        },
-        {
-          "name": "标记所有通知为已读",
-          "request": {
-            "method": "PUT",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/notifications/read-all",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "notifications", "read-all"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "🔑 用户API Key(第三方)",
-      "item": [
-        {
-          "name": "添加第三方API Key",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"provider\": \"deepseek\",\n  \"displayName\": \"我的DeepSeek\",\n  \"apiKey\": \"sk-xxx\",\n  \"baseUrl\": \"https://api.deepseek.com\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/api-keys",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "api-keys"]
-            }
-          }
-        },
-        {
-          "name": "查看第三方API Key列表",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/api-keys",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "api-keys"]
-            }
-          }
-        },
-        {
-          "name": "删除第三方API Key",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/api-keys/1",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "api-keys", "1"]
-            }
-          }
-        },
-        {
-          "name": "测试第三方API Key连接",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"provider\": \"deepseek\",\n  \"apiKey\": \"sk-xxx\",\n  \"baseUrl\": \"https://api.deepseek.com\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/api-keys/test",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "api-keys", "test"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "🎫 优惠券管理（管理员）",
-      "item": [
-        {
-          "name": "获取我的优惠券",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/my-coupons",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "my-coupons"]
-            }
-          }
-        },
-        {
-          "name": "管理员发放优惠券",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{adminToken}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"amount\": 100,\n  \"thresholdAmount\": 0,\n  \"applicablePlan\": null,\n  \"expireTime\": \"2026-12-31T23:59:59\",\n  \"target\": \"all\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/coupons/send",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "coupons", "send"]
-            }
-          }
-        },
-        {
-          "name": "管理员发送通知",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{adminToken}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"系统通知\",\n  \"content\": \"这是一条测试通知\",\n  \"type\": \"system\",\n  \"target\": \"all\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/admin/notifications/send",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "notifications", "send"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "📦 套餐订阅管理",
+      "name": "💳 用户订阅与点数",
       "item": [
         {
           "name": "获取可用套餐列表",
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/user/subscriptions/packages",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "subscriptions", "packages"]
-            },
-            "description": "获取所有上架的套餐模板列表"
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "subscriptions",
+                "packages"
+              ]
+            }
           }
         },
         {
@@ -1406,15 +1113,23 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/user/subscriptions/current",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "subscriptions", "current"]
-            },
-            "description": "获取用户当前生效的订阅信息，包括身份标识、有效期、点数等"
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "subscriptions",
+                "current"
+              ]
+            }
           }
         },
         {
@@ -1422,15 +1137,23 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/user/subscriptions/history",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "subscriptions", "history"]
-            },
-            "description": "获取用户的所有订阅历史记录"
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "subscriptions",
+                "history"
+              ]
+            }
           }
         },
         {
@@ -1438,20 +1161,31 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"packageCode\": \"premium\",\n  \"couponId\": 1\n}"
+              "raw": "{\n  \"packageCode\": \"VIP_MONTHLY\",\n  \"couponId\": null\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/user/subscriptions/purchase",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "subscriptions", "purchase"]
-            },
-            "description": "购买套餐（从 balance 扣款，获得 points + 会员权益）\n\n⚠️ 重要说明：\n- 购买前需要先充值，确保 balance 充足\n- 购买后会从 balance 扣除相应金额\n- 获得套餐对应的点数和会员权益\n- 越贵的套餐性价比越高（例如：旗舰版每元6.67点 vs 基础版每元3.34点）\n\n请求体：\n- packageCode: 套餐代码（必填），可选值：free/basic/premium/ultimate\n- couponId: 优惠券ID（可选），用于享受折扣\n\n返回数据：\n- subscription: 订阅记录\n- pointsGranted: 授予的点数\n- pricePaid: 实际支付金额\n- expireTime: 过期时间\n- identityLabel: 身份标识\n\n套餐示例：\n- free: 免费版 (0元 = 0点)\n- basic: 基础版 (29.9元 = 100点)\n- premium: 专业版 (99.9元 = 500点) ✅\n- ultimate: 旗舰版 (299.9元 = 2000点) ✅✅"
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "subscriptions",
+                "purchase"
+              ]
+            }
           }
         },
         {
@@ -1459,34 +1193,1199 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
             ],
             "url": {
               "raw": "{{baseUrl}}/api/user/subscriptions/cancel/1",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "subscriptions", "cancel", "1"]
-            },
-            "description": "取消指定的订阅（将subscriptionId替换为实际ID）"
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "subscriptions",
+                "cancel",
+                "1"
+              ]
+            }
+          }
+        },
+        {
+          "name": "查询点数账单",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/points-bills?page=1&size=20&changeType=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "points-bills"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                },
+                {
+                  "key": "changeType",
+                  "value": "",
+                  "description": "变动类型：CONSUME-消费, RECHARGE-充值, REFUND-退款"
+                }
+              ]
+            }
           }
         }
       ]
     },
     {
-      "name": "💰 点数账单管理 ⭐NEW",
+      "name": "快速请求测试（触发限流）",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var status = pm.response.code;",
+              "if (status === 429) {",
+              "  console.log('⚠️ 已触发限流：' + pm.response.text());",
+              "} else if (status === 200) {",
+              "  console.log('✅ 请求成功');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{userId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/userinfo",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "userinfo"
+          ]
+        }
+      }
+    },
+    {
+      "name": "异地登录测试（设备A）",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "console.log('设备A登录成功，记录token和deviceId');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "device-a-test-001"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"Test@123456\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        }
+      }
+    },
+    {
+      "name": "异地登录测试（设备B - 踢掉设备A）",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "console.log('设备B登录成功，设备A应被踢下线');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "device-b-test-002"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"testuser\",\n  \"password\": \"Test@123456\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        }
+      }
+    },
+    {
+      "name": "充值",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/recharge?amount=100",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "recharge"
+          ],
+          "query": [
+            {
+              "key": "amount",
+              "value": "100"
+            }
+          ]
+        },
+        "description": "用户充值（增加余额 balance）\n\n⚠️ 重要说明：\n- 充值只增加人民币余额（balance），不直接增加点数\n- 需要使用余额购买套餐才能获得点数和会员权益\n- 套餐制度：越贵的套餐越划算（例如：100元=1500点，比10元=100点更优惠）\n\n使用流程：\n1. 充值 → 增加 balance\n2. 购买套餐 → 从 balance 扣款，获得 points + 会员权益\n\n参数：\n- amount: 充值金额（元），必须大于0"
+      }
+    },
+    {
+      "name": "使用优惠券充值",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 100,\n  \"couponId\": 1\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/recharge-with-coupon",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "recharge-with-coupon"
+          ]
+        },
+        "description": "使用优惠券充值（增加余额 balance）\n\n⚠️ 重要说明：\n- 充值只增加人民币余额，不直接增加点数\n- 优惠券用于减少实际支付金额\n- 需要使用余额购买套餐才能获得点数\n\n请求体：\n- amount: 充值金额（元）\n- couponId: 优惠券ID（可选）\n\n返回数据：\n- success: 是否成功\n- amount: 原始金额\n- actualAmount: 实际支付金额（扣除优惠后）\n- discount: 优惠金额\n- balanceBefore: 充值前余额\n- balanceAfter: 充值后余额"
+      }
+    },
+    {
+      "name": "修改密码",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"oldPassword\": \"Test@123456\",\n  \"newPassword\": \"NewPass@123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/change-password",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "change-password"
+          ]
+        }
+      }
+    },
+    {
+      "name": "获取用户信息",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/info",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "info"
+          ]
+        }
+      }
+    },
+    {
+      "name": "查询余额",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/balance",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "balance"
+          ]
+        }
+      }
+    },
+    {
+      "name": "查询点数余额",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/points",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "points"
+          ]
+        }
+      },
+      "response": [],
+      "event": [],
+      "description": "查询当前用户的点数余额\n\n返回数据：\n- 当前点数余额（保留三位小数）\n- 从 Redis 读取，性能高\n- 如果 Redis 不存在，自动从数据库同步"
+    },
+    {
+      "name": "获取免费额度",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/free-quota",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "free-quota"
+          ]
+        }
+      }
+    },
+    {
+      "name": "绑定邮箱",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"test@example.com\",\n  \"code\": \"123456\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/bind-email",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "bind-email"
+          ]
+        }
+      }
+    },
+    {
+      "name": "绑定手机号",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"13800138000\",\n  \"code\": \"123456\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/bind-phone",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "bind-phone"
+          ]
+        }
+      }
+    },
+    {
+      "name": "发送绑定验证码",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"email\",\n  \"target\": \"test@example.com\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/send-bind-code",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "send-bind-code"
+          ]
+        }
+      }
+    },
+    {
+      "name": "启用2FA",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/2fa/enable",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "2fa",
+            "enable"
+          ]
+        }
+      }
+    },
+    {
+      "name": "禁用2FA",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"123456\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/2fa/disable",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "2fa",
+            "disable"
+          ]
+        }
+      }
+    },
+    {
+      "name": "验证2FA",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"123456\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/2fa/verify",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "2fa",
+            "verify"
+          ]
+        }
+      }
+    },
+    {
+      "name": "获取2FA状态",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/2fa/status",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "2fa",
+            "status"
+          ]
+        }
+      }
+    },
+    {
+      "name": "获取登录设备列表",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/login-devices",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "login-devices"
+          ]
+        }
+      }
+    },
+    {
+      "name": "移除登录设备",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"deviceId\": \"device-a-test-001\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/login-devices/remove",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "login-devices",
+            "remove"
+          ]
+        }
+      }
+    },
+    {
+      "name": "移除所有登录设备",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"exceptCurrent\": \"true\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/login-devices/remove-all",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "login-devices",
+            "remove-all"
+          ]
+        }
+      }
+    },
+    {
+      "name": "注销账户",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"password\": \"Test@123456\",\n  \"confirm\": \"DELETE\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/delete-account",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "delete-account"
+          ]
+        }
+      }
+    },
+    {
+      "name": "获取充值记录",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/recharge-records?page=1&size=20",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "recharge-records"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "size",
+              "value": "20"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "申请发票",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"invoiceType\": \"personal\",\n  \"title\": \"个人\",\n  \"taxNumber\": \"\",\n  \"amount\": 100\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/invoice/apply",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "invoice",
+            "apply"
+          ]
+        }
+      }
+    },
+    {
+      "name": "获取我的优惠券",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/coupons",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "coupons"
+          ]
+        }
+      }
+    },
+    {
+      "name": "使用优惠券",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"COUPON123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/coupons/use",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "coupons",
+            "use"
+          ]
+        }
+      }
+    },
+    {
+      "name": "兑换优惠券",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"redeemCode\": \"REDEEM456\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/coupons/redeem",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "coupons",
+            "redeem"
+          ]
+        }
+      }
+    },
+    {
+      "name": "获取优惠券使用记录",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/coupon-usage-records",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "coupon-usage-records"
+          ]
+        }
+      }
+    },
+    {
+      "name": "获取订阅信息",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/subscription",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "subscription"
+          ]
+        }
+      }
+    },
+    {
+      "name": "订阅套餐",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"plan\": \"vip\",\n  \"paymentMethod\": \"alipay\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/user/subscription/subscribe",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "subscription",
+            "subscribe"
+          ]
+        }
+      }
+    },
+    {
+      "name": "取消订阅",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-User-Token",
+            "value": "{{token}}"
+          },
+          {
+            "key": "X-Device-Id",
+            "value": "{{deviceId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/subscription/cancel",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "user",
+            "subscription",
+            "cancel"
+          ]
+        }
+      }
+    },
+    {
+      "name": "📦 订阅管理（新版）",
+      "item": [
+        {
+          "name": "获取可用套餐列表",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/subscriptions/packages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "subscriptions",
+                "packages"
+              ]
+            },
+            "description": "获取所有上架的套餐列表"
+          },
+          "response": []
+        },
+        {
+          "name": "获取当前订阅状态",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/subscriptions/current",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "subscriptions",
+                "current"
+              ]
+            },
+            "description": "获取当前用户的订阅状态，包括套餐信息、过期时间、点数等"
+          },
+          "response": []
+        },
+        {
+          "name": "获取订阅历史",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/subscriptions/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "subscriptions",
+                "history"
+              ]
+            },
+            "description": "获取用户的订阅历史记录"
+          },
+          "response": []
+        },
+        {
+          "name": "购买套餐",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"packageCode\": \"pro_monthly\",\n  \"couponId\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/user/subscriptions/purchase",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "subscriptions",
+                "purchase"
+              ]
+            },
+            "description": "使用余额购买套餐，支持优惠券"
+          },
+          "response": []
+        },
+        {
+          "name": "取消订阅",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/subscriptions/cancel/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "subscriptions",
+                "cancel",
+                "1"
+              ]
+            },
+            "description": "取消指定订阅"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "💰 点数账单",
       "item": [
         {
           "name": "获取点数账单列表",
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/user/points-bills?page=1&size=20&changeType=",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "points-bills"],
+              "raw": "{{baseUrl}}/api/user/points-bills?page=1&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "points-bills"
+              ],
               "query": [
                 {
                   "key": "page",
@@ -1496,246 +2395,13 @@
                 {
                   "key": "size",
                   "value": "20",
-                  "description": "每页数量"
-                },
-                {
-                  "key": "changeType",
-                  "value": "",
-                  "disabled": true,
-                  "description": "变动类型筛选：RECHARGE-充值, CONSUME-消费, GRANT-赠送, DEDUCT-扣除"
+                  "description": "每页条数"
                 }
               ]
             },
-            "description": "获取用户的点数账单列表（统一点数体系）\n\n返回数据包括：\n- 所有点数变动记录（充值、消费、赠送、扣除）\n- 每次变动的点数、余额、时间\n- 业务ID和描述信息\n- 支持按变动类型筛选\n\n这是查看点数使用记录和充值消费记录的统一接口"
-          }
-        },
-        {
-          "name": "获取充值记录",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/recharge-records?page=1&size=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "recharge-records"],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "size",
-                  "value": "20"
-                }
-              ]
-            },
-            "description": "获取用户的充值记录（仅 RECHARGE 类型）\n\n建议使用 /points-bills 接口获取完整的点数账单"
-          }
-        }
-      ]
-    },
-    {
-      "name": "🔑 用户自定义 API Key 管理 ⭐NEW",
-      "item": [
-        {
-          "name": "获取我的 API Key 列表",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/api-keys",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "api-keys"]
-            },
-            "description": "获取当前用户的所有自定义 API Key 列表\n\n返回的 API Key 已脱敏处理（显示前4位和后4位）\n支持的服务商：openai, anthropic, deepseek, moonshot, zhipu, qwen, siliconflow"
-          }
-        },
-        {
-          "name": "添加自定义 API Key",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"provider\": \"deepseek\",\n  \"displayName\": \"我的DeepSeek Key\",\n  \"apiKey\": \"sk-xxxxxxxxxxxxxxxx\",\n  \"baseUrl\": \"https://api.deepseek.com\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/api-keys",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "api-keys"]
-            },
-            "description": "添加用户的自定义 API Key\n\n参数说明：\n- provider: 服务商（必填），可选值：openai, anthropic, deepseek, moonshot, zhipu, qwen, siliconflow\n- displayName: 显示名称/备注（可选）\n- apiKey: API Key（必填），将使用 AES-256-GCM 加密存储\n- baseUrl: 自定义 Base URL（可选），不填则使用默认地址\n\n安全特性：\n- API Key 使用 AES-256-GCM 加密存储\n- 密钥通过环境变量管理\n- 自动验证 API Key 有效性（失败时仍允许保存）\n- 最多存储 20 个 API Key"
-          }
-        },
-        {
-          "name": "删除自定义 API Key",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/user/api-keys/1",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "api-keys", "1"]
-            },
-            "description": "删除指定的自定义 API Key\n\n将路径中的 1 替换为实际的 API Key ID"
-          }
-        },
-        {
-          "name": "测试 API Key 连接",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "X-Device-Id", "value": "{{deviceId}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"provider\": \"deepseek\",\n  \"apiKey\": \"sk-xxxxxxxxxxxxxxxx\",\n  \"baseUrl\": \"https://api.deepseek.com\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/user/api-keys/test",
-              "host": ["{{baseUrl}}"],
-              "path": ["user", "api-keys", "test"]
-            },
-            "description": "测试 API Key 的连接有效性\n\n系统会尝试连接对应的 API 服务进行验证\n如果验证失败，会返回具体的错误信息"
-          }
-        }
-      ]
-    },
-    {
-      "name": "AI 文档助手",
-      "item": [
-        {
-          "name": "对话中发送文件 (返回 Markdown)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                { "key": "file", "type": "file", "src": [] },
-                { "key": "question", "value": "解释这段代码", "type": "text" }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/chat/with-file",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "chat", "with-file"]
-            },
-            "description": "在对话流中嵌入文件（支持 .txt/.md/.java/.py/.cpp/.xlsx/.docx/.html/.css 等），AI 将返回包含代码块渲染的 Markdown 格式回答。"
-          }
-        },
-        {
-          "name": "让 AI 生成文件",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"requirement\": \"写一个 Python 快速排序算法\",\n  \"format\": \"py\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/chat/generate-file",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "chat", "generate-file"]
-            },
-            "description": "根据需求生成代码或流程图文件，并存入阿里云 OSS。返回下载链接。"
-          }
-        },
-        {
-          "name": "云端同步对话数据",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"conversationId\": 1,\n  \"messages\": []\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/chat/sync",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "chat", "sync"]
-            },
-            "description": "将对话记录及关联文件打包成 ZIP 上传至阿里云 OSS 进行备份。"
-          }
-        },
-        {
-          "name": "下载云端对话数据",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/chat/download?syncId=xxx",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "chat", "download"],
-              "query": [
-                { "key": "syncId", "value": "xxx" }
-              ]
-            },
-            "description": "从阿里云 OSS 下载打包好的历史对话数据及关联文件。"
-          }
-        },
-        {
-          "name": "加载对话关联文件",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/chat/load?conversationId=1",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "chat", "load"],
-              "query": [
-                { "key": "conversationId", "value": "1" }
-              ]
-            },
-            "description": "加载对话时，从数据库获取该会话关联的所有文件 URL，供前端预加载。"
-          }
-        },
-        {
-          "name": "导出对话内容为文件 (不收费)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "X-User-Token", "value": "{{token}}" },
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"content\": \"public class Hello {\\n    public static void main(String[] args) {\\n        System.out.println(\\\"Hello World\\\");\\n    }\\n}\",\n  \"fileName\": \"Hello.java\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/chat/export-content",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "chat", "export-content"]
-            },
-            "description": "将 AI 输出的代码块或文本直接导出为文件下载，不消耗点数。"
-          }
+            "description": "获取用户点数账单列表，支持分页"
+          },
+          "response": []
         }
       ]
     }

@@ -4,6 +4,8 @@ import com.ai.gateway.entity.PlatformModelConfig;
 import com.ai.gateway.mapper.PlatformModelConfigMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -22,6 +24,12 @@ public class PlatformModelService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // 优化：增加 Caffeine 本地缓存，减少 Redis 网络开销
+    private final Cache<String, PlatformModelConfig> localCache = Caffeine.newBuilder()
+            .maximumSize(100)
+            .expireAfterWrite(10, TimeUnit.MINUTES)
+            .build();
+
     private static final String MODEL_CACHE_KEY = "platform:model:";
 
     /**
@@ -36,21 +44,29 @@ public class PlatformModelService {
     }
 
     /**
-     * 根据展示名称获取模型配置（带缓存）
+     * 根据展示名称获取模型配置（二级缓存：Caffeine -> Redis -> DB）
      */
     public PlatformModelConfig getByDisplayName(String displayName) {
-        // 修复 P1-7: 缓存完整的 JSON 对象，而不是简单的标记
+        // 1. 检查本地缓存
+        PlatformModelConfig localConfig = localCache.getIfPresent(displayName);
+        if (localConfig != null) {
+            return localConfig;
+        }
+
+        // 2. 检查 Redis 缓存
         String cacheKey = MODEL_CACHE_KEY + displayName;
-        
         try {
             String cachedJson = redisTemplate.opsForValue().get(cacheKey);
             if (cachedJson != null) {
-                return objectMapper.readValue(cachedJson, PlatformModelConfig.class);
+                PlatformModelConfig config = objectMapper.readValue(cachedJson, PlatformModelConfig.class);
+                localCache.put(displayName, config); // 回写本地缓存
+                return config;
             }
         } catch (Exception e) {
             log.warn("解析模型配置缓存失败", e);
         }
 
+        // 3. 查询数据库
         LambdaQueryWrapper<PlatformModelConfig> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PlatformModelConfig::getDisplayName, displayName)
                .eq(PlatformModelConfig::getStatus, 1);
@@ -60,6 +76,7 @@ public class PlatformModelService {
             try {
                 String json = objectMapper.writeValueAsString(config);
                 redisTemplate.opsForValue().set(cacheKey, json, 30, TimeUnit.MINUTES);
+                localCache.put(displayName, config); // 存入本地缓存
             } catch (Exception e) {
                 log.error("缓存模型配置失败", e);
             }

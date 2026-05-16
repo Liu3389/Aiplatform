@@ -49,7 +49,7 @@ public class DataArchiveService {
                 // 分批查询需要归档的消息
                 LambdaQueryWrapper<ChatMessage> wrapper = new LambdaQueryWrapper<>();
                 wrapper.lt(ChatMessage::getCreateTime, archiveThreshold)
-                       .last("LIMIT " + batchSize);
+                       .last("LIMIT " + Math.min(Math.max(batchSize, 1), 1000));
 
                 List<ChatMessage> messagesToArchive = chatMessageMapper.selectList(wrapper);
 
@@ -68,7 +68,7 @@ public class DataArchiveService {
                     history.setContent(msg.getContent());
                     history.setModel(msg.getModel());
                     history.setTokens(msg.getTokens());
-                    history.setFileUrls(msg.getFileUrls()); // 修复 P0-3: 补全文件 URL 迁移
+                    history.setFileUrls(msg.getFileUrls());
                     history.setMetadata(msg.getMetadata());
                     history.setOriginalCreateTime(msg.getCreateTime());
                     history.setArchiveTime(LocalDateTime.now());
@@ -76,13 +76,10 @@ public class DataArchiveService {
                 }).collect(Collectors.toList());
 
                 if (!historyMessages.isEmpty()) {
-                    // 修复：直接使用 Mapper 的 insert 方法分批插入
                     for (int i = 0; i < historyMessages.size(); i += 500) {
                         int end = Math.min(i + 500, historyMessages.size());
                         List<ChatMessageHistory> batch = historyMessages.subList(i, end);
-                        for (ChatMessageHistory msg : batch) {
-                            chatMessageHistoryMapper.insert(msg);
-                        }
+                        batch.forEach(chatMessageHistoryMapper::insert);
                     }
                 }
 

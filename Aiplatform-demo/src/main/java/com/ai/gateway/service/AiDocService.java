@@ -117,7 +117,7 @@ public class AiDocService {
         request.setMessages(List.of(msg));
 
         try {
-            return openAiChatService.chat(apiKey, userId, request, requestId);
+            return openAiChatService.chat(userId, request);
         } catch (Exception e) {
             log.error("AI 交互失败", e);
             throw new RuntimeException("AI 响应失败: " + e.getMessage());

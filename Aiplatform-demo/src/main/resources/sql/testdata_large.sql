@@ -104,19 +104,6 @@ INSERT INTO `user` (`id`, `username`, `password`, `email`, `balance`, `points`, 
 (50, 'cus021',     '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'cus021@test.com',             250.0000, 1300.000, 1, 'USER', 'premium',   200,  6000, '2026-05-05 08:00:00');
 
 -- ============================================
--- 4. 用户自定义 API Key
--- ============================================
-INSERT INTO `user_api_key` (`id`, `user_id`, `provider`, `display_name`, `api_key`, `base_url`, `verified_status`) VALUES
-(1,  3,  'deepseek', '张三的DeepSeek',  'REDACTED_PROVIDER_API_KEY', 'https://api.deepseek.com', 1),
-(2,  4,  'deepseek', '李四的DeepSeek',  'REDACTED_PROVIDER_API_KEY', 'https://api.deepseek.com', 1),
-(3,  5,  'deepseek', '王五的DeepSeek',  'REDACTED_PROVIDER_API_KEY', 'https://api.deepseek.com', 1),
-(4,  11, 'deepseek', 'Alice-Dev',       'REDACTED_PROVIDER_API_KEY', 'https://api.deepseek.com', 1),
-(5,  12, 'deepseek', 'Bob-Dev',         'REDACTED_PROVIDER_API_KEY', 'https://api.deepseek.com', 0),
-(6,  36, 'deepseek', 'cus007的Key',     'REDACTED_PROVIDER_API_KEY', 'https://api.deepseek.com', 1),
-(7,  38, 'deepseek', 'cus009的Key',     'REDACTED_PROVIDER_API_KEY', 'https://api.deepseek.com', 1),
-(8,  45, 'deepseek', 'cus016的Key',     'REDACTED_PROVIDER_API_KEY', 'https://api.deepseek.com', 1);
-
--- ============================================
 -- 5. 平台统一 API Key（由 Java ApiKeyTestDataInitializer 加密插入）
 --    启动时设置 app.init-test-data=true 即可自动插入
 -- ============================================

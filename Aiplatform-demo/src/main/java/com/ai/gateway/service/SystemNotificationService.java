@@ -72,6 +72,12 @@ public class SystemNotificationService {
 
     @Transactional(rollbackFor = Exception.class)
     public int sendToAllUsers(String title, String content, String type) {
+        Long totalCount = userMapper.selectCount(new LambdaQueryWrapper<>());
+        if (totalCount > 10000) {
+            log.warn("目标用户数量过大({}), 建议分批发送", totalCount);
+            throw new RuntimeException("目标用户数量超过10000，请分批发送");
+        }
+        
         List<User> users = userMapper.selectList(new LambdaQueryWrapper<>());
         int count = 0;
         for (User u : users) {
@@ -86,6 +92,12 @@ public class SystemNotificationService {
     public int sendToMembership(String membership, String title, String content, String type) {
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(User::getMembership, membership);
+        Long totalCount = userMapper.selectCount(wrapper);
+        if (totalCount > 10000) {
+            log.warn("目标用户数量过大({}), 建议分批发送", totalCount);
+            throw new RuntimeException("目标用户数量超过10000，请分批发送");
+        }
+        
         List<User> users = userMapper.selectList(wrapper);
         int count = 0;
         for (User u : users) {

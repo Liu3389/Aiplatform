@@ -144,7 +144,7 @@ public class ChatMessageService {
 
         // 按ID倒序（等同于时间倒序，因为ID是自增的）
         wrapper.orderByDesc(ChatMessage::getId)
-               .last("LIMIT " + limit);
+               .last("LIMIT " + Math.min(Math.max(limit, 1), 100));
 
         return chatMessageMapper.selectList(wrapper);
     }
@@ -175,7 +175,7 @@ public class ChatMessageService {
 
             // 按原始创建时间倒序
             wrapper.orderByDesc(ChatMessageHistory::getOriginalCreateTime)
-                   .last("LIMIT " + needCount);
+                   .last("LIMIT " + Math.min(Math.max(needCount, 1), 100));
 
             List<ChatMessageHistory> historyMessages = chatMessageHistoryMapper.selectList(wrapper);
 

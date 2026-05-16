@@ -1,7 +1,8 @@
 -- ============================================
 -- AI Gateway Platform - 核心数据库建表脚本 (Schema)
--- 版本: v3.0 (2026-05-15)
+-- 版本: v3.1 (2026-05-16)
 -- 说明: 整合了所有业务逻辑所需的表结构、索引优化及点数计费体系配置
+-- 更新: v3.1 新增防重领索引、活跃订阅查询索引、操作日志降序索引等
 -- ============================================
 
 SET NAMES utf8mb4;
@@ -52,21 +53,6 @@ CREATE TABLE IF NOT EXISTS `api_key` (
   KEY `idx_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='平台统一API Key表';
 
-CREATE TABLE IF NOT EXISTS `user_api_key` (
-  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `user_id` bigint NOT NULL COMMENT '用户ID',
-  `provider` varchar(32) NOT NULL COMMENT '服务商: openai/anthropic/deepseek等',
-  `display_name` varchar(64) DEFAULT NULL COMMENT '显示名称',
-  `api_key` varchar(256) NOT NULL COMMENT 'API Key（AES-GCM加密存储）',
-  `base_url` varchar(256) DEFAULT NULL COMMENT '自定义Base URL',
-  `verified_status` tinyint NOT NULL DEFAULT 0 COMMENT '验证状态：0-未验证, 1-验证成功, 2-验证失败',
-  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  PRIMARY KEY (`id`),
-  KEY `idx_user_id` (`user_id`),
-  KEY `idx_provider` (`provider`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户自定义API Key表';
-
 -- ============================================
 -- 2. 模型与计费配置模块
 -- ============================================
@@ -76,7 +62,7 @@ CREATE TABLE IF NOT EXISTS `platform_model_config` (
   `display_name` varchar(64) NOT NULL COMMENT '展示名称（如 GPT-4o）',
   `actual_model` varchar(64) NOT NULL COMMENT '实际调用模型（如 deepseek-v4-pro）',
   `fixed_points` decimal(10,3) DEFAULT '3.000' COMMENT '每次对话固定消耗点数',
-  `provider` varchar(32) DEFAULT 'deepseek' COMMENT '关联厂商',
+  `provider` varchar(32) DEFAULT 'deepseek' COMMENT '关联厂商（deepseek/openai/anthropic等）',
   `base_url` varchar(256) DEFAULT NULL COMMENT '厂商 API 地址',
   `api_key` varchar(128) DEFAULT NULL COMMENT '平台持有的 API Key',
   `sort_order` int DEFAULT 0 COMMENT '前端展示排序',
@@ -228,7 +214,8 @@ CREATE TABLE IF NOT EXISTS `call_log` (
   PRIMARY KEY (`id`),
   KEY `idx_user_model` (`user_id`, `model`),
   KEY `idx_create_time` (`create_time`),
-  KEY `idx_status` (`status`)
+  KEY `idx_status` (`status`),
+  KEY `idx_user_status_time` (`user_id`, `status`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='调用日志表';
 
 CREATE TABLE IF NOT EXISTS `billing_record` (
@@ -261,7 +248,8 @@ CREATE TABLE IF NOT EXISTS `points_bill` (
   KEY `idx_user_id` (`user_id`),
   KEY `idx_create_time` (`create_time`),
   KEY `idx_business_id` (`business_id`),
-  KEY `idx_user_time` (`user_id`, `create_time` DESC)
+  KEY `idx_user_time` (`user_id`, `create_time` DESC),
+  KEY `idx_change_type` (`change_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='点数明细账单表';
 
 CREATE TABLE IF NOT EXISTS `user_subscription` (
@@ -285,7 +273,8 @@ CREATE TABLE IF NOT EXISTS `user_subscription` (
   PRIMARY KEY (`id`),
   KEY `idx_user_status` (`user_id`, `status`),
   KEY `idx_package_id` (`package_id`),
-  KEY `idx_expire_time` (`expire_time`)
+  KEY `idx_expire_time` (`expire_time`),
+  KEY `idx_package_code_status` (`package_code`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户订阅记录表';
 
 CREATE TABLE IF NOT EXISTS `coupon` (
@@ -301,7 +290,8 @@ CREATE TABLE IF NOT EXISTS `coupon` (
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
-  KEY `idx_coupon_code` (`coupon_code`)
+  KEY `idx_coupon_code` (`coupon_code`),
+  KEY `idx_user_amount_plan_used` (`user_id`, `amount`, `applicable_plan`, `used`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='代金券表';
 
 CREATE TABLE IF NOT EXISTS `coupon_usage_record` (
@@ -343,7 +333,7 @@ CREATE TABLE IF NOT EXISTS `admin_operation_log` (
   PRIMARY KEY (`id`),
   KEY `idx_admin_id` (`admin_id`),
   KEY `idx_operation_type` (`operation_type`),
-  KEY `idx_create_time` (`create_time`)
+  KEY `idx_create_time_desc` (`create_time` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='管理员操作日志表';
 
 CREATE TABLE IF NOT EXISTS `system_notification` (

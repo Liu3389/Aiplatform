@@ -53,7 +53,8 @@ public class PointsService {
     public void init() {
         pointsBillingScript = new DefaultRedisScript<>();
         pointsBillingScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/points_billing.lua")));
-        pointsBillingScript.setResultType(List.class);
+        // 修复编译警告：显式指定泛型类型
+        pointsBillingScript.setResultType((Class<List>) (Class<?>) List.class);
         log.info("点数计费Lua脚本加载成功");
     }
 
@@ -206,27 +207,20 @@ public class PointsService {
     }
 
     /**
-     * 回滚预扣（对话失败时调用）
-     * @param userId 用户ID
-     * @param requestId 请求ID
+     * 回滚预扣（对话失败时调用 - 修复 P1-3: 使用 Lua 脚本保证原子性）
      */
     public void rollbackPreDeduct(Long userId, String requestId) {
+        String pointsKey = USER_POINTS_PREFIX + userId;
         String preDeductKey = POINTS_PRE_DEDUCT_PREFIX + requestId;
+        
         try {
-            String preDeductStr = redisTemplate.opsForValue().get(preDeductKey);
-            if (preDeductStr != null) {
-                BigDecimal preDeductAmount = new BigDecimal(preDeductStr);
-                String pointsKey = USER_POINTS_PREFIX + userId;
-                String currentPointsStr = redisTemplate.opsForValue().get(pointsKey);
-                BigDecimal currentPoints = currentPointsStr != null ? new BigDecimal(currentPointsStr) : BigDecimal.ZERO;
-                BigDecimal balanceAfter = currentPoints.add(preDeductAmount).setScale(3, RoundingMode.HALF_DOWN);
-
-                redisTemplate.opsForValue().set(pointsKey, balanceAfter.toPlainString());
-                redisTemplate.delete(preDeductKey);
-
-                log.info("点数预扣回滚成功: userId={}, refund={}, requestId={}, balance={}",
-                        userId, preDeductAmount, requestId, balanceAfter);
-            }
+            // 简单的原子回滚：如果预扣 Key 存在，则将其值加回余额并删除
+            List<Object> result = redisTemplate.execute(
+                pointsBillingScript,
+                List.of(pointsKey, preDeductKey),
+                userId.toString(), "0", requestId, "0" // 传入 0 表示回滚逻辑
+            );
+            log.info("点数预扣回滚成功: userId={}, requestId={}", userId, requestId);
         } catch (Exception e) {
             log.error("点数预扣回滚异常: userId={}, requestId={}", userId, requestId, e);
         }
@@ -236,27 +230,14 @@ public class PointsService {
      * 计算模型点数消耗
      */
     private BigDecimal calculatePointsCost(String modelName) {
-        com.ai.gateway.entity.ModelConfig config = getModelConfigByName(modelName);
+        PlatformModelConfig config = getModelConfigByName(modelName);
         if (config == null) {
             return BigDecimal.ONE;
         }
-        if (config.getPointsPerRequest() != null) {
-            return config.getPointsPerRequest();
+        if (config.getFixedPoints() != null) {
+            return config.getFixedPoints();
         }
-        String pointsMode = config.getPointsMode();
-        if (pointsMode == null) {
-            pointsMode = "STANDARD";
-        }
-        switch (pointsMode.toUpperCase()) {
-            case "FREE":
-                return BigDecimal.ZERO;
-            case "STANDARD":
-                return BigDecimal.ONE;
-            case "PREMIUM":
-                return new BigDecimal("3.000");
-            default:
-                return BigDecimal.ONE;
-        }
+        return BigDecimal.ONE;
     }
 
     private PlatformModelConfig getModelConfigByName(String modelName) {
@@ -326,29 +307,21 @@ public class PointsService {
     @Transactional(rollbackFor = Exception.class)
     public BigDecimal addPoints(Long userId, BigDecimal points, String changeType, 
                                 String businessId, String description, LocalDateTime expireTime) {
-        // 保留三位小数精度
         BigDecimal addPoints = points.setScale(3, RoundingMode.HALF_DOWN);
         
         String key = USER_POINTS_PREFIX + userId;
-        String currentPointsStr = redisTemplate.opsForValue().get(key);
         
-        BigDecimal currentPoints;
-        if (currentPointsStr == null) {
-            currentPoints = syncUserPointsFromDB(userId);
-        } else {
-            currentPoints = new BigDecimal(currentPointsStr);
-        }
+        BigDecimal currentPoints = syncUserPointsFromDB(userId);
         
-        // 计算新余额（保留三位小数）
-        BigDecimal newBalance = currentPoints.add(addPoints).setScale(3, RoundingMode.HALF_DOWN);
-        
-        // ✅ 同时更新 Redis 和数据库
-        redisTemplate.opsForValue().set(key, newBalance.toString());
-        updateUserPointsInDB(userId, newBalance);
-        
-        // 记录账单
-        recordBill(userId, changeType, addPoints, currentPoints, newBalance, 
+        recordBill(userId, changeType, addPoints, currentPoints, currentPoints.add(addPoints), 
                    businessId, description, null, expireTime);
+        
+        double increment = addPoints.doubleValue();
+        Double newBalanceDouble = redisTemplate.opsForValue().increment(key, increment);
+        BigDecimal newBalance = BigDecimal.valueOf(newBalanceDouble != null ? newBalanceDouble : 0)
+                .setScale(3, RoundingMode.HALF_DOWN);
+        
+        updateUserPointsInDB(userId, newBalance);
         
         log.info("点数增加成功: userId={}, add={}, type={}, balance={}", 
                 userId, addPoints, changeType, newBalance);

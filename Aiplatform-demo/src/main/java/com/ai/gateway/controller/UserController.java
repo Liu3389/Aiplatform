@@ -265,6 +265,11 @@ public class UserController {
         return Result.success("兑换成功", null);
     }
 
+    /**
+     * 获取订阅信息（已废弃）
+     * @deprecated 已废弃，请迁移到 /user/subscriptions/* 系列接口
+     */
+    @Deprecated
     @GetMapping("/subscription")
     public Result<Map<String, Object>> getSubscription(@RequestHeader("X-User-Token") String token) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -272,6 +277,11 @@ public class UserController {
         return Result.success(userService.getSubscription(userId));
     }
 
+    /**
+     * 订阅套餐（已废弃）
+     * @deprecated 已废弃，请迁移到 /user/subscriptions/* 系列接口
+     */
+    @Deprecated
     @PostMapping("/subscription/subscribe")
     public Result<Void> subscribe(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -280,14 +290,19 @@ public class UserController {
         String paymentMethod = body.get("paymentMethod");
         if (plan == null || paymentMethod == null) return Result.error("缺少参数");
         userService.subscribe(userId, plan, paymentMethod);
-        return Result.success("订阅成功", null);
+        return Result.success("订阅成功（该接口已废弃，请使用新版订阅接口）", null);
     }
 
+    /**
+     * 取消订阅（已废弃）
+     * @deprecated 已废弃，请迁移到 /user/subscriptions/* 系列接口
+     */
+    @Deprecated
     @PostMapping("/subscription/cancel")
     public Result<Void> cancelSubscription(@RequestHeader("X-User-Token") String token) {
         Long userId = tokenService.getUserIdFromToken(token);
         if (userId == null) return Result.error(401, "Token无效或已过期");
         userService.cancelSubscription(userId);
-        return Result.success("订阅已取消", null);
+        return Result.success("订阅已取消（该接口已废弃，请使用新版订阅接口）", null);
     }
 }

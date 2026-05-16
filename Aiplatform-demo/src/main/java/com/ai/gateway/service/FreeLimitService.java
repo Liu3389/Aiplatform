@@ -4,12 +4,17 @@ import com.ai.gateway.entity.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.scripting.support.ResourceScriptSource;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -19,6 +24,14 @@ public class FreeLimitService {
 
     private final StringRedisTemplate redisTemplate;
     private final UserService userService;
+    private DefaultRedisScript<Long> freeLimitScript;
+
+    @PostConstruct
+    public void init() {
+        freeLimitScript = new DefaultRedisScript<>();
+        freeLimitScript.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/free_limit_check.lua")));
+        freeLimitScript.setResultType(Long.class);
+    }
 
     public FreeLimitService(StringRedisTemplate redisTemplate, @Lazy UserService userService) {
         this.redisTemplate = redisTemplate;
@@ -36,43 +49,22 @@ public class FreeLimitService {
     private static final int PRO_DAILY_TOKENS = 2000000;
 
     public boolean checkAndRecord(Long userId, String model) {
+        // 修复 P1-3: 使用 Lua 脚本保证“检查+递增”的原子性
         String membership = getMembership(userId);
-
         int maxCalls = FREE_DAILY_CALLS;
-        int maxTokens = FREE_DAILY_TOKENS;
-
-        switch (membership) {
-            case "plus":
-                maxCalls = PLUS_DAILY_CALLS;
-                maxTokens = PLUS_DAILY_TOKENS;
-                break;
-            case "pro":
-                maxCalls = PRO_DAILY_CALLS;
-                maxTokens = PRO_DAILY_TOKENS;
-                break;
-        }
+        if ("plus".equals(membership)) maxCalls = PLUS_DAILY_CALLS;
+        else if ("pro".equals(membership)) maxCalls = PRO_DAILY_CALLS;
 
         String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
         String callKey = FREE_CALLS_PREFIX + userId + ":" + today;
-        String tokenKey = FREE_TOKENS_PREFIX + userId + ":" + today;
 
-        String callCount = redisTemplate.opsForValue().get(callKey);
-        int calls = callCount != null ? Integer.parseInt(callCount) : 0;
-
-        if (calls >= maxCalls) return false;
-
-        String tokenUsed = redisTemplate.opsForValue().get(tokenKey);
-        int tokens = tokenUsed != null ? Integer.parseInt(tokenUsed) : 0;
-        if (tokens >= maxTokens) return false;
-
-        // 增加调用次数
-        redisTemplate.opsForValue().increment(callKey);
-        redisTemplate.expire(callKey, 25, TimeUnit.HOURS);
-        
-        // 注意：Token 的实际消耗会在对话完成后通过 addTokens 进行精确累加
-        // 此处不再预设 100 tokens，以避免计数偏差
-
-        return true;
+        try {
+            Long result = redisTemplate.execute(freeLimitScript, List.of(callKey), String.valueOf(maxCalls), "90000");
+            return result != null && result == 1;
+        } catch (Exception e) {
+            log.error("免费配额检查失败", e);
+            return false;
+        }
     }
 
     public void addTokens(Long userId, int tokens) {

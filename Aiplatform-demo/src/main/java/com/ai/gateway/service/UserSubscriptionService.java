@@ -97,19 +97,19 @@ public class UserSubscriptionService {
             }
         }
 
-        // 修复 P1-8: 检查用户余额并扣费
+        // 修复 P1-1: 使用 SQL 级别的原子更新防止并发超卖
         if (actualPrice.compareTo(BigDecimal.ZERO) > 0) {
-            User user = userMapper.selectById(userId);
-            if (user == null || user.getBalance().compareTo(actualPrice) < 0) {
-                throw new RuntimeException("余额不足，当前余额：" + (user != null ? user.getBalance() : 0));
+            com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<User> wrapper = 
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<>();
+            wrapper.eq(User::getId, userId)
+                   .ge(User::getBalance, actualPrice)
+                   .setSql("balance = balance - {0}", actualPrice.toPlainString());
+            
+            int rows = userMapper.update(null, wrapper);
+            if (rows == 0) {
+                throw new RuntimeException("余额不足或扣款失败，请重试");
             }
-            
-            // 扣除余额
-            user.setBalance(user.getBalance().subtract(actualPrice));
-            userMapper.updateById(user);
-            
-            // 记录账单（这里可以调用 BillingService）
-            log.info("购买套餐扣除余额: userId={}, amount={}", userId, actualPrice);
+            log.info("购买套餐原子扣费成功: userId={}, amount={}", userId, actualPrice);
         }
         LocalDateTime startTime = LocalDateTime.now();
         LocalDateTime expireTime = null;

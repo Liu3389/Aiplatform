@@ -58,13 +58,13 @@ public class MarketplaceService {
         logEntity.setDuration(duration);
         usageLogMapper.insert(logEntity);
 
-        // 4. 原子性更新 Key 统计信息
+        // 4. 原子性更新 Key 统计信息（修复 P1-2: 使用占位符防止注入）
         LambdaUpdateWrapper<UserMarketplaceKey> wrapper = new LambdaUpdateWrapper<>();
         wrapper.eq(UserMarketplaceKey::getId, userKeyId)
                .setSql("total_requests = total_requests + 1")
-               .setSql("total_input_tokens = total_input_tokens + " + inputTokens)
-               .setSql("total_output_tokens = total_output_tokens + " + outputTokens)
-               .setSql("total_cost = total_cost + " + cost.toPlainString());
+               .setSql("total_input_tokens = total_input_tokens + {0}", inputTokens)
+               .setSql("total_output_tokens = total_output_tokens + {0}", outputTokens)
+               .setSql("total_cost = total_cost + {0}", cost.toPlainString());
         
         userMarketplaceKeyMapper.update(null, wrapper);
         log.info("模型商店用量已记录: keyId={}, cost={}", userKeyId, cost);

@@ -29,25 +29,20 @@ public class UserRateLimitInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        // 获取用户ID（从Token中解析，这里简化处理）
-        String userId = request.getHeader("X-User-Id");
-        if (userId == null || userId.isEmpty()) {
-            // 如果没有用户ID，跳过限流（由其他拦截器处理认证）
+        Long userId = (Long) request.getAttribute("userId");
+        if (userId == null) {
             return true;
         }
         
         String key = USER_RATE_LIMIT_PREFIX + userId;
         
-        // 使用Redis实现滑动窗口限流
         Long currentCount = redisTemplate.opsForValue().increment(key);
         
         if (currentCount != null && currentCount == 1) {
-            // 第一次请求，设置过期时间
             redisTemplate.expire(key, WINDOW_SECONDS, TimeUnit.SECONDS);
         }
         
         if (currentCount != null && currentCount > MAX_REQUESTS_PER_MINUTE) {
-            // 超过限流阈值
             log.warn("用户请求频率过高: userId={}, count={}", userId, currentCount);
             
             response.setStatus(429);

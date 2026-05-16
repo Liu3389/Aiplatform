@@ -2,10 +2,15 @@ package com.ai.gateway.controller;
 
 import com.ai.gateway.annotation.RequireAdmin;
 import com.ai.gateway.common.Result;
+import com.ai.gateway.dto.AdminSendCouponRequest;
+import com.ai.gateway.dto.AdminSendNotificationRequest;
 import com.ai.gateway.entity.Coupon;
+import com.ai.gateway.service.AdminOperationLogService;
 import com.ai.gateway.service.CouponService;
 import com.ai.gateway.service.SystemNotificationService;
 import com.ai.gateway.service.TokenService;
+import com.ai.gateway.service.UserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +28,8 @@ public class CouponController {
     private final CouponService couponService;
     private final SystemNotificationService notificationService;
     private final TokenService tokenService;
+    private final UserService userService;
+    private final AdminOperationLogService operationLogService;
 
     @GetMapping("/user/my-coupons")
     public Result<List<Coupon>> listUserCoupons(@RequestHeader("X-User-Token") String token) {
@@ -43,54 +50,63 @@ public class CouponController {
     @RequireAdmin
     public Result<Map<String, Object>> adminSendCoupons(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
+            @Valid @RequestBody AdminSendCouponRequest request) {
 
-        BigDecimal amount = new BigDecimal(body.get("amount").toString());
-        BigDecimal threshold = body.containsKey("thresholdAmount") && body.get("thresholdAmount") != null
-                ? new BigDecimal(body.get("thresholdAmount").toString()) : BigDecimal.ZERO;
-        String plan = body.containsKey("applicablePlan") ? (String) body.get("applicablePlan") : null;
-        String expireStr = (String) body.get("expireTime");
-        LocalDateTime expireTime = expireStr != null && !expireStr.isEmpty() ? LocalDateTime.parse(expireStr) : null;
+        String target = request.getTarget() != null ? request.getTarget() : "all";
+        LocalDateTime expireTime = request.getExpireTime() != null && !request.getExpireTime().isEmpty() 
+                ? LocalDateTime.parse(request.getExpireTime()) : null;
 
-        String target = (String) body.get("target");
         int count;
-        switch (target != null ? target : "all") {
+        switch (target) {
             case "membership":
-                count = couponService.sendToMembership((String) body.get("membership"), amount, threshold, plan, expireTime);
+                count = couponService.sendToMembership(request.getMembership(), request.getAmount(), 
+                        request.getThresholdAmount(), request.getApplicablePlan(), expireTime);
                 break;
             case "new_users":
-                count = couponService.sendToRecentUsers(Integer.parseInt(body.get("days").toString()), amount, threshold, plan, expireTime);
+                count = couponService.sendToRecentUsers(request.getDays() != null ? request.getDays() : 7, 
+                        request.getAmount(), request.getThresholdAmount(), request.getApplicablePlan(), expireTime);
                 break;
             default:
-                count = couponService.sendToAllUsers(amount, threshold, plan, expireTime);
+                count = couponService.sendToAllUsers(request.getAmount(), request.getThresholdAmount(), 
+                        request.getApplicablePlan(), expireTime);
         }
 
-        return Result.success(Map.of("sent", count, "amount", amount));
+        Long adminId = tokenService.getUserIdFromToken(token);
+        com.ai.gateway.entity.User adminUser = userService.getUserEntityById(adminId);
+        String adminUsername = adminUser != null ? adminUser.getUsername() : "Unknown_Admin";
+        operationLogService.logSuccess(adminId, adminUsername, "COUPON_MANAGE", 
+                "SEND_COUPONS", null, java.util.Map.of("amount", request.getAmount(), "count", count));
+
+        return Result.success(Map.of("sent", count, "amount", request.getAmount()));
     }
 
     @PostMapping("/admin/notifications/send")
     @RequireAdmin
     public Result<Map<String, Object>> adminSendNotification(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
+            @Valid @RequestBody AdminSendNotificationRequest request) {
 
-        String title = (String) body.get("title");
-        String content = (String) body.get("content");
-        String type = body.containsKey("type") ? (String) body.get("type") : "system";
-        String target = (String) body.get("target");
-
+        String target = request.getTarget() != null ? request.getTarget() : "all";
         int count;
-        switch (target != null ? target : "all") {
+        switch (target) {
             case "membership":
-                count = notificationService.sendToMembership((String) body.get("membership"), title, content, type);
+                count = notificationService.sendToMembership(request.getMembership(), 
+                        request.getTitle(), request.getContent(), request.getType());
                 break;
             case "new_users":
-                count = notificationService.sendToRecentUsers(Integer.parseInt(body.get("days").toString()), title, content, type);
+                count = notificationService.sendToRecentUsers(request.getDays() != null ? request.getDays() : 7, 
+                        request.getTitle(), request.getContent(), request.getType());
                 break;
             default:
-                count = notificationService.sendToAllUsers(title, content, type);
+                count = notificationService.sendToAllUsers(request.getTitle(), request.getContent(), request.getType());
         }
 
-        return Result.success(Map.of("sent", count, "title", title));
+        Long adminId = tokenService.getUserIdFromToken(token);
+        com.ai.gateway.entity.User adminUser = userService.getUserEntityById(adminId);
+        String adminUsername = adminUser != null ? adminUser.getUsername() : "Unknown_Admin";
+        operationLogService.logSuccess(adminId, adminUsername, "NOTIFICATION_MANAGE", 
+                "SEND_NOTIFICATION", null, java.util.Map.of("title", request.getTitle(), "count", count));
+
+        return Result.success(Map.of("sent", count, "title", request.getTitle()));
     }
 }

@@ -9,6 +9,8 @@
 - [会员管理](#会员管理)
 - [操作日志](#操作日志)
 - [通知管理](#通知管理)
+- [套餐管理](#套餐管理)
+- [测试数据管理](#测试数据管理)
 - [统计分析](#统计分析)
 
 ---
@@ -43,11 +45,19 @@ X-User-Token: {管理员Token}
     "totalUsers": 1000,
     "activeUsers": 800,
     "totalApiKeys": 1500,
-    "users": [...],
+    "users": [
+      {
+        "id": 1,
+        "username": "testuser",
+        "balance": 100.000,
+        "totalCalls": 50,  // ✅ 已修复：从数据库聚合真实调用次数
+        "totalCost": 5.000 // ✅ 已修复：从数据库聚合真实消费金额
+      }
+    ],
     "totalCalls": 50000,
-    "totalCost": 5000.00,
+    "totalCost": 5000.000,
     "todayCalls": 1000,
-    "todayCost": 100.00
+    "todayCost": 100.000
   }
 }
 ```
@@ -211,15 +221,17 @@ GET /admin/users/advanced?page=1&size=20&membership=vip&minBalance=100&maxBalanc
 
 ---
 
-### 7. 给用户充值
+### 7. 手动充值点数
 
-**接口**: `POST /admin/user/recharge`
+**接口**: `POST /admin/points/recharge`
+
+**说明**: 专门用于管理员手动为用户增加点数。
 
 **Body**:
 ```json
 {
   "userId": 1,
-  "amount": 100.00
+  "points": 100.000
 }
 ```
 
@@ -404,13 +416,13 @@ GET /admin/users/advanced?page=1&size=20&membership=vip&minBalance=100&maxBalanc
 **使用示例**:
 ```bash
 # 增加50点
-curl -X POST "http://localhost:8080/admin/points/adjust" \
+curl -X POST "http://localhost:8080/api/admin/points/adjust" \
   -H "X-User-Token: YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"userId":1,"points":50.000,"reason":"活动奖励"}'
 
 # 减少30点
-curl -X POST "http://localhost:8080/admin/points/adjust" \
+curl -X POST "http://localhost:8080/api/admin/points/adjust" \
   -H "X-User-Token: YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"userId":1,"points":-30.000,"reason":"违规扣除"}'
@@ -434,9 +446,58 @@ curl -X POST "http://localhost:8080/admin/points/adjust" \
 
 ---
 
+### 16. 手动充值点数 ⭐
+
+**接口**: `POST /admin/points/recharge`
+
+**说明**: 专门用于管理员手动为用户增加点数。
+
+**Body**:
+```json
+{
+  "userId": 1,
+  "points": 100.000
+}
+```
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+### 17. 手动触发每日点数发放 ⭐
+
+**接口**: `POST /admin/points/distribute-daily`
+
+**说明**: 手动触发每日点数发放任务，用于测试或补发。可以给所有用户或指定用户发放30点。
+
+**Body**（可选）:
+```json
+{
+  "userId": 1
+}
+```
+
+**参数说明**:
+- `userId`: 用户ID（可选，不传则给所有用户发放）
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "message": "点数发放成功",
+  "data": {
+    "message": "已给所有用户发放30点"
+  }
+}
+```
+
+---
+
 ## 👑 会员管理
 
-### 16. 调整会员等级 ⭐
+### 18. 调整会员等级 ⭐
 
 **接口**: `POST /admin/membership/update`
 
@@ -455,7 +516,7 @@ curl -X POST "http://localhost:8080/admin/points/adjust" \
 
 ---
 
-### 17. 设置会员有效期 ⭐
+### 19. 设置会员有效期 ⭐
 
 **接口**: `POST /admin/membership/set-expire-time`
 
@@ -473,7 +534,7 @@ curl -X POST "http://localhost:8080/admin/points/adjust" \
 
 ## 📝 操作日志
 
-### 18. 查询操作日志 ⭐
+### 20. 查询操作日志 ⭐
 
 **接口**: `GET /admin/logs`
 
@@ -517,7 +578,7 @@ curl -X POST "http://localhost:8080/admin/points/adjust" \
 
 ## 🔔 通知管理
 
-### 19. 获取未读通知数量
+### 21. 获取未读通知数量
 
 **接口**: `GET /admin/notifications/unread-count`
 
@@ -533,7 +594,7 @@ curl -X POST "http://localhost:8080/admin/points/adjust" \
 
 ---
 
-### 20. 获取通知列表
+### 22. 获取通知列表
 
 **接口**: `GET /admin/notifications`
 
@@ -567,25 +628,25 @@ curl -X POST "http://localhost:8080/admin/points/adjust" \
 
 ---
 
-### 21. 标记通知为已读
+### 23. 标记通知为已读
 
 **接口**: `POST /admin/notifications/{id}/read`
 
 ---
 
-### 22. 标记所有通知为已读
+### 24. 标记所有通知为已读
 
 **接口**: `POST /admin/notifications/read-all`
 
 ---
 
-### 23. 删除通知
+### 25. 删除通知
 
 **接口**: `DELETE /admin/notifications/{id}`
 
 ---
 
-### 24. 获取最新未读通知
+### 26. 获取最新未读通知
 
 **接口**: `GET /admin/notifications/latest`
 
@@ -594,9 +655,161 @@ curl -X POST "http://localhost:8080/admin/points/adjust" \
 
 ---
 
+## 📦 套餐管理
+
+### 27. 获取套餐列表
+
+**接口**: `GET /admin/packages/list`
+
+**参数**:
+- `includeInactive`: 是否包含已下架套餐（可选，默认false）
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "data": [
+    {
+      "id": 1,
+      "packageCode": "BASIC",
+      "packageName": "基础版",
+      "description": "适合个人用户",
+      "points": 100.000,
+      "price": 29.00,
+      "durationDays": 30,
+      "status": 1,
+      "sortOrder": 1
+    }
+  ]
+}
+```
+
+---
+
+### 28. 获取套餐详情
+
+**接口**: `GET /admin/packages/{id}`
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+### 29. 创建套餐模板
+
+**接口**: `POST /admin/packages/create`
+
+**Body**:
+```json
+{
+  "packageCode": "PRO",
+  "packageName": "专业版",
+  "description": "适合专业开发者",
+  "points": 1000.000,
+  "price": 99.00,
+  "durationDays": 30,
+  "status": 1,
+  "sortOrder": 2
+}
+```
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+### 30. 更新套餐模板
+
+**接口**: `PUT /admin/packages/update`
+
+**Body**:
+```json
+{
+  "id": 1,
+  "packageName": "基础版（更新）",
+  "price": 39.00
+}
+```
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+### 31. 上架/下架套餐
+
+**接口**: `POST /admin/packages/toggle-status`
+
+**Body**:
+```json
+{
+  "id": 1,
+  "status": 1
+}
+```
+
+**参数说明**:
+- `status`: 1=上架，0=下架
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+### 32. 删除套餐模板
+
+**接口**: `DELETE /admin/packages/{id}`
+
+**权限**: ADMIN/SUPER_ADMIN
+
+---
+
+## 🧪 测试数据管理
+
+### 33. 重置测试数据
+
+**接口**: `POST /admin/test-data/reset`
+
+**功能说明**:
+- 清空并重新初始化平台基础配置数据
+- 会重置 platform_model_config, marketplace_provider, package_template 表
+- ⚠️ 危险操作，仅限测试环境使用
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "message": "平台基础测试数据已重置",
+  "data": null
+}
+```
+
+---
+
+### 34. 修复模型点数配置
+
+**接口**: `POST /admin/test-data/fix-points`
+
+**功能说明**:
+- 将所有未配置固定点数的模型统一设置为默认值（3.000点）
+- 用于修复点数配置异常的数据
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**响应示例**:
+```json
+{
+  "code": 200,
+  "message": "模型点数配置已修复",
+  "data": null
+}
+```
+
+---
+
 ## 📈 统计分析
 
-### 25. 按日查询统计数据 ⭐
+### 33. 按日查询统计数据 ⭐
 
 **接口**: `GET /admin/statistics/daily`
 
@@ -630,7 +843,7 @@ curl -X POST "http://localhost:8080/admin/points/adjust" \
 
 ---
 
-### 26. 按周查询统计数据 ⭐
+### 34. 按周查询统计数据 ⭐
 
 **接口**: `GET /admin/statistics/weekly`
 
@@ -641,7 +854,7 @@ curl -X POST "http://localhost:8080/admin/points/adjust" \
 
 ---
 
-### 27. 按月查询统计数据 ⭐
+### 35. 按月查询统计数据 ⭐
 
 **接口**: `GET /admin/statistics/monthly`
 
@@ -652,7 +865,7 @@ curl -X POST "http://localhost:8080/admin/points/adjust" \
 
 ---
 
-### 28. 导出统计报表（CSV）⭐
+### 36. 导出统计报表（CSV）⭐
 
 **接口**: `GET /admin/statistics/export`
 
@@ -666,12 +879,12 @@ curl -X POST "http://localhost:8080/admin/points/adjust" \
 **使用示例**:
 ```bash
 # 导出用户数据报表
-curl -X GET "http://localhost:8080/admin/statistics/export?type=user&startDate=2026-05-01&endDate=2026-05-14" \
+curl -X GET "http://localhost:8080/api/admin/statistics/export?type=user&startDate=2026-05-01&endDate=2026-05-14" \
   -H "X-User-Token: YOUR_TOKEN" \
   --output user_report.csv
 
 # 导出营收数据报表
-curl -X GET "http://localhost:8080/admin/statistics/export?type=revenue&startDate=2026-05-01&endDate=2026-05-14" \
+curl -X GET "http://localhost:8080/api/admin/statistics/export?type=revenue&startDate=2026-05-01&endDate=2026-05-14" \
   -H "X-User-Token: YOUR_TOKEN" \
   --output revenue_report.csv
 ```
@@ -703,7 +916,7 @@ curl -X GET "http://localhost:8080/admin/statistics/export?type=revenue&startDat
 
 ## 🎫 优惠券与通知发送
 
-### 29. 发放优惠券
+### 37. 发放优惠券
 
 **接口**: `POST /admin/coupons/send`
 
@@ -732,7 +945,7 @@ curl -X GET "http://localhost:8080/admin/statistics/export?type=revenue&startDat
 
 ---
 
-### 30. 发送系统通知
+### 38. 发送系统通知
 
 **接口**: `POST /admin/notifications/send`
 
@@ -758,7 +971,7 @@ curl -X GET "http://localhost:8080/admin/statistics/export?type=revenue&startDat
 
 ## 💰 用户充值与优惠券使用
 
-### 31. 使用优惠券充值（用户接口）
+### 39. 使用优惠券充值（用户接口）
 
 **接口**: `POST /user/recharge-with-coupon`
 
@@ -800,7 +1013,7 @@ curl -X GET "http://localhost:8080/admin/statistics/export?type=revenue&startDat
 
 ---
 
-### 32. 获取优惠券使用记录（用户接口）
+### 40. 获取优惠券使用记录（用户接口）
 
 **接口**: `GET /user/coupon-usage-records`
 
@@ -854,21 +1067,39 @@ curl -X GET "http://localhost:8080/admin/statistics/export?type=revenue&startDat
 3. **点数管理**
    - POST `/admin/points/adjust` - 手动增减点数
    - POST `/admin/points/set-free-count` - 设置免费次数
+   - POST `/admin/points/recharge` - 手动充值点数
+   - POST `/admin/points/distribute-daily` - 手动触发每日点数发放
 
 4. **会员管理**
    - POST `/admin/membership/update` - 调整会员等级
    - POST `/admin/membership/set-expire-time` - 设置有效期
+   - POST `/admin/batch/activate-membership` - 批量开通会员
 
 5. **操作日志**
    - GET `/admin/logs` - 查询操作日志
 
 6. **统计分析**
+   - GET `/admin/statistics/dashboard` - 仪表盘统计
+   - GET `/admin/statistics/users` - 用户统计
+   - GET `/admin/statistics/conversations` - 对话统计
    - GET `/admin/statistics/daily` - 按日查询
    - GET `/admin/statistics/weekly` - 按周查询
    - GET `/admin/statistics/monthly` - 按月查询
    - GET `/admin/statistics/export` - 导出CSV报表
 
-7. **优惠券与充值**
+7. **套餐管理**
+   - GET `/admin/packages/list` - 获取套餐列表
+   - GET `/admin/packages/{id}` - 获取套餐详情
+   - POST `/admin/packages/create` - 创建套餐模板
+   - PUT `/admin/packages/update` - 更新套餐模板
+   - POST `/admin/packages/toggle-status` - 上架/下架套餐
+   - DELETE `/admin/packages/{id}` - 删除套餐模板
+
+8. **测试数据管理**
+   - POST `/admin/test-data/reset` - 重置测试数据
+   - POST `/admin/test-data/fix-points` - 修复模型点数配置
+
+9. **优惠券与充值**
    - POST `/user/recharge-with-coupon` - 使用优惠券充值
    - GET `/user/coupon-usage-records` - 获取优惠券使用记录
 
@@ -884,15 +1115,26 @@ curl -X GET "http://localhost:8080/admin/statistics/export?type=revenue&startDat
 
 ---
 
-**文档版本**: v2.3  
+**文档版本**: v3.0  
 **更新日期**: 2026-05-15  
 **更新内容**: 
-- 修复统计服务逻辑，实现真实数据查询
-- 统一业务术语：将“免费额度”、“付费模型”统一修正为“点数额度”和“充值点数”
-- 优化 SSE 异常处理与超时反馈
-- 优化冷热分页查询性能（基于时间游标）
-- 增加缓存防击穿机制（分布式锁）
-- 完善事务回滚配置（rollbackFor = Exception.class）
-- 增强 API Key 验证状态标识
-- 完善日志敏感信息脱敏
-**接口总数**: 33个（包含用户管理、批量操作、点数管理、会员管理、统计分析、优惠券与通知发送、充值与优惠券使用）
+- ✅ 新增套餐管理模块完整文档（6个接口）
+- ✅ 所有管理接口已 100% 使用 DTO + Validation
+- ✅ 修复统计服务逻辑，实现真实数据查询
+- ✅ 统一业务术语：将"免费额度"、"付费模型"统一修正为"点数额度"和"充值点数"
+- ✅ 优化 SSE 异常处理与超时反馈
+- ✅ 优化冷热分页查询性能（基于时间游标）
+- ✅ 增加缓存防击穿机制（分布式锁）
+- ✅ 完善事务回滚配置（rollbackFor = Exception.class）
+- ✅ 增强 API Key 验证状态标识
+- ✅ 完善日志敏感信息脱敏
+- ✅ 补全套餐管理与测试数据管理接口文档
+- ✅ 修复充值接口路径及参数名称不一致问题
+- ✅ 修复接口编号重复问题，统一接口序号
+- ✅ 添加每日点数发放接口文档
+- ✅ 完善所有管理员接口权限控制（@RequireAdmin）
+- ✅ 批量操作支持字符串类型用户ID转换
+- ✅ 统计数据全部使用真实数据库查询，无假数据
+- ✅ 引入 Caffeine 二级缓存提升性能
+- ✅ 操作日志异步化降低接口延迟
+**接口总数**: 40个管理员接口 + 2个用户接口 = 42个接口

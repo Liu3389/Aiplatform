@@ -28,4 +28,7 @@
 *   **[DATABASE_SCRIPTS.md](./DATABASE_SCRIPTS.md)**: 增加了对旧版 `testdata_large.sql` 的弃用警告。
 
 ## 4. 结论
-目前所有对外提供的 `.json` 接口集合与 `.md` 说明文档均与后端 Controller 实现保持严格一致。开发者可以直接使用 Postman 集合进行全量功能测试。
+目前所有对外提供的 `.json` 接口集合与 `.md` 说明文档已与后端 Controller 实现保持严格一致。
+*   **已修复**: 移除了聊天接口中不再需要的 `X-API-Key`，补充了 `/api/platform-model/list` 测试项。
+*   **已完善**: 在数据库文档中增加了 `platform_model_config` 表的详细字段说明。
+开发者可以直接使用 Postman 集合进行全量功能测试。

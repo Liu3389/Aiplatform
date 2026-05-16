@@ -3,7 +3,6 @@ package com.ai.gateway.config;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
@@ -14,7 +13,6 @@ import java.util.concurrent.ThreadPoolExecutor;
  */
 @Slf4j
 @Configuration
-@EnableScheduling  // 启用定时任务
 public class AsyncConfig {
 
     /**
@@ -53,6 +51,22 @@ public class AsyncConfig {
         log.info("聊天服务线程池初始化完成: corePoolSize={}, maxPoolSize={}, queueCapacity={}", 
                 executor.getCorePoolSize(), executor.getMaxPoolSize(), executor.getQueueCapacity());
         
+        return executor;
+    }
+
+    /**
+     * 操作日志专用线程池（优化：异步记录日志）
+     */
+    @Bean("logExecutor")
+    public Executor logExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(5);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("admin-log-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        log.info("管理员日志线程池初始化完成");
         return executor;
     }
 }

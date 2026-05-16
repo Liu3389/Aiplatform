@@ -53,6 +53,11 @@ public class ChatMessageHistory {
     private Integer tokens;
 
     /**
+     * 关联文件URL列表（JSON数组）
+     */
+    private String fileUrls;
+
+    /**
      * 元数据（JSON格式）
      */
     private String metadata;

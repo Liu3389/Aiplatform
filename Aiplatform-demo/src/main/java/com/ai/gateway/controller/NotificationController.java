@@ -35,7 +35,7 @@ public class NotificationController {
         Long userId = tokenService.getUserIdFromToken(token);
         if (userId == null) return Result.error(401, "Token无效");
         Map<String, Integer> m = new HashMap<>();
-        m.put("count", notificationService.getUnreadCount(userId));
+        m.put("unreadCount", notificationService.getUnreadCount(userId));
         return Result.success(m);
     }
 

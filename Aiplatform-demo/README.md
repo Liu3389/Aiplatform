@@ -11,6 +11,7 @@
 - ✅ **SSE 流式响应**：基于 SseEmitter 实现实时逐字输出，支持 Markdown 和 Mermaid。
 - ✅ **冷热数据分离**：聊天记录自动归档，支持游标分页查询，提升大数据量性能。
 - ✅ **云端同步备份**：支持对话内容打包 ZIP 存入阿里云 OSS，实现多端同步。
+- ✅ **管理员深度统计**：提供真实的每日趋势、模型分布、用户分层及活跃用户分析。
 - ✅ **分布式限流与安全**：Redis Lua 脚本实现原子性点数预扣，防止并发竞态。
 
 ## 🛠️ 技术栈
@@ -99,9 +100,9 @@ mvn spring-boot:run
 - **[docs/guides/ADMIN_PERMISSION_TEST_QUICKSTART.md](docs/guides/ADMIN_PERMISSION_TEST_QUICKSTART.md)** - 权限测试快速开始
 
 ### 🔧 API文档
-- **[docs/api/ADMIN_API_DOCUMENTATION.md](docs/api/ADMIN_API_DOCUMENTATION.md)** - 管理员后台API文档（38个接口）
+- **[docs/api/ADMIN_API_DOCUMENTATION.md](docs/api/ADMIN_API_DOCUMENTATION.md)** - 管理员后台API文档（48个接口）
 - **[API_TEST.postman_collection.json](API_TEST.postman_collection.json)** - 用户接口Postman集合（40+接口）
-- **[ADMIN_API.postman_collection.json](ADMIN_API.postman_collection.json)** - 管理员接口Postman集合（38接口）
+- **[ADMIN_API.postman_collection.json](ADMIN_API.postman_collection.json)** - 管理员接口Postman集合（48接口）
 
 ### 🗄️ 数据库
 - **[docs/database/DATABASE_SCRIPTS.md](docs/database/DATABASE_SCRIPTS.md)** - 数据库脚本说明
@@ -126,8 +127,8 @@ mvn spring-boot:run
 ### 📊 接口统计
 
 - **用户接口**: 50+ 个（认证、平台模型、聊天、会话、模型商店、通知等）
-- **管理员接口**: 38 个（用户管理、批量操作、点数管理、会员管理、统计分析等）
-- **总计**: 96+ 个API接口
+- **管理员接口**: 48 个（用户管理、批量操作、点数管理、会员管理、统计分析、套餐管理等）
+- **总计**: 98+ 个API接口
 - **测试覆盖**: ✅ 100% (自动化测试)
 
 ---
@@ -143,6 +144,8 @@ curl http://localhost:8080/api/platform-model/list \
 ```
 
 ### 模型商店
+
+> ⚠️ **模型商店因 API Key 资源有限已搁置，暂时仅开放平台对话模式（全模型映射至 DeepSeek）**
 
 #### 查询已购 API Key
 ```bash
@@ -173,7 +176,7 @@ curl -X POST http://localhost:8080/api/admin/test-data/reset \
 
 #### 注册
 ```bash
-curl -X POST http://localhost:8080/api/user/register \
+curl -X POST http://localhost:8080/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "username": "testuser",
@@ -184,7 +187,7 @@ curl -X POST http://localhost:8080/api/user/register \
 
 #### 登录
 ```bash
-curl -X POST http://localhost:8080/api/user/login \
+curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "testuser",
@@ -194,20 +197,22 @@ curl -X POST http://localhost:8080/api/user/login \
 
 #### 充值
 ```bash
-curl -X POST "http://localhost:8080/api/user/recharge?userId=1&amount=100"
+curl -X POST "http://localhost:8080/api/user/recharge?amount=100" \
+  -H "X-User-Token: YOUR_TOKEN"
 ```
 
 #### 查询余额
 ```bash
-curl http://localhost:8080/api/user/balance?userId=1
+curl http://localhost:8080/api/user/balance \
+  -H "X-User-Token: YOUR_TOKEN"
 ```
 
 ### API Key 管理
 
 #### 生成 API Key
 ```bash
-curl -X POST http://localhost:8080/api/key/generate \
-  -H "Authorization: Bearer YOUR_TOKEN" \
+curl -X POST http://localhost:8080/api/api-key/generate \
+  -H "X-User-Token: YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "My API Key",
@@ -221,9 +226,9 @@ curl -X POST http://localhost:8080/api/key/generate \
 ```bash
 curl -X POST http://localhost:8080/api/chat/completions \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: YOUR_API_KEY" \
+  -H "X-User-Token: YOUR_TOKEN" \
   -d '{
-    "model": "deepseek-chat",
+    "model": "deepseek-v4-flash",
     "messages": [
       {
         "role": "user",
@@ -233,13 +238,15 @@ curl -X POST http://localhost:8080/api/chat/completions \
   }'
 ```
 
+> **说明**：平台对话走点数体系，无需第三方 API Key；API Key 是模型商店功能（搁置中），用于用户购买后自行调用第三方厂商 API。
+
 #### 流式对话（SSE）
 ```bash
 curl -X POST http://localhost:8080/api/chat/stream \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: YOUR_API_KEY" \
+  -H "X-User-Token: YOUR_TOKEN" \
   -d '{
-    "model": "deepseek-chat",
+    "model": "deepseek-v4-flash",
     "messages": [
       {
         "role": "user",
@@ -343,8 +350,9 @@ OpenAiChatService
 
 ---
 
-**最后更新**: 2026年5月15日  
+**最后更新**: 2026年5月16日  
 **文档整理**: 已整合为清晰的文档结构，删除冗余文件  
-**接口总数**: 86+ 个（40+ 用户接口 + 38 管理员接口）  
-**测试状态**: ✅ 100% 自动化测试覆盖
+**接口总数**: 98+ 个（40+ 用户接口 + 48 管理员接口）  
+**测试状态**: ✅ 100% 自动化测试覆盖  
+**数据库版本**: v3.1（新增防重领索引、活跃订阅查询索引等）
 

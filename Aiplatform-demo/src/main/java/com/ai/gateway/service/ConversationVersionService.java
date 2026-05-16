@@ -91,7 +91,7 @@ public class ConversationVersionService {
      * @return 版本号，如果没有则返回0
      */
     public long getVersion(Long userId) {
-        String versionKey = CONVERSATION_VERSION_PREFIX + userId;
+        String versionKey = VERSION_PREFIX + userId;
         String versionStr = redisTemplate.opsForValue().get(versionKey);
         
         if (versionStr == null) {

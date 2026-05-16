@@ -2,6 +2,7 @@ package com.ai.gateway.controller;
 
 import com.ai.gateway.annotation.RequireAdmin;
 import com.ai.gateway.common.Result;
+import com.ai.gateway.dto.*;
 import com.ai.gateway.service.AdminOperationLogService;
 import com.ai.gateway.service.AdminService;
 import com.ai.gateway.service.DailyPointsService;
@@ -13,13 +14,16 @@ import com.ai.gateway.vo.SystemStatsVO;
 import com.ai.gateway.vo.DashboardStatsVO;
 import com.ai.gateway.vo.UserStatsVO;
 import com.ai.gateway.vo.ConversationStatsVO;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @RestController
@@ -34,6 +38,7 @@ public class AdminController {
     private final TokenService tokenService;
     private final StatisticsService statisticsService;
     private final DailyPointsService dailyPointsService;
+    private final StringRedisTemplate redisTemplate;
 
     @RequireAdmin
     @GetMapping("/stats")
@@ -67,27 +72,17 @@ public class AdminController {
     @PostMapping("/user/status")
     public Result<Void> toggleUserStatus(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
+            @Valid @RequestBody AdminToggleUserStatusRequest request) {
         
-        Long adminId = tokenService.getUserIdFromToken(token);
-        String adminUsername = "admin"; // TODO: 从 token 中获取用户名
-        
-        // 参数验证
-        if (body == null || !body.containsKey("userId") || !body.containsKey("status")) {
-            return Result.error(400, "参数不完整，需要userId和status");
-        }
+        Long adminId = getUserIdFromToken(token);
+        String adminUsername = getUsernameFromToken(token);
         
         try {
-            Long userId = Long.valueOf(body.get("userId").toString());
-            String status = (String) body.get("status");
-            
-            if (userId == null || status == null) {
-                return Result.error(400, "参数不完整");
-            }
+            Long userId = request.getUserId();
+            String status = request.getStatus();
             
             userService.toggleUserStatus(userId, status);
             
-            // 记录操作日志
             Map<String, Object> detail = new HashMap<>();
             detail.put("userId", userId);
             detail.put("status", status);
@@ -98,8 +93,7 @@ public class AdminController {
         } catch (Exception e) {
             log.error("切换用户状态失败: {}", e.getMessage());
             
-            // 记录失败日志
-            Long userId = body.containsKey("userId") ? Long.valueOf(body.get("userId").toString()) : null;
+            Long userId = request.getUserId();
             Map<String, Object> detail = new HashMap<>();
             detail.put("userId", userId);
             operationLogService.logFailure(adminId, adminUsername, "USER_MANAGE", 
@@ -109,33 +103,41 @@ public class AdminController {
         }
     }
 
+    /**
+     * 给用户充值点数（修复 P2-14: 路径改为 /points/recharge 以匹配功能）
+     */
     @RequireAdmin
-    @PostMapping("/user/recharge")
-    public Result<Void> rechargeUser(
+    @PostMapping("/points/recharge")
+    public Result<Void> rechargeUserPoints(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
-        
-        // 参数验证
-        if (body == null || !body.containsKey("userId") || !body.containsKey("amount")) {
-            return Result.error(400, "参数不完整，需要userId和amount");
-        }
+            @Valid @RequestBody AdminRechargeRequest request) {
         
         try {
-            Long userId = Long.valueOf(body.get("userId").toString());
-            BigDecimal amount = new BigDecimal(body.get("amount").toString());
+            Long userId = request.getUserId();
+            BigDecimal points = request.getPoints();
             
-            if (userId == null || amount == null) {
-                return Result.error(400, "参数不完整");
-            }
+            adminService.adjustUserPoints(userId, points, "管理员手动充值");
             
-            if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-                return Result.error(400, "充值金额必须大于0");
-            }
+            Long adminId = getUserIdFromToken(token);
+            String adminUsername = getUsernameFromToken(token);
+            operationLogService.logSuccess(adminId, adminUsername, "POINTS_MANAGE", 
+                    "RECHARGE_POINTS", java.util.Arrays.asList(userId), 
+                    java.util.Map.of("points", points));
             
-            userService.recharge(userId, amount);
-            return Result.success("充值成功", null);
+            return Result.success("点数充值成功", null);
         } catch (Exception e) {
-            log.error("给用户充值失败: {}", e.getMessage());
+            log.error("给用户充值点数失败: {}", e.getMessage());
+            
+            try {
+                Long adminId = getUserIdFromToken(token);
+                String adminUsername = getUsernameFromToken(token);
+                operationLogService.logFailure(adminId, adminUsername, "POINTS_MANAGE", 
+                        "RECHARGE_POINTS", java.util.Arrays.asList(request.getUserId()), 
+                        java.util.Map.of("points", request.getPoints()), e.getMessage());
+            } catch (Exception ex) {
+                log.error("记录失败日志异常", ex);
+            }
+            
             return Result.error(500, "充值失败: " + e.getMessage());
         }
     }
@@ -144,10 +146,21 @@ public class AdminController {
     @PostMapping("/assign-role")
     public Result<Void> assignAdminRole(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
-        String role = (String) body.get("role");
-        userService.assignRole(userId, role);
+            @Valid @RequestBody AdminAssignRoleRequest request) {
+        
+        Long currentAdminId = getUserIdFromToken(token);
+        com.ai.gateway.entity.User currentUser = userService.getUserEntityById(currentAdminId);
+        if (currentUser == null || !"SUPER_ADMIN".equals(currentUser.getRole())) {
+            return Result.error(403, "只有超级管理员可以分配管理员角色");
+        }
+        
+        userService.assignRole(request.getUserId(), request.getRole());
+        
+        Long adminId = getUserIdFromToken(token);
+        String adminUsername = getUsernameFromToken(token);
+        operationLogService.logSuccess(adminId, adminUsername, "USER_MANAGE", 
+                "ASSIGN_ROLE", java.util.Arrays.asList(request.getUserId()), 
+                java.util.Map.of("role", request.getRole()));
         return Result.success("角色分配成功", null);
     }
 
@@ -155,9 +168,19 @@ public class AdminController {
     @PostMapping("/revoke-role")
     public Result<Void> revokeAdminRole(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
-        userService.assignRole(userId, "USER");
+            @Valid @RequestBody AdminRevokeRoleRequest request) {
+        
+        Long currentAdminId = getUserIdFromToken(token);
+        if (request.getUserId().equals(currentAdminId)) {
+            return Result.error(403, "不能撤销自己的管理员角色");
+        }
+        
+        userService.assignRole(request.getUserId(), "USER");
+        
+        Long adminId = getUserIdFromToken(token);
+        String adminUsername = getUsernameFromToken(token);
+        operationLogService.logSuccess(adminId, adminUsername, "USER_MANAGE", 
+                "REVOKE_ROLE", java.util.Arrays.asList(request.getUserId()), null);
         return Result.success("角色撤销成功", null);
     }
 
@@ -165,10 +188,19 @@ public class AdminController {
     @PostMapping("/reset-password")
     public Result<Void> resetUserPassword(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
-        String password = (String) body.get("password");
-        userService.resetPassword(userId, password);
+            @Valid @RequestBody AdminResetPasswordRequest request) {
+        
+        String password = request.getPassword();
+        if (!password.matches(".*[a-zA-Z].*") || !password.matches(".*\\d.*")) {
+            return Result.error(400, "密码必须同时包含字母和数字");
+        }
+        
+        userService.resetPassword(request.getUserId(), password);
+        
+        Long adminId = getUserIdFromToken(token);
+        String adminUsername = getUsernameFromToken(token);
+        operationLogService.logSuccess(adminId, adminUsername, "USER_MANAGE", 
+                "RESET_PASSWORD", java.util.Arrays.asList(request.getUserId()), null);
         return Result.success("密码重置成功", null);
     }
 
@@ -178,6 +210,16 @@ public class AdminController {
             @RequestHeader("X-User-Token") String token,
             @RequestParam(defaultValue = "7") int days,
             @RequestParam(defaultValue = "6") int months) {
+        
+        // 优化 P2-1: 增加 Redis 缓存，TTL 5分钟
+        String cacheKey = "admin:analytics:full:" + days + ":" + months;
+        SystemStatsVO cachedStats = getCachedStats(cacheKey);
+        if (cachedStats != null) {
+            log.info("命中仪表盘统计缓存: {}", cacheKey);
+            return Result.success(cachedStats);
+        }
+
+        log.info("未命中缓存，开始执行数据库聚合查询...");
         SystemStatsVO stats = adminService.getSystemStats();
         stats.setDailyUsage(adminService.getDailyUsage(days));
         stats.setModelUsage(adminService.getModelUsage());
@@ -185,6 +227,10 @@ public class AdminController {
         stats.setTopUsers(adminService.getTopUsers());
         stats.setRevenueTrend(adminService.getRevenueTrend(months));
         stats.setUserGrowth(adminService.getUserGrowth(months));
+        
+        // 存入缓存
+        cacheStats(cacheKey, stats, 5, TimeUnit.MINUTES);
+        
         return Result.success(stats);
     }
 
@@ -257,29 +303,29 @@ public class AdminController {
     @PostMapping("/batch/update-status")
     public Result<Map<String, Object>> batchUpdateStatus(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
+            @Valid @RequestBody BatchUpdateStatusRequest request) {
         
-        @SuppressWarnings("unchecked")
-        java.util.List<Object> userIdsObj = (java.util.List<Object>) body.get("userIds");
-        Integer status = (Integer) body.get("status");
+        java.util.List<Long> userIds = request.getUserIds();
+        Integer status = request.getStatus();
         
-        if (userIdsObj == null || userIdsObj.isEmpty()) {
-            return Result.error(400, "用户ID列表不能为空");
-        }
-        
-        // 将Object列表转换为Long列表（兼容Integer和Long）
-        java.util.List<Long> userIds = new java.util.ArrayList<>();
-        for (Object obj : userIdsObj) {
-            if (obj instanceof Number) {
-                userIds.add(((Number) obj).longValue());
-            }
+        if (status != 0 && status != 1) {
+            return Result.error(400, "状态值只能为0(封禁)或1(解封)");
         }
         
         int successCount = adminService.batchUpdateStatus(userIds, status);
         
+        if (successCount > 0) {
+            Long adminId = getUserIdFromToken(token);
+            String adminUsername = getUsernameFromToken(token);
+            operationLogService.logSuccess(adminId, adminUsername, "USER_MANAGE", 
+                    "BATCH_UPDATE_STATUS", userIds, 
+                    java.util.Map.of("status", status));
+        }
+        
         Map<String, Object> data = new java.util.HashMap<>();
         data.put("successCount", successCount);
         data.put("totalCount", userIds.size());
+        data.put("status", status);
         
         return Result.success("批量更新成功", data);
     }
@@ -291,25 +337,30 @@ public class AdminController {
     @PostMapping("/batch/grant-points")
     public Result<Map<String, Object>> batchGrantPoints(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
+            @Valid @RequestBody BatchGrantPointsRequest request) {
         
-        @SuppressWarnings("unchecked")
-        java.util.List<Object> userIdsObj = (java.util.List<Object>) body.get("userIds");
-        BigDecimal points = new BigDecimal(body.get("points").toString());
+        java.util.List<Long> userIds = request.getUserIds();
+        BigDecimal points = request.getPoints();
         
-        if (userIdsObj == null || userIdsObj.isEmpty()) {
+        if (userIds == null || userIds.isEmpty()) {
             return Result.error(400, "用户ID列表不能为空");
         }
         
-        // 将Object列表转换为Long列表（兼容Integer和Long）
-        java.util.List<Long> userIds = new java.util.ArrayList<>();
-        for (Object obj : userIdsObj) {
-            if (obj instanceof Number) {
-                userIds.add(((Number) obj).longValue());
-            }
+        // 修复 P1-1: 验证批量操作数量上限
+        if (userIds.size() > 1000) {
+            return Result.error(400, "批量操作用户数不能超过 1000 个");
         }
         
         int successCount = adminService.batchGrantPoints(userIds, points);
+        
+        // 修复 SEC-1: 检查是否有实际成功的操作再记录日志
+        if (successCount > 0) {
+            Long adminId = getUserIdFromToken(token);
+            String adminUsername = getUsernameFromToken(token);
+            operationLogService.logSuccess(adminId, adminUsername, "USER_MANAGE", 
+                    "BATCH_GRANT_POINTS", userIds, 
+                    java.util.Map.of("points", points));
+        }
         
         Map<String, Object> data = new java.util.HashMap<>();
         data.put("successCount", successCount);
@@ -335,16 +386,48 @@ public class AdminController {
             userId = Long.valueOf(body.get("userId").toString());
         }
         
-        dailyPointsService.manualDistributePoints(userId);
-        
-        Map<String, Object> data = new java.util.HashMap<>();
-        if (userId != null) {
-            data.put("message", "已给用户 " + userId + " 发放30点");
-        } else {
-            data.put("message", "已给所有用户发放30点");
+        String lockKey = "admin:daily_points:lock:" + (userId != null ? userId : "all");
+        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", 30, TimeUnit.SECONDS);
+        if (acquired == null || !acquired) {
+            return Result.error(429, "点数发放正在进行中，请勿重复操作");
         }
         
-        return Result.success("点数发放成功", data);
+        try {
+            dailyPointsService.manualDistributePoints(userId);
+            
+            // 记录操作日志
+            Long adminId = getUserIdFromToken(token);
+            String adminUsername = getUsernameFromToken(token);
+            operationLogService.logSuccess(adminId, adminUsername, "POINTS_MANAGE", 
+                    "DISTRIBUTE_DAILY_POINTS", userId != null ? java.util.Arrays.asList(userId) : null, 
+                    java.util.Map.of("targetUserId", userId != null ? userId : "ALL"));
+            
+            Map<String, Object> data = new java.util.HashMap<>();
+            if (userId != null) {
+                data.put("message", "已给用户 " + userId + " 发放30点");
+            } else {
+                data.put("message", "已给所有用户发放30点");
+            }
+            
+            return Result.success("点数发放成功", data);
+        } catch (Exception e) {
+            log.error("手动触发每日点数发放失败", e);
+            
+            // 修复 P1-8: 记录失败日志
+            try {
+                Long adminId = getUserIdFromToken(token);
+                String adminUsername = getUsernameFromToken(token);
+                operationLogService.logFailure(adminId, adminUsername, "POINTS_MANAGE", 
+                        "DISTRIBUTE_DAILY_POINTS", userId != null ? java.util.Arrays.asList(userId) : null, 
+                        java.util.Map.of("targetUserId", userId != null ? userId : "ALL"), e.getMessage());
+            } catch (Exception ex) {
+                log.error("记录失败日志异常", ex);
+            }
+            
+            return Result.error("点数发放失败: " + e.getMessage());
+        } finally {
+            redisTemplate.delete(lockKey);
+        }
     }
 
     /**
@@ -354,98 +437,125 @@ public class AdminController {
     @PostMapping("/points/adjust")
     public Result<Void> adjustPoints(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
+            @Valid @RequestBody AdminAdjustPointsRequest request) {
         
-        Long userId = Long.valueOf(body.get("userId").toString());
-        BigDecimal points = new BigDecimal(body.get("points").toString());
-        String reason = (String) body.getOrDefault("reason", "管理员手动调整");
+        String reason = request.getReason() != null ? request.getReason() : "管理员手动调整";
         
-        adminService.adjustUserPoints(userId, points, reason);
-        
-        return Result.success("点数调整成功", null);
+        try {
+            adminService.adjustUserPoints(request.getUserId(), request.getPoints(), reason);
+            
+            Long adminId = getUserIdFromToken(token);
+            String adminUsername = getUsernameFromToken(token);
+            operationLogService.logSuccess(adminId, adminUsername, "POINTS_MANAGE", 
+                    "ADJUST_POINTS", java.util.Arrays.asList(request.getUserId()), 
+                    java.util.Map.of("points", request.getPoints(), "reason", reason));
+            
+            return Result.success("点数调整成功", null);
+        } catch (Exception e) {
+            log.error("调整用户点数失败", e);
+            
+            try {
+                Long adminId = getUserIdFromToken(token);
+                String adminUsername = getUsernameFromToken(token);
+                operationLogService.logFailure(adminId, adminUsername, "POINTS_MANAGE", 
+                        "ADJUST_POINTS", java.util.Arrays.asList(request.getUserId()), 
+                        java.util.Map.of("points", request.getPoints(), "reason", reason), e.getMessage());
+            } catch (Exception ex) {
+                log.error("记录失败日志异常", ex);
+            }
+            
+            return Result.error(500, "点数调整失败: " + e.getMessage());
+        }
     }
 
-    /**
-     * 设置用户每日免费次数
-     */
     @RequireAdmin
     @PostMapping("/points/set-free-count")
     public Result<Void> setDailyFreeCount(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
+            @Valid @RequestBody AdminSetFreeCountRequest request) {
         
-        Long userId = Long.valueOf(body.get("userId").toString());
-        Integer count = (Integer) body.get("count");
+        adminService.setDailyFreeCount(request.getUserId(), request.getCount());
         
-        adminService.setDailyFreeCount(userId, count);
+        Long adminId = getUserIdFromToken(token);
+        String adminUsername = getUsernameFromToken(token);
+        operationLogService.logSuccess(adminId, adminUsername, "POINTS_MANAGE", 
+                "SET_FREE_COUNT", java.util.Arrays.asList(request.getUserId()), 
+                java.util.Map.of("count", request.getCount()));
         
         return Result.success("设置成功", null);
     }
 
-    // ==================== 会员管理接口 ====================
-
-    /**
-     * 调整用户会员等级
-     */
     @RequireAdmin
     @PostMapping("/membership/update")
     public Result<Void> updateMembership(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
+            @Valid @RequestBody AdminUpdateMembershipRequest request) {
         
-        Long userId = Long.valueOf(body.get("userId").toString());
-        String membership = (String) body.get("membership");
+        adminService.updateMembership(request.getUserId(), request.getMembership());
         
-        adminService.updateMembership(userId, membership);
+        Long adminId = getUserIdFromToken(token);
+        String adminUsername = getUsernameFromToken(token);
+        operationLogService.logSuccess(adminId, adminUsername, "MEMBERSHIP_MANAGE", 
+                "UPDATE_MEMBERSHIP", java.util.Arrays.asList(request.getUserId()), 
+                java.util.Map.of("membership", request.getMembership()));
         
         return Result.success("会员等级调整成功", null);
     }
 
-    /**
-     * 设置会员有效期
-     */
     @RequireAdmin
     @PostMapping("/membership/set-expire-time")
     public Result<Void> setMembershipExpireTime(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
+            @Valid @RequestBody AdminSetMembershipExpireRequest request) {
         
-        Long userId = Long.valueOf(body.get("userId").toString());
-        String expireTimeStr = (String) body.get("expireTime");
-        java.time.LocalDateTime expireTime = java.time.LocalDateTime.parse(expireTimeStr);
+        java.time.LocalDateTime expireTime;
+        try {
+            expireTime = java.time.LocalDateTime.parse(request.getExpireTime());
+        } catch (Exception e) {
+            try {
+                expireTime = java.time.ZonedDateTime.parse(request.getExpireTime()).toLocalDateTime();
+            } catch (Exception ex) {
+                return Result.error(400, "日期格式错误，请使用 yyyy-MM-ddTHH:mm:ss 或 ISO 8601 格式");
+            }
+        }
         
-        adminService.setMembershipExpireTime(userId, expireTime);
+        if (expireTime.isBefore(java.time.LocalDateTime.now())) {
+            return Result.error(400, "会员过期时间不能设置为过去的时间");
+        }
+        
+        java.time.LocalDateTime maxExpireTime = java.time.LocalDateTime.now().plusYears(10);
+        if (expireTime.isAfter(maxExpireTime)) {
+            return Result.error(400, "会员过期时间不能超过10年");
+        }
+        
+        adminService.setMembershipExpireTime(request.getUserId(), expireTime);
+        
+        Long adminId = getUserIdFromToken(token);
+        String adminUsername = getUsernameFromToken(token);
+        operationLogService.logSuccess(adminId, adminUsername, "MEMBERSHIP_MANAGE", 
+                "SET_EXPIRE_TIME", java.util.Arrays.asList(request.getUserId()), 
+                java.util.Map.of("expireTime", request.getExpireTime()));
         
         return Result.success("会员有效期设置成功", null);
     }
 
-    /**
-     * 批量开通会员
-     */
     @RequireAdmin
     @PostMapping("/batch/activate-membership")
     public Result<Map<String, Object>> batchActivateMembership(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody Map<String, Object> body) {
+            @Valid @RequestBody BatchActivateMembershipRequest request) {
         
-        @SuppressWarnings("unchecked")
-        java.util.List<Object> userIdsObj = (java.util.List<Object>) body.get("userIds");
-        String membership = (String) body.get("membership");
-        Integer days = (Integer) body.get("days");
-        
-        if (userIdsObj == null || userIdsObj.isEmpty()) {
-            return Result.error(400, "用户ID列表不能为空");
-        }
-        
-        // 将Object列表转换为Long列表（兼容Integer和Long）
-        java.util.List<Long> userIds = new java.util.ArrayList<>();
-        for (Object obj : userIdsObj) {
-            if (obj instanceof Number) {
-                userIds.add(((Number) obj).longValue());
-            }
-        }
+        java.util.List<Long> userIds = request.getUserIds();
+        String membership = request.getMembership();
+        Integer days = request.getDays();
         
         int successCount = adminService.batchActivateMembership(userIds, membership, days);
+        
+        Long adminId = getUserIdFromToken(token);
+        String adminUsername = getUsernameFromToken(token);
+        operationLogService.logSuccess(adminId, adminUsername, "USER_MANAGE", 
+                "BATCH_ACTIVATE_MEMBERSHIP", userIds, 
+                Map.of("membership", membership, "days", days));
         
         Map<String, Object> data = new java.util.HashMap<>();
         data.put("successCount", successCount);
@@ -472,6 +582,21 @@ public class AdminController {
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
         
+        size = Math.min(size, 200);
+        
+        // 修复 P1-7: 限制最大查询时间范围为90天
+        if (startDate != null && endDate != null) {
+            try {
+                java.time.LocalDate start = java.time.LocalDate.parse(startDate);
+                java.time.LocalDate end = java.time.LocalDate.parse(endDate);
+                if (java.time.temporal.ChronoUnit.DAYS.between(start, end) > 90) {
+                    return Result.error(400, "操作日志查询时间范围不能超过90天");
+                }
+            } catch (Exception e) {
+                return Result.error(400, "日期格式错误");
+            }
+        }
+        
         Map<String, Object> logs = operationLogService.getOperationLogs(
             page, size, adminId, operationType, startDate, endDate);
         
@@ -483,15 +608,13 @@ public class AdminController {
     /**
      * 获取未读通知数量
      */
+    @RequireAdmin
     @GetMapping("/notifications/unread-count")
     public Result<Map<String, Integer>> getUnreadCount(
             @RequestHeader("X-User-Token") String token) {
         
+        // 修复 P2-8: 移除冗余的 userId == null 检查，@RequireAdmin 已保证有效性
         Long userId = getUserIdFromToken(token);
-        if (userId == null) {
-            return Result.error(401, "Token无效或已过期");
-        }
-        
         int count = notificationService.getUnreadCount(userId);
         
         Map<String, Integer> data = new java.util.HashMap<>();
@@ -503,6 +626,7 @@ public class AdminController {
     /**
      * 获取通知列表
      */
+    @RequireAdmin
     @GetMapping("/notifications")
     public Result<?> getNotifications(
             @RequestHeader("X-User-Token") String token,
@@ -511,10 +635,6 @@ public class AdminController {
             @RequestParam(required = false) Integer isRead) {
         
         Long userId = getUserIdFromToken(token);
-        if (userId == null) {
-            return Result.error(401, "Token无效或已过期");
-        }
-        
         Map<String, Object> notifications = notificationService.getNotifications(
             userId, page, size, isRead);
         
@@ -524,16 +644,13 @@ public class AdminController {
     /**
      * 标记通知为已读
      */
+    @RequireAdmin
     @PostMapping("/notifications/{id}/read")
     public Result<Void> markAsRead(
             @RequestHeader("X-User-Token") String token,
             @PathVariable Long id) {
         
         Long userId = getUserIdFromToken(token);
-        if (userId == null) {
-            return Result.error(401, "Token无效或已过期");
-        }
-        
         notificationService.markAsRead(id, userId);
         return Result.success("标记成功", null);
     }
@@ -541,15 +658,12 @@ public class AdminController {
     /**
      * 标记所有通知为已读
      */
+    @RequireAdmin
     @PostMapping("/notifications/read-all")
     public Result<Void> markAllAsRead(
             @RequestHeader("X-User-Token") String token) {
         
         Long userId = getUserIdFromToken(token);
-        if (userId == null) {
-            return Result.error(401, "Token无效或已过期");
-        }
-        
         notificationService.markAllAsRead(userId);
         return Result.success("全部标记成功", null);
     }
@@ -557,16 +671,13 @@ public class AdminController {
     /**
      * 删除通知
      */
+    @RequireAdmin
     @DeleteMapping("/notifications/{id}")
     public Result<Void> deleteNotification(
             @RequestHeader("X-User-Token") String token,
             @PathVariable Long id) {
         
         Long userId = getUserIdFromToken(token);
-        if (userId == null) {
-            return Result.error(401, "Token无效或已过期");
-        }
-        
         boolean deleted = notificationService.deleteNotification(id, userId);
         if (!deleted) {
             return Result.success("通知不存在或已删除", null);
@@ -577,16 +688,13 @@ public class AdminController {
     /**
      * 获取最新未读通知（用于登录时弹窗）
      */
+    @RequireAdmin
     @GetMapping("/notifications/latest")
     public Result<?> getLatestNotifications(
             @RequestHeader("X-User-Token") String token,
             @RequestParam(defaultValue = "5") int limit) {
         
         Long userId = getUserIdFromToken(token);
-        if (userId == null) {
-            return Result.error(401, "Token无效或已过期");
-        }
-        
         java.util.List<com.ai.gateway.entity.UserNotification> notifications = notificationService.getLatestNotifications(userId, limit);
         return Result.success(notifications);
     }
@@ -606,7 +714,7 @@ public class AdminController {
         java.time.LocalDate start = java.time.LocalDate.parse(startDate);
         java.time.LocalDate end = java.time.LocalDate.parse(endDate);
         
-        java.util.List<com.ai.gateway.entity.PlatformStatistics> stats = statisticsService.getDailyStats(start, end);
+        java.util.List<com.ai.gateway.entity.DailyStatistics> stats = statisticsService.getDailyStats(start, end);
         
         return Result.success(stats);
     }
@@ -649,25 +757,51 @@ public class AdminController {
             @RequestParam String endDate,
             jakarta.servlet.http.HttpServletResponse response) {
         
+        Long adminId = getUserIdFromToken(token);
+        String adminUsername = getUsernameFromToken(token);
+        
+        java.time.LocalDate start;
+        java.time.LocalDate end;
         try {
-            // 验证参数
-            if (!"user".equals(type) && !"revenue".equals(type) && !"business".equals(type)) {
+            start = java.time.LocalDate.parse(startDate);
+            end = java.time.LocalDate.parse(endDate);
+            if (java.time.temporal.ChronoUnit.DAYS.between(start, end) > 365) {
                 response.setStatus(400);
-                response.getWriter().write("{\"code\":400,\"message\":\"无效的报表类型\"}");
+                response.getWriter().write("{\"code\":400,\"message\":\"导出时间范围不能超过 1 年\"}");
                 return;
             }
-            
-            String csvData = statisticsService.exportStatsToCsv(
-                java.time.LocalDate.parse(startDate),
-                java.time.LocalDate.parse(endDate),
-                type
-            );
+        } catch (Exception e) {
+            log.error("日期解析失败", e);
+            try {
+                response.setStatus(400);
+                response.getWriter().write("{\"code\":400,\"message\":\"日期格式错误\"}");
+            } catch (Exception ex) {
+                log.error("写入错误响应失败", ex);
+            }
+            return;
+        }
+
+        if (!"user".equals(type) && !"revenue".equals(type) && !"business".equals(type)) {
+            try {
+                response.setStatus(400);
+                response.getWriter().write("{\"code\":400,\"message\":\"无效的报表类型\"}");
+            } catch (Exception e) {
+                log.error("写入错误响应失败", e);
+            }
+            return;
+        }
+        
+        try {
+            String csvData = statisticsService.exportStatsToCsv(start, end, type);
             
             response.setContentType("text/csv;charset=UTF-8");
             response.setHeader("Content-Disposition", 
                 "attachment; filename=" + type + "_stats_" + startDate + "_" + endDate + ".csv");
             response.getOutputStream().write(csvData.getBytes("UTF-8"));
             response.getOutputStream().flush();
+            
+            operationLogService.logSuccess(adminId, adminUsername, "STATISTICS_MANAGE", 
+                    "EXPORT_STATS", null, java.util.Map.of("type", type, "startDate", startDate, "endDate", endDate));
             
         } catch (Exception e) {
             log.error("导出统计报表失败", e);
@@ -677,6 +811,13 @@ public class AdminController {
             } catch (Exception ex) {
                 log.error("写入错误响应失败", ex);
             }
+            
+            try {
+                operationLogService.logFailure(adminId, adminUsername, "STATISTICS_MANAGE", 
+                        "EXPORT_STATS", null, java.util.Map.of("type", type, "startDate", startDate, "endDate", endDate), e.getMessage());
+            } catch (Exception ex) {
+                log.error("记录失败日志异常", ex);
+            }
         }
     }
 
@@ -684,5 +825,41 @@ public class AdminController {
 
     private Long getUserIdFromToken(String token) {
         return tokenService.getUserIdFromToken(token);
+    }
+
+    private String getUsernameFromToken(String token) {
+        try {
+            Long userId = tokenService.getUserIdFromToken(token);
+            if (userId != null) {
+                com.ai.gateway.entity.User user = userService.getUserEntityById(userId);
+                return user != null ? user.getUsername() : "Unknown_Admin";
+            }
+        } catch (Exception e) {
+            log.warn("从token获取用户名失败: {}", e.getMessage());
+        }
+        return "Unknown_Admin";
+    }
+
+    // ==================== 缓存辅助方法 ====================
+
+    private SystemStatsVO getCachedStats(String key) {
+        try {
+            String json = redisTemplate.opsForValue().get(key);
+            if (json != null) {
+                return new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, SystemStatsVO.class);
+            }
+        } catch (Exception e) {
+            log.warn("读取统计缓存失败: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private void cacheStats(String key, SystemStatsVO stats, long timeout, TimeUnit unit) {
+        try {
+            String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(stats);
+            redisTemplate.opsForValue().set(key, json, timeout, unit);
+        } catch (Exception e) {
+            log.error("写入统计缓存失败: {}", e.getMessage());
+        }
     }
 }

@@ -28,6 +28,67 @@
 
 **注意**: 请勿直接运行旧的 `testdata_large.sql`，它包含大量已过时的表结构引用。
 
+## 核心表结构说明
+
+### 1. platform_model_config (平台对话模型配置)
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `id` | bigint | 主键 ID |
+| `display_name` | varchar(64) | 前端展示的模型名称（如 GPT-4o） |
+| `actual_model` | varchar(64) | 实际调用的底层模型名（如 deepseek-v4-pro） |
+| `fixed_points` | decimal(10,3) | 每次对话消耗的固定点数 |
+| `provider` | varchar(32) | 关联的 AI 厂商标识 |
+| `base_url` | varchar(256) | 厂商 API 的基础地址 |
+| `api_key` | varchar(128) | 平台持有的该厂商 API Key |
+| `sort_order` | int | 前端展示排序权重 |
+| `status` | tinyint | 状态：1-启用，0-禁用 |
+
+### 2. marketplace_provider (模型商店厂商)
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `id` | bigint | 主键 ID |
+| `provider_name` | varchar(32) | 厂商名称（如 OpenAI, Anthropic） |
+| `base_url` | varchar(256) | API基础地址 |
+| `platform_api_key` | varchar(128) | 平台持有的厂商 Key |
+| `input_price` | decimal(10,6) | 每千输入Token价格（元） |
+| `output_price` | decimal(10,6) | 每千输出Token价格（元） |
+| `status` | tinyint | 状态：1-上架，0-下架 |
+
+### 3. package_template (套餐模板)
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `id` | bigint | 主键 ID |
+| `package_code` | varchar(32) | 套餐代码（唯一标识） |
+| `package_name` | varchar(64) | 套餐名称 |
+| `description` | varchar(500) | 套餐描述 |
+| `identity_label` | varchar(32) | 身份标识（如：至尊、尊享） |
+| `points` | decimal(10,3) | 包含点数 |
+| `price` | decimal(10,2) | 价格（元） |
+| `duration_days` | int | 有效期天数（NULL表示永久） |
+| `daily_call_limit` | int | 每日调用限制 |
+| `monthly_call_limit` | int | 每月调用限制 |
+| `max_tokens_per_call` | int | 单次最大Token数 |
+| `priority_level` | int | 优先级等级 |
+| `features` | text | 特性说明（JSON格式） |
+| `status` | tinyint | 状态：1-上架，0-下架 |
+| `sort_order` | int | 排序顺序 |
+
+### 4. admin_operation_log (管理员操作日志)
+| 字段名 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `id` | bigint | 主键 ID |
+| `admin_id` | bigint | 管理员ID |
+| `admin_username` | varchar(64) | 管理员用户名 |
+| `operation_type` | varchar(32) | 操作类型（USER_MANAGE/POINTS_MANAGE等） |
+| `operation_action` | varchar(64) | 操作动作（RECHARGE/BAN等） |
+| `target_user_ids` | text | 目标用户ID列表（JSON数组） |
+| `operation_detail` | text | 操作详情（JSON格式） |
+| `ip_address` | varchar(64) | 操作IP地址 |
+| `user_agent` | varchar(512) | 浏览器标识 |
+| `result` | varchar(16) | 操作结果（SUCCESS/FAILED） |
+| `error_message` | text | 错误信息 |
+| `create_time` | datetime | 操作时间 |
+
 ## 脚本功能详解
 
 ### 1. init_db.sh / init_local_db.sh (环境初始化)
@@ -38,7 +99,7 @@
 1. 检查 MySQL 连接状态
 2. 创建 `ai_gateway` 数据库
 3. 导入 `schema.sql` 定义的所有表结构和索引
-4. 验证表数量是否正确（预期 20+ 张表）
+4. 验证表数量是否正确（预期 23 张表）
 
 ### 2. init_data.sql (数据初始化)
 

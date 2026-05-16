@@ -5,6 +5,7 @@ import cn.hutool.http.HttpResponse;
 import com.ai.gateway.common.Constants;
 import com.ai.gateway.dto.ChatRequest;
 import com.ai.gateway.entity.CallLog;
+import com.ai.gateway.entity.PlatformModelConfig;
 import com.ai.gateway.exception.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,17 +29,6 @@ import java.util.concurrent.Executor;
 @Slf4j
 @Service
 public class OpenAiChatService {
-
-    // 修复：虚拟模型映射 - 前端展示模型 -> 实际调用 DeepSeek 模型
-    private static final Map<String, String> MODEL_NAME_MAPPING = Map.of(
-        "gpt-4o", "deepseek-v4-pro",
-        "gpt-4-turbo", "deepseek-v4-pro",
-        "claude-3-opus", "deepseek-v4-pro",
-        "claude-3-sonnet", "deepseek-v4-flash",
-        "gemini-1.5-pro", "deepseek-v4-flash",
-        "deepseek-v4-pro", "deepseek-v4-pro",
-        "deepseek-v4-flash", "deepseek-v4-flash"
-    );
 
     private static final String SYSTEM_PROMPT = "你是一个智能助手。在回答代码、技术文档或复杂逻辑时，请务必使用 Markdown 格式（包括代码块和 Mermaid 流程图）。对于简单的日常对话或简短问答，请直接自然回复，无需强制使用 Markdown。";
 
@@ -91,9 +81,8 @@ public class OpenAiChatService {
         }
 
         try {
-            Map<String, Object> requestBody = buildRequestBody(request, config.format);
-            // 修复 P0-1: 确保请求体中使用的是数据库配置的实际模型名
-            requestBody.put("model", config.model);
+            // 修复 P0-1: 将 config 传入 buildRequestBody，确保使用 actualModel
+            Map<String, Object> requestBody = buildRequestBody(request, config);
 
             HttpResponse response = HttpRequest.post(config.baseUrl)
                     .header("Authorization", "Bearer " + config.apiKey)
@@ -223,7 +212,8 @@ public class OpenAiChatService {
 
         CompletableFuture.runAsync(() -> {
             try {
-                Map<String, Object> requestBody = buildRequestBody(request, config.format);
+                // 修复 P0-1: 流式请求同样使用 actualModel
+                Map<String, Object> requestBody = buildRequestBody(request, config);
                 requestBody.put("stream", true);
 
                 HttpResponse response = HttpRequest.post(config.baseUrl)
@@ -316,7 +306,7 @@ public class OpenAiChatService {
     private ChatConfig resolveChatConfig(ChatRequest request, Long userId) {
         String modelName = request.getModel();
         
-        // 修复 P0-4: 从数据库读取映射配置，而不是硬编码
+        // 修复 P0-4: 从数据库读取映射配置
         PlatformModelConfig config = platformModelService.getByDisplayName(modelName);
         if (config == null || config.getStatus() != 1) {
             throw new BusinessException("模型不存在或已禁用: " + modelName);
@@ -332,24 +322,6 @@ public class OpenAiChatService {
         );
     }
 
-    private String resolveCustomBaseUrl(String baseUrl, String model) {
-        if (baseUrl == null) return "https://api.openai.com/v1/chat/completions";
-        // 修复 P1-6: 使用 URI 规范处理路径，防止多重斜杠或路径缺失
-        try {
-            java.net.URI uri = new java.net.URI(baseUrl);
-            String path = uri.getPath();
-            if (path == null || path.isEmpty()) {
-                path = "/v1/chat/completions";
-            } else if (!path.endsWith("/chat/completions")) {
-                path = path.replaceAll("/$", "") + "/v1/chat/completions";
-            }
-            return new java.net.URI(uri.getScheme(), uri.getAuthority(), path, null, null).toString();
-        } catch (Exception e) {
-            log.warn("URL解析失败，使用默认拼接: {}", baseUrl);
-            return baseUrl.replaceAll("/$", "") + "/v1/chat/completions";
-        }
-    }
-
     private String resolveProviderFormat(String provider) {
         return "anthropic".equalsIgnoreCase(provider) ? "anthropic" : "openai";
     }
@@ -360,12 +332,13 @@ public class OpenAiChatService {
         return platformModelService.getModelPointsCost(config.modelConfig);
     }
 
-    private Map<String, Object> buildRequestBody(ChatRequest request, String format) {
+    /**
+     * 构建请求体（修复 P0-1: 直接使用 ChatConfig 中的实际模型名）
+     */
+    private Map<String, Object> buildRequestBody(ChatRequest request, ChatConfig config) {
         Map<String, Object> requestBody = new HashMap<>();
-        // 修复 P0-1: 直接使用 resolveChatConfig 中解析好的 actualModel，避免硬编码映射冲突
-        // 注意：这里需要稍微调整结构，让 actualModel 能传进来，或者在 ChatConfig 里存好
-        // 由于 ChatConfig 已经包含了 modelConfig，我们直接取用
-        requestBody.put("model", request.getModel()); // 这里的 model 应该是经过 resolveChatConfig 处理后的
+        // 关键修复：使用 config.model (actualModel) 而不是 request.getModel() (displayName)
+        requestBody.put("model", config.model);
         
         List<ChatRequest.ChatMessage> messages = new ArrayList<>(request.getMessages());
         boolean hasSystemMessage = messages.stream().anyMatch(msg -> "system".equals(msg.getRole()));
@@ -380,7 +353,7 @@ public class OpenAiChatService {
         if (request.getMaxTokens() != null) {
             requestBody.put("max_tokens", request.getMaxTokens());
         }
-        if (request.getTemperature() != null && !"anthropic".equalsIgnoreCase(format)) {
+        if (request.getTemperature() != null && !"anthropic".equalsIgnoreCase(config.format)) {
             requestBody.put("temperature", request.getTemperature());
         }
         return requestBody;

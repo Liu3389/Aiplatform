@@ -199,7 +199,7 @@ public class NotificationService {
         wrapper.eq(UserNotification::getUserId, userId)
                .eq(UserNotification::getIsRead, 0)
                .orderByDesc(UserNotification::getCreateTime)
-               .last("LIMIT " + limit);
+               .last("LIMIT " + Math.min(Math.max(limit, 1), 100));
         
         return notificationMapper.selectList(wrapper);
     }

@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
@@ -16,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class TokenService {
 
     private static final String TOKEN_PREFIX = "ai_gateway:token:";
@@ -26,12 +28,23 @@ public class TokenService {
     private static final long LOGIN_LOCK_MINUTES = 15;
 
     // 修复 P1-13: 从配置文件读取 AES 密钥，避免硬编码
-    @Value("${security.aes-key:AiGateway2026Key}")
+    @Value("${security.aes-key:}")
     private String aesKey;
 
     private final RedisTemplate<String, String> redisTemplate;
     private final UserService userService;
     private final SessionService sessionService;
+
+    public void validateAesKey() {
+        if (aesKey == null || aesKey.isEmpty() || "AiGateway2026Key".equals(aesKey)) {
+            throw new IllegalStateException("AES 密钥未配置，请设置 security.aes-key");
+        }
+    }
+
+    @PostConstruct
+    public void init() {
+        validateAesKey();
+    }
 
     // === Token Management ===
 

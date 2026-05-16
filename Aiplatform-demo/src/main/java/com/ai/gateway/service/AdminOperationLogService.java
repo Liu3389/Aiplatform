@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -27,8 +28,9 @@ public class AdminOperationLogService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * 记录管理员操作日志
+     * 记录管理员操作日志（异步执行，提升响应速度）
      */
+    @Async("logExecutor")
     public void logOperation(Long adminId, String adminUsername, String operationType, 
                             String operationAction, List<Long> targetUserIds, 
                             Map<String, Object> detail, String result, String errorMessage) {

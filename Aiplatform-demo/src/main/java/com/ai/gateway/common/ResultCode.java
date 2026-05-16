@@ -83,7 +83,52 @@ public enum ResultCode {
     /**
      * 模型已禁用
      */
-    MODEL_DISABLED(403, "模型已禁用");
+    MODEL_DISABLED(403, "模型已禁用"),
+
+    /**
+     * 点数不足
+     */
+    INSUFFICIENT_POINTS(40001, "点数不足"),
+
+    /**
+     * 优惠券不存在
+     */
+    COUPON_NOT_FOUND(40002, "优惠券不存在"),
+
+    /**
+     * 优惠券已使用
+     */
+    COUPON_ALREADY_USED(40003, "优惠券已使用"),
+
+    /**
+     * 优惠券已过期
+     */
+    COUPON_EXPIRED(40004, "优惠券已过期"),
+
+    /**
+     * 套餐不存在
+     */
+    PACKAGE_NOT_FOUND(40005, "套餐不存在"),
+
+    /**
+     * 套餐已下架
+     */
+    PACKAGE_OFFLINE(40006, "套餐已下架"),
+
+    /**
+     * 活跃订阅存在
+     */
+    ACTIVE_SUBSCRIPTION_EXISTS(40007, "存在活跃订阅，无法操作"),
+
+    /**
+     * 重复操作
+     */
+    DUPLICATE_OPERATION(40008, "请勿重复操作"),
+
+    /**
+     * 权限不足
+     */
+    PERMISSION_DENIED(40009, "权限不足");
 
     private final Integer code;
     private final String message;

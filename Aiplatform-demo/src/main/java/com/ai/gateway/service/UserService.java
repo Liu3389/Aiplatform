@@ -60,12 +60,13 @@ public class UserService {
         if (existingUser != null) {
             throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "用户名已存在");
         }
-
+                
         User user = new User();
         user.setUsername(request.getUsername());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setEmail(request.getEmail());
         user.setBalance(BigDecimal.ZERO);
+        user.setPoints(BigDecimal.ZERO); // 修复 P0-1: 初始化点数
         user.setStatus(1);
         user.setRole("USER");
         user.setFreeApiStrategy("NONE");
@@ -557,7 +558,7 @@ public class UserService {
         wrapper.eq(PointsBill::getUserId, userId)
                .eq(PointsBill::getChangeType, "RECHARGE")
                .orderByDesc(PointsBill::getCreateTime)
-               .last("LIMIT " + size + " OFFSET " + offset);
+               .last("LIMIT " + Math.min(Math.max(size, 1), 100) + " OFFSET " + Math.max(offset, 0));
         
         List<PointsBill> rechargeBills = pointsBillMapper.selectList(wrapper);
         

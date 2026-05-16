@@ -1,7 +1,9 @@
 package com.ai.gateway.service;
 
 import com.ai.gateway.entity.PackageTemplate;
+import com.ai.gateway.entity.UserSubscription;
 import com.ai.gateway.mapper.PackageTemplateMapper;
+import com.ai.gateway.mapper.UserSubscriptionMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +21,7 @@ import java.util.List;
 public class PackageTemplateService {
 
     private final PackageTemplateMapper packageTemplateMapper;
+    private final UserSubscriptionMapper userSubscriptionMapper;
 
     /**
      * 获取所有上架的套餐列表
@@ -26,16 +29,15 @@ public class PackageTemplateService {
     public List<PackageTemplate> listActivePackages() {
         LambdaQueryWrapper<PackageTemplate> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PackageTemplate::getStatus, 1)
+               .ne(PackageTemplate::getStatus, -1)
                .orderByAsc(PackageTemplate::getSortOrder);
         return packageTemplateMapper.selectList(wrapper);
     }
 
-    /**
-     * 获取所有套餐（包括下架的）
-     */
     public List<PackageTemplate> listAllPackages() {
         LambdaQueryWrapper<PackageTemplate> wrapper = new LambdaQueryWrapper<>();
-        wrapper.orderByAsc(PackageTemplate::getSortOrder);
+        wrapper.ne(PackageTemplate::getStatus, -1)
+               .orderByAsc(PackageTemplate::getSortOrder);
         return packageTemplateMapper.selectList(wrapper);
     }
 
@@ -98,11 +100,31 @@ public class PackageTemplateService {
     }
 
     /**
-     * 删除套餐模板
+     * 删除套餐模板（软删除：status=-1，仅当无活跃订阅时允许）
      */
     @Transactional(rollbackFor = Exception.class)
     public void deletePackage(Long id) {
-        packageTemplateMapper.deleteById(id);
-        log.info("删除套餐模板: id={}", id);
+        PackageTemplate template = packageTemplateMapper.selectById(id);
+        if (template == null) {
+            throw new RuntimeException("套餐不存在");
+        }
+        if (template.getStatus() == -1) {
+            throw new RuntimeException("套餐已下架");
+        }
+
+        LambdaQueryWrapper<UserSubscription> subWrapper = new LambdaQueryWrapper<>();
+        subWrapper.eq(UserSubscription::getPackageCode, template.getPackageCode())
+                  .eq(UserSubscription::getStatus, "ACTIVE");
+        Long activeCount = userSubscriptionMapper.selectCount(subWrapper);
+        if (activeCount > 0) {
+            throw new RuntimeException("该套餐下存在 " + activeCount + " 个活跃订阅，无法下架");
+        }
+
+        PackageTemplate update = new PackageTemplate();
+        update.setId(id);
+        update.setStatus(-1);
+        update.setUpdateTime(java.time.LocalDateTime.now());
+        packageTemplateMapper.updateById(update);
+        log.info("套餐软删除: id={}, code={}", id, template.getPackageCode());
     }
 }
