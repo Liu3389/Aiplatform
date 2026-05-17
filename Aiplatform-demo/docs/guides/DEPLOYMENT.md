@@ -90,7 +90,7 @@ mysql -u root -p ai_gateway < src/main/resources/sql/schema.sql
 ```sql
 USE ai_gateway;
 SHOW TABLES;
-SELECT * FROM model_config;
+SELECT * FROM platform_model_config;
 ```
 
 ## 三、应用配置

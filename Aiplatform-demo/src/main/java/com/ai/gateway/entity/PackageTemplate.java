@@ -38,39 +38,70 @@ public class PackageTemplate implements Serializable {
     private String description;
 
     /**
-     * 身份标识（如：至尊、尊享、畅享）
+     * 身份标识（如：普通用户、白银会员、黄金会员、钻石会员）
      */
     private String identityLabel;
 
     /**
-     * 包含点数
+     * 开通赠送点数（永久有效）
      */
-    private BigDecimal points;
+    private BigDecimal pointsGranted;
 
     /**
-     * 价格（元）
+     * 每日发放点数（限时，当日有效）
      */
-    private BigDecimal price;
+    private BigDecimal dailyPoints;
 
     /**
-     * 有效期天数（NULL表示永久）
+     * 月付价格（元）
      */
-    private Integer durationDays;
+    private BigDecimal priceMonthly;
+
+    /**
+     * 季付价格（元）
+     */
+    private BigDecimal priceQuarterly;
+
+    /**
+     * 年付价格（元）
+     */
+    private BigDecimal priceYearly;
 
     /**
      * 每日调用限制（0表示无限制）
+     * @deprecated 已取消次数限制，改用点数控制
      */
+    @Deprecated
     private Integer dailyCallLimit;
 
     /**
      * 每月调用限制（0表示无限制）
+     * @deprecated 已取消次数限制，改用点数控制
      */
+    @Deprecated
     private Integer monthlyCallLimit;
 
     /**
-     * 单次最大Token数（0表示无限制）
+     * 单次最大Token数（向后兼容）
+     * @deprecated 使用 maxInputTokens 和 maxOutputTokens 替代
      */
+    @Deprecated
     private Integer maxTokensPerCall;
+
+    /**
+     * 单次最大输入Token数（0表示无限制）
+     */
+    private Integer maxInputTokens;
+
+    /**
+     * 单次最大输出Token数（0表示无限制）
+     */
+    private Integer maxOutputTokens;
+
+    /**
+     * 模型访问等级（0-基础，1-中端，2-高端，3-全部）
+     */
+    private Integer modelAccessLevel;
 
     /**
      * 优先级等级（数字越大优先级越高）

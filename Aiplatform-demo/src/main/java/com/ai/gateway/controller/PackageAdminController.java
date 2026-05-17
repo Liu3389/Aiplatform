@@ -78,11 +78,14 @@ public class PackageAdminController {
             @RequestBody PackageTemplate template) {
         
         // 修复 P1-2: 验证套餐价格和点数合理性
-        if (template.getPrice() == null || template.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
-            return Result.error(400, "套餐价格必须大于 0");
+        if (template.getPriceMonthly() == null || template.getPriceMonthly().compareTo(BigDecimal.ZERO) < 0) {
+            return Result.error(400, "月付价格不能为负数");
         }
-        if (template.getPoints() != null && template.getPoints().compareTo(BigDecimal.ZERO) < 0) {
-            return Result.error(400, "套餐点数不能为负数");
+        if (template.getPointsGranted() != null && template.getPointsGranted().compareTo(BigDecimal.ZERO) < 0) {
+            return Result.error(400, "开通赠送点数不能为负数");
+        }
+        if (template.getDailyPoints() != null && template.getDailyPoints().compareTo(BigDecimal.ZERO) < 0) {
+            return Result.error(400, "每日点数不能为负数");
         }
         
         try {

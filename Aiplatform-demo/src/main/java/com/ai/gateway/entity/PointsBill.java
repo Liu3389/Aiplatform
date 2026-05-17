@@ -77,4 +77,9 @@ public class PointsBill implements Serializable {
      * 备注
      */
     private String remark;
+
+    /**
+     * 是否限时点数（1-限时/每日发放，0-永久/充值赠送）
+     */
+    private Integer isTemporary;
 }

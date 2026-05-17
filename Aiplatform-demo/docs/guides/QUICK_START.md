@@ -243,7 +243,7 @@ SELECT id, name, user_id, rate_limit, status FROM api_key;
 
 ### 查看模型配置
 ```sql
-SELECT model_name, provider, input_price, output_price, points_mode, status FROM model_config;
+SELECT display_name, provider, fixed_points, supports_vision, access_level, status FROM platform_model_config;
 ```
 
 ### 重置测试数据（谨慎使用！）

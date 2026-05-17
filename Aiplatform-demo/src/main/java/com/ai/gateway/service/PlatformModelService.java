@@ -13,7 +13,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
@@ -116,5 +118,45 @@ public class PlatformModelService {
         } catch (Exception e) {
             log.error("模型配置缓存预热失败", e);
         }
+    }
+
+    /**
+     * 获取用户可用的模型列表（含权限信息）
+     * @param userAccessLevel 用户模型访问等级（0-基础，1-中端，2-高端，3-全部）
+     * @return 带权限标记的模型列表
+     */
+    public List<Map<String, Object>> getAvailableModels(int userAccessLevel) {
+        List<PlatformModelConfig> allModels = listEnabledModels();
+        String[] levelNames = {"", "白银会员", "黄金会员", "钻石会员"};
+
+        return allModels.stream().map(model -> {
+            Map<String, Object> item = new HashMap<>();
+            item.put("modelId", model.getId());
+            item.put("displayName", model.getDisplayName());
+            item.put("modelCode", model.getActualModel());
+            item.put("provider", model.getProvider());
+            item.put("fixedPoints", model.getFixedPoints());
+            item.put("supportsVision", model.getSupportsVision());
+            item.put("sortOrder", model.getSortOrder());
+
+            Integer requiredLevel = model.getAccessLevel() != null ? model.getAccessLevel() : 0;
+            boolean accessible = userAccessLevel >= requiredLevel;
+            item.put("accessible", accessible);
+            item.put("requiredLevel", requiredLevel);
+
+            if (requiredLevel > 0 && requiredLevel <= 3) {
+                item.put("requiredLevelName", levelNames[requiredLevel]);
+            } else {
+                item.put("requiredLevelName", null);
+            }
+
+            if (!accessible && requiredLevel > 0 && requiredLevel <= 3) {
+                item.put("upgradeHint", "升级至" + levelNames[requiredLevel] + "即可使用 " + model.getDisplayName());
+            } else {
+                item.put("upgradeHint", null);
+            }
+
+            return item;
+        }).collect(java.util.stream.Collectors.toList());
     }
 }

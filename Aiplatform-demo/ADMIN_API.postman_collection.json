@@ -1181,14 +1181,14 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"packageCode\": \"vip\",\n  \"packageName\": \"VIP套餐\",\n  \"description\": \"高级VIP套餐\",\n  \"identityLabel\": \"至尊会员\",\n  \"points\": 1000,\n  \"price\": 199.9,\n  \"durationDays\": 30,\n  \"dailyCallLimit\": 500,\n  \"monthlyCallLimit\": 15000,\n  \"maxTokensPerCall\": 16384,\n  \"priorityLevel\": 2,\n  \"features\": \"{\\\"support\\\":\\\"专属技术支持\\\"}\",\n  \"sortOrder\": 5\n}"
+              "raw": "{\n  \"packageCode\": \"silver\",\n  \"packageName\": \"白银月卡会员\",\n  \"description\": \"适合个人开发者日常使用\",\n  \"identityLabel\": \"白银会员\",\n  \"pointsGranted\": 600,\n  \"dailyPoints\": 80,\n  \"priceMonthly\": 15.00,\n  \"priceQuarterly\": 40.00,\n  \"priceYearly\": 100.00,\n  \"maxInputTokens\": 12000,\n  \"maxOutputTokens\": 12000,\n  \"modelAccessLevel\": 1,\n  \"priorityLevel\": 1,\n  \"features\": \"{\\\"desc\\\":\\\"每日30限时+80永久点数\\\"}\",\n  \"sortOrder\": 2\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/packages/create",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "packages", "create"]
             },
-            "description": "创建新的套餐模板\n\n⚠️ 重要说明：\n- 套餐代码（packageCode）必须唯一\n- 越贵的套餐应该设置更高的性价比（每元获得的点数更多）\n- 套餐一旦创建，用户即可购买\n\n关键字段：\n- packageCode: 套餐代码（必填，唯一标识），例如：basic/premium/ultimate\n- packageName: 套餐名称（必填），例如：基础版/专业版/旗舰版\n- identityLabel: 身份标识（可选），例如：畅享会员/尊享会员/至尊会员\n- points: 包含点数（必填），用户购买后获得的点数\n- price: 价格（必填），单位：元\n- durationDays: 有效期天数（可选），NULL表示永久\n- dailyCallLimit: 每日调用限制（可选），0表示无限制\n- monthlyCallLimit: 每月调用限制（可选），0表示无限制\n- maxTokensPerCall: 单次最大Token数（可选），0表示无限制\n- priorityLevel: 优先级等级（可选），数字越大优先级越高\n- features: 特性说明（可选），JSON格式\n- sortOrder: 排序顺序（可选），数字越小越靠前\n\n示例（体现越贵越划算）：\n- 基础版: 29.9元 = 100点 (每元3.34点)\n- 专业版: 99.9元 = 500点 (每元5.01点) ✅\n- 旗舰版: 299.9元 = 2000点 (每元6.67点) ✅✅"
+            "description": "创建新的套餐模板\n\n⚠️ 重要说明：\n- 套餐代码（packageCode）必须唯一\n- 套餐一旦创建，用户即可购买\n\n关键字段：\n- packageCode: 套餐代码（必填，唯一标识），例如：free/silver/gold/diamond\n- packageName: 套餐名称（必填），例如：免费普通用户/白银月卡会员\n- identityLabel: 身份标识（可选），例如：普通用户/白银会员/黄金会员/钻石会员\n- pointsGranted: 开通赠送点数-永久有效（必填）\n- dailyPoints: 每日发放永久点数（必填），免费套餐为30限时点数\n- priceMonthly: 月付价格（必填），单位：元\n- priceQuarterly: 季付价格（可选），9折\n- priceYearly: 年付价格（可选），7折\n- maxInputTokens: 单次最大输入Token数（可选），0表示无限制\n- maxOutputTokens: 单次最大输出Token数（可选），0表示无限制\n- modelAccessLevel: 模型访问等级（必填），0-基础/1-中端/2-高端/3-全部\n- priorityLevel: 优先级等级（可选），数字越大优先级越高\n- features: 特性说明（可选），JSON格式\n- sortOrder: 排序顺序（可选），数字越小越靠前\n\n示例：\n- free: 免费普通用户，每日30限时点数，accessLevel=0\n- silver: 白银月卡会员，每日30限时+80永久点数，accessLevel=1\n- gold: 黄金进阶会员，每日30限时+150永久点数，accessLevel=2\n- diamond: 钻石旗舰会员，每日30限时+300永久点数，accessLevel=3"
           },
           "response": []
         },
@@ -1208,14 +1208,14 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"id\": 1,\n  \"packageName\": \"升级版套餐\",\n  \"price\": 299.9,\n  \"points\": 1500\n}"
+              "raw": "{\n  \"id\": 1,\n  \"packageName\": \"白银月卡会员（升级）\",\n  \"pointsGranted\": 800,\n  \"dailyPoints\": 100,\n  \"priceMonthly\": 18.00\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/admin/packages/update",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "packages", "update"]
             },
-            "description": "更新套餐模板信息\n\n⚠️ 注意事项：\n- 只能更新部分字段，不能修改 packageCode\n- 修改价格和点数会影响新购买的用戶\n- 已购买的订阅不受影响\n\n可更新字段：\n- id: 套餐ID（必填）\n- packageName: 套餐名称\n- description: 套餐描述\n- identityLabel: 身份标识\n- points: 包含点数\n- price: 价格\n- durationDays: 有效期天数\n- dailyCallLimit: 每日调用限制\n- monthlyCallLimit: 每月调用限制\n- maxTokensPerCall: 单次最大Token数\n- priorityLevel: 优先级等级\n- features: 特性说明\n- status: 状态（0-下架，1-上架）\n- sortOrder: 排序顺序\n\n建议：\n- 调整价格时保持“越贵越划算”的原则\n- 下架套餐前确认没有活跃订阅"
+            "description": "更新套餐模板信息\n\n⚠️ 注意事项：\n- 只能更新部分字段，不能修改 packageCode\n- 修改价格和点数会影响新购买的用户\n- 已购买的订阅不受影响\n\n可更新字段：\n- id: 套餐ID（必填）\n- packageName: 套餐名称\n- description: 套餐描述\n- identityLabel: 身份标识\n- pointsGranted: 开通赠送点数（永久有效）\n- dailyPoints: 每日发放永久点数\n- priceMonthly: 月付价格\n- priceQuarterly: 季付价格\n- priceYearly: 年付价格\n- maxInputTokens: 单次最大输入Token数\n- maxOutputTokens: 单次最大输出Token数\n- modelAccessLevel: 模型访问等级\n- priorityLevel: 优先级等级\n- features: 特性说明\n- status: 状态（0-下架，1-上架）\n- sortOrder: 排序顺序\n\n建议：\n- 调整价格时保持套餐层级定价合理性\n- 下架套餐前确认没有活跃订阅"
           },
           "response": []
         },

@@ -95,6 +95,7 @@ CREATE TABLE `platform_model_config` (
   `sort_order` int DEFAULT 0 COMMENT '前端展示排序',
   `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：0-禁用，1-启用',
   `supports_vision` tinyint NOT NULL DEFAULT 0 COMMENT '是否支持图片：0-不支持，1-支持',
+  `access_level` int DEFAULT 0 COMMENT '所需会员等级（0-基础，1-中端，2-高端，3-全部）',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
@@ -157,12 +158,14 @@ CREATE TABLE `package_template` (
   `package_name` VARCHAR(64) NOT NULL COMMENT '套餐名称',
   `description` VARCHAR(500) DEFAULT NULL COMMENT '套餐描述',
   `identity_label` VARCHAR(32) DEFAULT NULL COMMENT '身份标识',
-  `points` DECIMAL(10,3) NOT NULL DEFAULT 0 COMMENT '包含点数',
-  `price` DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '价格（元）',
-  `duration_days` INT DEFAULT NULL COMMENT '有效期天数（NULL表示永久）',
-  `daily_call_limit` INT DEFAULT 0 COMMENT '每日调用限制',
-  `monthly_call_limit` INT DEFAULT 0 COMMENT '每月调用限制',
-  `max_tokens_per_call` INT DEFAULT 0 COMMENT '单次最大Token数',
+  `points_granted` DECIMAL(10,3) NOT NULL DEFAULT 0 COMMENT '开通赠送点数（永久有效）',
+  `daily_points` DECIMAL(10,3) NOT NULL DEFAULT 0 COMMENT '每日发放永久点数（付费会员可叠加）',
+  `price_monthly` DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '月付价格（元）',
+  `price_quarterly` DECIMAL(10,2) DEFAULT NULL COMMENT '季付价格（元）',
+  `price_yearly` DECIMAL(10,2) DEFAULT NULL COMMENT '年付价格（元）',
+  `max_input_tokens` INT DEFAULT 0 COMMENT '单次最大输入Token数（0表示无限制）',
+  `max_output_tokens` INT DEFAULT 0 COMMENT '单次最大输出Token数（0表示无限制）',
+  `model_access_level` INT DEFAULT 0 COMMENT '模型访问等级（0-基础，1-中端，2-高端，3-全部）',
   `priority_level` INT DEFAULT 0 COMMENT '优先级等级',
   `features` TEXT DEFAULT NULL COMMENT '特性说明（JSON格式）',
   `status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：0-下架，1-上架',
@@ -274,6 +277,7 @@ CREATE TABLE `points_bill` (
   `model_name` VARCHAR(100) DEFAULT NULL COMMENT '模型名称',
   `expire_time` DATETIME DEFAULT NULL COMMENT '点数过期时间',
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
+  `is_temporary` TINYINT NOT NULL DEFAULT 0 COMMENT '是否限时点数（1-限时/每日发放，0-永久/充值赠送）',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
@@ -462,18 +466,18 @@ CREATE TABLE `platform_statistics` (
 -- 第三部分：测试数据
 -- ============================================
 
--- 平台对话模型配置
-INSERT INTO platform_model_config (display_name, actual_model, fixed_points, provider, base_url, api_key, supports_vision, status, sort_order) VALUES
-('DeepSeek-V4-Flash', 'deepseek-v4-flash', 1.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 1),
-('DeepSeek-V4-Pro', 'deepseek-v4-pro', 3.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 2),
-('GPT-4o (虚拟)', 'deepseek-v4-pro', 5.000, 'openai', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 3),
-('Claude-3.5-Sonnet (虚拟)', 'deepseek-v4-pro', 4.000, 'anthropic', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 4),
-('Gemini-2.0-Pro (虚拟)', 'deepseek-v4-pro', 4.000, 'google', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 5),
-('Qwen-Max (虚拟)', 'deepseek-v4-pro', 2.000, 'qwen', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 6),
-('Qwen-Plus (虚拟)', 'deepseek-v4-flash', 1.000, 'qwen', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 7),
-('Claude-3-Opus (虚拟)', 'deepseek-v4-pro', 5.000, 'anthropic', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 8),
-('GPT-4-Turbo (虚拟)', 'deepseek-v4-pro', 4.000, 'openai', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 9),
-('Gemini-2.0-Flash (虚拟)', 'deepseek-v4-flash', 1.000, 'google', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 10);
+-- 平台对话模型配置（access_level: 0-基础，1-中端，2-高端，3-全部）
+INSERT INTO platform_model_config (display_name, actual_model, fixed_points, provider, base_url, api_key, supports_vision, status, sort_order, access_level) VALUES
+('DeepSeek-V4-Flash', 'deepseek-v4-flash', 1.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 1, 0),
+('DeepSeek-V4-Pro', 'deepseek-v4-pro', 3.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 2, 1),
+('GPT-4o (虚拟)', 'gpt-4o', 5.000, 'openai', 'https://api.openai.com/v1/chat/completions', 'mock-openai-key', 1, 1, 3, 2),
+('Claude-3.5-Sonnet (虚拟)', 'claude-3-5-sonnet', 4.000, 'anthropic', 'https://api.anthropic.com/v1/messages', 'mock-anthropic-key', 1, 1, 4, 2),
+('Gemini-2.0-Pro (虚拟)', 'gemini-2.0-pro', 4.000, 'google', 'https://generativelanguage.googleapis.com/v1beta/models', 'mock-google-key', 1, 1, 5, 2),
+('Qwen-Max (虚拟)', 'qwen-max', 2.000, 'qwen', 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation', 'mock-qwen-key', 0, 1, 6, 1),
+('Qwen-Plus (虚拟)', 'qwen-plus', 1.000, 'qwen', 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation', 'mock-qwen-key', 0, 1, 7, 0),
+('Claude-3-Opus (虚拟)', 'claude-3-opus', 5.000, 'anthropic', 'https://api.anthropic.com/v1/messages', 'mock-anthropic-key', 1, 1, 8, 3),
+('GPT-4-Turbo (虚拟)', 'gpt-4-turbo', 4.000, 'openai', 'https://api.openai.com/v1/chat/completions', 'mock-openai-key', 1, 1, 9, 2),
+('Gemini-2.0-Flash (虚拟)', 'gemini-2.0-flash', 1.000, 'google', 'https://generativelanguage.googleapis.com/v1beta/models', 'mock-google-key', 1, 1, 10, 1);
 
 -- 模型商店厂商配置
 INSERT INTO marketplace_provider (provider_name, base_url, platform_api_key, input_price, output_price, status) VALUES
@@ -481,12 +485,12 @@ INSERT INTO marketplace_provider (provider_name, base_url, platform_api_key, inp
 ('Anthropic', 'https://api.anthropic.com/v1', 'mock-anthropic-key', 0.300000, 1.500000, 1),
 ('DeepSeek', 'https://api.deepseek.com/v1', 'REDACTED_PROVIDER_API_KEY', 0.100000, 0.200000, 1);
 
--- 套餐模板
-INSERT INTO package_template (package_code, package_name, description, identity_label, points, price, duration_days, daily_call_limit, monthly_call_limit, max_tokens_per_call, priority_level, features, status, sort_order) VALUES
-('free', '免费版', '基础免费套餐，适合体验用户', '普通用户', 0, 0, NULL, 10, 300, 4096, 0, '{"desc":"每日10次调用"}', 1, 1),
-('basic', '基础版', '适合个人开发者日常使用', '畅享会员', 100, 29.9, 30, 50, 1500, 8192, 1, '{"desc":"每日50次调用"}', 1, 2),
-('premium', '专业版', '适合专业开发者和小型团队', '尊享会员', 500, 99.9, 30, 200, 6000, 16384, 2, '{"desc":"每日200次调用"}', 1, 3),
-('ultimate', '旗舰版', '适合企业和重度使用者', '至尊会员', 2000, 299.9, 30, 1000, 30000, 32768, 3, '{"desc":"每日1000次调用"}', 1, 4);
+-- 套餐模板（严格按照平台计费规则）
+INSERT INTO package_template (package_code, package_name, description, identity_label, points_granted, daily_points, price_monthly, price_quarterly, price_yearly, max_input_tokens, max_output_tokens, model_access_level, priority_level, features, status, sort_order) VALUES
+('free', '免费普通用户', '基础免费套餐，每日赠送30点数', '普通用户', 0, 30, 0, NULL, NULL, 6000, 6000, 0, 0, '{"models":["deepseek-v4-flash"],"features":["SSE流式输出","图片对话"]}', 1, 1),
+('silver', '白银月卡会员', '适合个人日常使用，每日80永久点数', '白银会员', 600, 80, 15, 40, 100, 12000, 12000, 1, 1, '{"models":["deepseek-v4-flash","deepseek-v4-pro"],"features":["单文件解析","多文件解析","优先响应"]}', 1, 2),
+('gold', '黄金进阶会员', '专业开发者首选，每日150永久点数', '黄金会员', 1800, 150, 30, 80, 200, 18000, 18000, 2, 2, '{"models":["deepseek-v4-flash","deepseek-v4-pro","gpt-4o"],"features":["长文本对话","云端存储","后台优先队列"]}', 1, 3),
+('diamond', '钻石旗舰会员', '企业级服务，每日300永久点数', '钻石会员', 5000, 300, 60, 160, 420, 32000, 32000, 3, 3, '{"models":["all"],"features":["超大文件解析","所有模型权限","最高优先级"]}', 1, 4);
 
 -- 管理员账户（密码: Test@123456 / BCryptHash）
 INSERT INTO user (username, password, email, balance, points, status, role) VALUES

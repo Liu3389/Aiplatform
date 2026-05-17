@@ -105,7 +105,7 @@ export default function ModelStorePage() {
                 {/* 输入价格 */}
                 <div className="col-span-2 text-right">
                   <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-                    ¥{Number(m.inputPrice || 0).toFixed(4)}
+                    ¥{Number(m.inputPrice || 0).toFixed(2)}
                   </span>
                   <span className="text-[10px] ml-1" style={{ color: 'var(--text-dim)' }}>/1K tokens</span>
                 </div>
@@ -113,7 +113,7 @@ export default function ModelStorePage() {
                 {/* 输出价格 */}
                 <div className="col-span-2 text-right">
                   <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-                    ¥{Number(m.outputPrice || 0).toFixed(4)}
+                    ¥{Number(m.outputPrice || 0).toFixed(2)}
                   </span>
                   <span className="text-[10px] ml-1" style={{ color: 'var(--text-dim)' }}>/1K tokens</span>
                 </div>

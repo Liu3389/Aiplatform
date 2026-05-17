@@ -5,7 +5,6 @@ import com.ai.gateway.mapper.UserMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,7 +15,7 @@ import java.util.List;
 
 /**
  * 每日点数发放服务
- * 每天凌晨0点给所有活跃用户发放30点（限时当日有效）
+ * 已被 PointsDistributionService 替代，保留手动发放功能
  */
 @Slf4j
 @Service
@@ -28,10 +27,9 @@ public class DailyPointsService {
 
     /**
      * 每日凌晨0点执行，给用户发放30点
-     * cron表达式: 秒 分 时 日 月 周
-     * 0 0 0 * * ? 表示每天0点执行
+     * 注意：此方法不再由 @Scheduled 自动调用，
+     * 定时任务已迁移至 StatisticsSchedulerConfig -> PointsDistributionService
      */
-    @Scheduled(cron = "0 0 0 * * ?")
     @Transactional(rollbackFor = Exception.class)
     public void distributeDailyPoints() {
         log.info("开始执行每日点数发放任务...");
@@ -60,7 +58,8 @@ public class DailyPointsService {
                         "GRANT", 
                         businessId, 
                         "每日免费点数（当日有效）", 
-                        expireTime
+                        expireTime,
+                        1
                     );
                     
                     successCount++;
@@ -97,7 +96,8 @@ public class DailyPointsService {
                 "GRANT", 
                 businessId, 
                 "手动发放每日点数（当日有效）", 
-                expireTime
+                expireTime,
+                1
             );
             
             log.info("手动给用户 {} 发放30点成功", userId);

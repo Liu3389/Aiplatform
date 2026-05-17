@@ -3,6 +3,7 @@ import { userApiKeyApi, type UserApiKeyItem } from '@/services/api'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useI18nStore } from '@/stores/i18nStore'
+import { useToastStore } from '@/stores/toastStore'
 
 const PROVIDERS = [
   { id: 'openai', name: 'OpenAI', placeholder: 'sk-proj-...', baseUrl: 'https://api.openai.com', tip: '以 sk-proj- 或 sk- 开头' },
@@ -24,12 +25,16 @@ export default function ApiKeysPage() {
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null)
+  const [backendError, setBackendError] = useState(false)
 
   const loadKeys = async () => {
     try {
       const list = await userApiKeyApi.list()
       setKeys(list || [])
-    } catch {}
+      setBackendError(false)
+    } catch (e) {
+      setBackendError(true)
+    }
     setLoading(false)
   }
 
@@ -49,7 +54,7 @@ export default function ApiKeysPage() {
       const tip = provider?.tip || ''
       let isValid = true
       let errorMsg = ''
-      
+
       if (tip.includes('sk-proj-') && !form.apiKey.startsWith('sk-proj-') && !form.apiKey.startsWith('sk-')) {
         isValid = false
         errorMsg = lang === 'zh' ? `格式错误：${tip}` : `Invalid format: ${tip}`
@@ -63,7 +68,7 @@ export default function ApiKeysPage() {
         isValid = false
         errorMsg = lang === 'zh' ? 'API Key 格式错误或长度不足' : 'API Key format is invalid or too short'
       }
-      
+
       if (!isValid) {
         setTestResult({ ok: false, msg: errorMsg })
       } else {
@@ -117,6 +122,24 @@ export default function ApiKeysPage() {
     zhipu: '#0066FF', qwen: '#6166DC', siliconflow: '#7C3AED',
   }
 
+  if (backendError) {
+    return (
+      <div className="p-4 lg:p-6 max-w-4xl mx-auto overflow-y-auto h-full flex items-center justify-center">
+        <div className="text-center py-16 px-4 rounded-2xl border" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="1.5" className="mx-auto mb-4 opacity-30">
+            <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+            {lang === 'zh' ? '功能暂未开放' : 'Feature Not Available Yet'}
+          </p>
+          <p className="text-xs mt-2" style={{ color: 'var(--text-dim)' }}>
+            {lang === 'zh' ? '模型商店功能即将上线，敬请期待！' : 'Model store feature coming soon, stay tuned!'}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="p-4 lg:p-6 max-w-4xl mx-auto overflow-y-auto h-full">
@@ -127,7 +150,7 @@ export default function ApiKeysPage() {
               {lang === 'zh' ? '我的 API Keys' : 'My API Keys'}
             </h1>
             <p className="text-sm mt-1" style={{ color: 'var(--text-dim)' }}>
-              {lang === 'zh' ? '存储你的第三方 API Key，在自定义模型对话中使用' : 'Store your 3rd-party API keys for custom model chat'}
+              {lang === 'zh' ? '存储你的第三方 API Key，在模型商店中使用' : 'Store your third-party API keys for use in the model store'}
             </p>
           </div>
           <button

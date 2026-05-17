@@ -13,6 +13,7 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.text.TextContentRenderer;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -21,6 +22,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -28,8 +31,13 @@ import java.util.Map;
 public class AiDocService {
 
     private final OssService ossService;
-    private final OpenAiChatService openAiChatService; // 引入计费服务
+    private final OpenAiChatService openAiChatService;
+    private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    // 解析内容缓存 key 前缀和 TTL（30分钟）
+    private static final String PARSED_FILE_KEY_PREFIX = "ai-doc:parsed:";
+    private static final long PARSED_FILE_TTL_MINUTES = 30;
 
     // 支持的文件类型与大小限制 (10MB)
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -55,6 +63,27 @@ public class AiDocService {
 
         // 上传到 OSS: documents/{userId}/uuid.suffix
         return ossService.uploadFile(file, "documents/" + userId + "/");
+    }
+
+    /**
+     * 1.5. 从字节数组上传并校验文件（解决 MultipartFile 流只能读一次的问题）
+     */
+    public String uploadAndValidateBytes(MultipartFile file, String fileName, byte[] fileBytes, Long userId) {
+        if (fileBytes == null || fileBytes.length == 0 || fileBytes.length > MAX_FILE_SIZE) {
+            throw new IllegalArgumentException("文件为空或超过10MB限制");
+        }
+
+        if (fileName == null) throw new IllegalArgumentException("文件名无效");
+
+        String suffix = fileName.substring(fileName.lastIndexOf(".")).toLowerCase();
+        boolean isAllowed = false;
+        for (String ext : ALLOWED_EXTENSIONS) {
+            if (ext.equals(suffix)) { isAllowed = true; break; }
+        }
+        if (!isAllowed) throw new IllegalArgumentException("不支持的文件格式: " + suffix);
+
+        // 上传到 OSS: documents/{userId}/uuid.suffix
+        return ossService.uploadBytes(fileBytes, fileName, "documents/" + userId + "/");
     }
 
     /**
@@ -163,5 +192,91 @@ public class AiDocService {
         }
         
         return outputStream.toByteArray();
+    }
+
+    /**
+     * 5. 缓存解析后的文件内容到 Redis，生成 fileId
+     */
+    public String cacheParsedContent(Long userId, String fileName, String content) {
+        String fileId = UUID.randomUUID().toString().replace("-", "");
+        String key = PARSED_FILE_KEY_PREFIX + userId + ":" + fileId;
+        
+        Map<String, Object> cacheData = new HashMap<>();
+        cacheData.put("fileId", fileId);
+        cacheData.put("userId", userId);
+        cacheData.put("fileName", fileName);
+        cacheData.put("content", content);
+        cacheData.put("status", "parsed");
+        cacheData.put("createdAt", System.currentTimeMillis());
+        
+        redisTemplate.opsForValue().set(key, cacheData, PARSED_FILE_TTL_MINUTES, TimeUnit.MINUTES);
+        log.info("文件解析内容已缓存: userId={}, fileId={}, fileName={}", userId, fileId, fileName);
+        
+        return fileId;
+    }
+
+    /**
+     * 6. 从 Redis 获取已解析的文件内容
+     */
+    public String getParsedContent(Long userId, String fileId) {
+        String key = PARSED_FILE_KEY_PREFIX + userId + ":" + fileId;
+        Object cached = redisTemplate.opsForValue().get(key);
+        
+        if (cached == null) {
+            log.warn("文件内容不存在或已过期: userId={}, fileId={}", userId, fileId);
+            return null;
+        }
+        
+        try {
+            if (cached instanceof Map) {
+                return (String) ((Map<?, ?>) cached).get("content");
+            }
+            return null;
+        } catch (Exception e) {
+            log.error("获取解析内容失败: userId={}, fileId={}", userId, fileId, e);
+            return null;
+        }
+    }
+
+    /**
+     * 7. 查询文件解析状态
+     */
+    public Map<String, Object> getParseStatus(Long userId, String fileId) {
+        String key = PARSED_FILE_KEY_PREFIX + userId + ":" + fileId;
+        Object cached = redisTemplate.opsForValue().get(key);
+        
+        if (cached == null) {
+            return null;
+        }
+        
+        try {
+            if (cached instanceof Map) {
+                Map<?, ?> data = (Map<?, ?>) cached;
+                Map<String, Object> status = new HashMap<>();
+                status.put("fileId", data.get("fileId"));
+                status.put("fileName", data.get("fileName"));
+                status.put("status", data.get("status"));
+                status.put("createdAt", data.get("createdAt"));
+                return status;
+            }
+            return null;
+        } catch (Exception e) {
+            log.error("查询解析状态失败: userId={}, fileId={}", userId, fileId, e);
+            return null;
+        }
+    }
+
+    /**
+     * 8. 删除已缓存的解析内容（用户取消或清理未使用的文件）
+     */
+    public boolean deleteCachedContent(Long userId, String fileId) {
+        String key = PARSED_FILE_KEY_PREFIX + userId + ":" + fileId;
+        Boolean deleted = redisTemplate.delete(key);
+        if (Boolean.TRUE.equals(deleted)) {
+            log.info("已删除缓存的解析内容: userId={}, fileId={}", userId, fileId);
+            return true;
+        }
+        log.warn("删除缓存内容失败或不存在: userId={}, fileId={}", userId, fileId);
+        return false;
     }
 }

@@ -1,9 +1,12 @@
 package com.ai.gateway.controller;
 
 import com.ai.gateway.common.Result;
+import com.ai.gateway.entity.PackageTemplate;
+import com.ai.gateway.entity.UserSubscription;
 import com.ai.gateway.service.PointsService;
 import com.ai.gateway.service.TokenService;
 import com.ai.gateway.service.UserService;
+import com.ai.gateway.service.UserSubscriptionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,6 +22,7 @@ public class UserController {
     private final UserService userService;
     private final TokenService tokenService;
     private final PointsService pointsService;
+    private final UserSubscriptionService userSubscriptionService;
 
     @PostMapping("/recharge")
     public Result<Void> recharge(@RequestHeader("X-User-Token") String token, @RequestParam BigDecimal amount) {
@@ -80,6 +84,38 @@ public class UserController {
         if (userId == null) return Result.error(401, "Token无效或已过期");
         BigDecimal points = pointsService.getUserPoints(userId);
         return Result.success(points);
+    }
+
+    /**
+     * 查询点数详情（限时/永久拆分 + 会员每日发放信息）
+     */
+    @GetMapping("/points/info")
+    public Result<Map<String, Object>> getPointsInfo(@RequestHeader("X-User-Token") String token) {
+        Long userId = tokenService.getUserIdFromToken(token);
+        if (userId == null) return Result.error(401, "Token无效或已过期");
+
+        Map<String, Object> pointsInfo = pointsService.getUserPointsInfo(userId);
+
+        UserSubscription subscription = null;
+        try {
+            subscription = userSubscriptionService.getCurrentSubscription(userId);
+        } catch (Exception ignored) {
+        }
+
+        if (subscription != null) {
+            pointsInfo.put("hasActiveSubscription", true);
+            pointsInfo.put("membershipLabel", subscription.getIdentityLabel());
+            pointsInfo.put("dailyTemporaryPoints", 30);
+            pointsInfo.put("dailyPermanentPoints", subscription.getPointsGranted() != null
+                    ? subscription.getPointsGranted().intValue() : 0);
+        } else {
+            pointsInfo.put("hasActiveSubscription", false);
+            pointsInfo.put("membershipLabel", "普通用户");
+            pointsInfo.put("dailyTemporaryPoints", 30);
+            pointsInfo.put("dailyPermanentPoints", 0);
+        }
+
+        return Result.success(pointsInfo);
     }
 
     @GetMapping("/free-quota")

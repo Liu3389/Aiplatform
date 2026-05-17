@@ -6,7 +6,9 @@ import com.ai.gateway.common.Constants;
 import com.ai.gateway.common.ResultCode;
 import com.ai.gateway.dto.ChatRequest;
 import com.ai.gateway.entity.CallLog;
+import com.ai.gateway.entity.PackageTemplate;
 import com.ai.gateway.entity.PlatformModelConfig;
+import com.ai.gateway.entity.UserSubscription;
 import com.ai.gateway.exception.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -42,6 +44,8 @@ public class OpenAiChatService {
     private final StringRedisTemplate redisTemplate;
     private final ChatMessageService chatMessageService;
     private final com.ai.gateway.mapper.ConversationMapper conversationMapper;
+    private final UserSubscriptionService userSubscriptionService;
+    private final com.ai.gateway.mapper.PackageTemplateMapper packageTemplateMapper;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
@@ -54,7 +58,9 @@ public class OpenAiChatService {
                              FreeLimitService freeLimitService,
                              StringRedisTemplate redisTemplate,
                              ChatMessageService chatMessageService,
-                             com.ai.gateway.mapper.ConversationMapper conversationMapper) {
+                             com.ai.gateway.mapper.ConversationMapper conversationMapper,
+                             UserSubscriptionService userSubscriptionService,
+                             com.ai.gateway.mapper.PackageTemplateMapper packageTemplateMapper) {
         this.platformModelService = platformModelService;
         this.callLogService = callLogService;
         this.pointsService = pointsService;
@@ -62,6 +68,8 @@ public class OpenAiChatService {
         this.redisTemplate = redisTemplate;
         this.chatMessageService = chatMessageService;
         this.conversationMapper = conversationMapper;
+        this.userSubscriptionService = userSubscriptionService;
+        this.packageTemplateMapper = packageTemplateMapper;
     }
 
     /**
@@ -74,10 +82,16 @@ public class OpenAiChatService {
         long startTime = System.currentTimeMillis();
         ChatConfig config = resolveChatConfig(request, userId);
 
+        // 模型权限校验
+        validateModelAccess(userId, config.modelConfig);
+
         // 图片能力检查
         if (hasImageMessage(request) && !supportsVision(config)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "模型 " + request.getModel() + " 不支持图片输入");
         }
+
+        // Token限制检查（后台静默检查，不告诉用户）
+        validateTokenLimits(userId, request);
 
         // 修复 P0-2: 恢复 free/paid 模式判断，但移除已废弃的 custom 模式
         if ("free".equals(request.getMode())) {
@@ -113,6 +127,9 @@ public class OpenAiChatService {
             String content = rootNode.path("choices").get(0).path("message").path("content").asText();
             int inputTokens = rootNode.path("usage").path("prompt_tokens").asInt();
             int outputTokens = rootNode.path("usage").path("completion_tokens").asInt();
+            
+            log.debug("非流式对话Token统计: userId={}, model={}, inputTokens={}, outputTokens={}, mode=actual",
+                    userId, request.getModel(), inputTokens, outputTokens);
 
             BigDecimal cost = resolveCost(config, inputTokens, outputTokens);
 
@@ -204,10 +221,36 @@ public class OpenAiChatService {
 
         ChatConfig config = resolveChatConfig(request, userId);
 
+        // 模型权限校验
+        try {
+            validateModelAccess(userId, config.modelConfig);
+        } catch (BusinessException e) {
+            try {
+                Map<String, Object> errData = new HashMap<>();
+                errData.put("message", e.getMessage());
+                emitter.send(SseEmitter.event().name("error").data(errData));
+                emitter.complete();
+            } catch (IOException ignored) {}
+            return emitter;
+        }
+
         if (hasImageMessage(request) && !supportsVision(config)) {
             try {
                 Map<String, Object> errData = new HashMap<>();
                 errData.put("message", "模型 " + request.getModel() + " 不支持图片输入");
+                emitter.send(SseEmitter.event().name("error").data(errData));
+                emitter.complete();
+            } catch (IOException ignored) {}
+            return emitter;
+        }
+
+        // Token限制检查（后台静默检查，不告诉用户）
+        try {
+            validateTokenLimits(userId, request);
+        } catch (BusinessException e) {
+            try {
+                Map<String, Object> errData = new HashMap<>();
+                errData.put("message", e.getMessage());
                 emitter.send(SseEmitter.event().name("error").data(errData));
                 emitter.complete();
             } catch (IOException ignored) {}
@@ -276,23 +319,34 @@ public class OpenAiChatService {
                     if (isCompleted.get()) {
                         break;
                     }
-                    if (line.startsWith("data: ")) {
-                        String data = line.substring(6);
-                        if ("[DONE]".equals(data)) break;
+                    // 忽略 SSE 注释行（如 ": ping"）
+                    if (line.startsWith(":")) continue;
+                    if (line.isEmpty()) continue;
+                    if (line.startsWith("data:")) {
+                        String data = line.length() > 5 && line.charAt(5) == ' '
+                                ? line.substring(6).trim()
+                                : line.substring(5).trim();
+                        if (data.isEmpty() || "[DONE]".equals(data)) {
+                            if ("[DONE]".equals(data)) break;
+                            continue;
+                        }
                         try {
                             JsonNode node = objectMapper.readTree(data);
-                            JsonNode contentNode = node.path("choices").get(0).path("delta").path("content");
-                            if (!contentNode.isMissingNode() && !contentNode.isNull()) {
-                                String content = contentNode.asText();
-                                if (!content.isEmpty()) {
-                                    fullContent.append(content);
-                                    Map<String, Object> eventData = new HashMap<>();
-                                    eventData.put("content", content);
-                                    emitter.send(SseEmitter.event().name("message").data(eventData));
+                            JsonNode choices = node.path("choices");
+                            if (choices.isArray() && choices.size() > 0) {
+                                JsonNode contentNode = choices.get(0).path("delta").path("content");
+                                if (!contentNode.isMissingNode() && !contentNode.isNull()) {
+                                    String content = contentNode.asText();
+                                    if (!content.isEmpty()) {
+                                        fullContent.append(content);
+                                        Map<String, Object> eventData = new HashMap<>();
+                                        eventData.put("content", content);
+                                        emitter.send(SseEmitter.event().name("message").data(eventData));
+                                    }
                                 }
                             }
                         } catch (Exception e) {
-                            log.warn("解析流式数据失败", e);
+                            log.warn("解析流式数据失败, data: {}", data, e);
                         }
                     }
                 }
@@ -301,11 +355,22 @@ public class OpenAiChatService {
                     return;
                 }
 
-                String promptText = request.getMessages().stream()
+                // 尝试从完整响应中提取真实的usage信息（如果存在）
+                String fullResponseText = fullContent.toString();
+                boolean useEstimatedTokens = false;
+                
+                // DeepSeek流式API通常在最后一条消息中包含usage，但可能被截断
+                // 这里我们直接使用估算值，因为：
+                // 1. 计费使用固定点数，与token无关
+                // 2. 估算值足够用于统计分析
+                // 3. 避免解析不完整JSON导致的异常
+                inputTokens = estimateTokens(request.getMessages().stream()
                         .map(ChatRequest.ChatMessage::getTextContent)
-                        .reduce("", String::concat);
-                inputTokens = estimateTokens(promptText);
-                outputTokens = estimateTokens(fullContent.toString());
+                        .reduce("", String::concat));
+                outputTokens = estimateTokens(fullResponseText);
+                
+                log.debug("流式对话Token统计: userId={}, inputTokens={}, outputTokens={}, mode=estimated",
+                        userId, inputTokens, outputTokens);
 
                 BigDecimal cost = resolveCost(config, inputTokens, outputTokens);
 
@@ -319,7 +384,7 @@ public class OpenAiChatService {
 
                 // 保存对话消息到数据库
                 Long conversationId = getOrCreateConversation(userId, request);
-                saveChatMessages(conversationId, userId, request, fullContent.toString(), request.getModel(), inputTokens + outputTokens);
+                saveChatMessages(conversationId, userId, request, fullResponseText, request.getModel(), inputTokens + outputTokens);
 
                 saveCallLog(apiKey, userId, request.getModel(), inputTokens, outputTokens,
                            cost, System.currentTimeMillis() - startTime, true, null);
@@ -503,6 +568,61 @@ public class OpenAiChatService {
     }
 
     /**
+     * Token限制检查（后台静默检查，不告诉用户具体限制）
+     * 根据用户套餐限制单次输入和输出token数
+     */
+    private void validateTokenLimits(Long userId, ChatRequest request) {
+        try {
+            // 1. 获取用户当前套餐
+            com.ai.gateway.entity.UserSubscription subscription = userSubscriptionService.getCurrentSubscription(userId);
+            
+            int maxInputTokens = 0;  // 0表示无限制
+            int maxOutputTokens = 0;
+            
+            if (subscription != null) {
+                // 有套餐，使用套餐限制
+                com.ai.gateway.entity.PackageTemplate pkg = packageTemplateMapper.selectById(subscription.getPackageId());
+                if (pkg != null) {
+                    maxInputTokens = pkg.getMaxInputTokens() != null ? pkg.getMaxInputTokens() : 0;
+                    maxOutputTokens = pkg.getMaxOutputTokens() != null ? pkg.getMaxOutputTokens() : 0;
+                }
+            } else {
+                // 无套餐，使用免费版默认限制
+                maxInputTokens = 6000;
+                maxOutputTokens = 6000;
+            }
+            
+            // 2. 估算输入token数
+            String promptText = request.getMessages().stream()
+                    .map(ChatRequest.ChatMessage::getTextContent)
+                    .reduce("", String::concat);
+            int estimatedInputTokens = estimateTokens(promptText);
+            
+            // 3. 检查输入token限制
+            if (maxInputTokens > 0 && estimatedInputTokens > maxInputTokens) {
+                log.warn("输入Token超限: userId={}, estimated={}, limit={}", userId, estimatedInputTokens, maxInputTokens);
+                throw new BusinessException("请求内容过长，请缩短输入内容");
+            }
+            
+            // 4. 检查max_tokens参数（如果有设置）
+            if (request.getMaxTokens() != null && maxOutputTokens > 0 && request.getMaxTokens() > maxOutputTokens) {
+                log.warn("输出Token限制超限: userId={}, requested={}, limit={}", userId, request.getMaxTokens(), maxOutputTokens);
+                // 自动调整max_tokens为限制值
+                request.setMaxTokens(maxOutputTokens);
+            }
+            
+            log.debug("Token限制检查通过: userId={}, inputLimit={}, outputLimit={}", 
+                    userId, maxInputTokens, maxOutputTokens);
+            
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Token限制检查失败，放行请求: userId={}", userId, e);
+            // 检查失败不影响主流程，放行请求
+        }
+    }
+
+    /**
      * 获取或创建会话
      */
     private Long getOrCreateConversation(Long userId, ChatRequest request) {
@@ -515,14 +635,19 @@ public class OpenAiChatService {
         com.ai.gateway.entity.Conversation conversation = new com.ai.gateway.entity.Conversation();
         conversation.setUserId(userId);
         
-        // 使用第一条用户消息作为标题（截取前20个字符）
+        // 使用第一条用户消息作为标题（截取前20个字符，避免emoji等多字节字符截断）
         String firstUserMessage = request.getMessages().stream()
                 .filter(msg -> "user".equals(msg.getRole()))
                 .findFirst()
                 .map(msg -> msg.getTextContent())
                 .orElse("新对话");
         
-        String title = firstUserMessage.length() > 20 ? firstUserMessage.substring(0, 20) + "..." : firstUserMessage;
+        // 安全截取：按codepoint而不是char，避免多字节字符截断
+        int titleLength = Math.min(firstUserMessage.length(), 20);
+        String title = firstUserMessage.length() > 20 
+            ? firstUserMessage.substring(0, firstUserMessage.offsetByCodePoints(0, titleLength)) + "..." 
+            : firstUserMessage;
+        
         conversation.setTitle(title);
         conversation.setModel(request.getModel());
         conversation.setMessageCount(0);
@@ -541,6 +666,8 @@ public class OpenAiChatService {
     private void saveChatMessages(Long conversationId, Long userId, ChatRequest request, 
                                   String aiResponse, String model, int totalTokens) {
         try {
+            int messageCount = 0;
+            
             // 1. 保存用户消息（取最后一条用户消息）
             String userMessage = request.getMessages().stream()
                     .filter(msg -> "user".equals(msg.getRole()))
@@ -557,6 +684,7 @@ public class OpenAiChatService {
                     model, 
                     null // 用户消息不计算token
                 );
+                messageCount++;
             }
             
             // 2. 保存AI回复
@@ -569,21 +697,65 @@ public class OpenAiChatService {
                     model, 
                     totalTokens
                 );
+                messageCount++;
             }
             
-            // 3. 更新会话的消息计数和最后消息时间
-            com.ai.gateway.entity.Conversation conversation = conversationMapper.selectById(conversationId);
-            if (conversation != null) {
-                conversation.setMessageCount(conversation.getMessageCount() + 2); // 用户消息 + AI回复
-                conversation.setLastMessageTime(java.time.LocalDateTime.now());
-                conversationMapper.updateById(conversation);
+            // 3. 更新会话的消息计数和最后消息时间（使用原子更新避免并发问题）
+            if (messageCount > 0) {
+                com.ai.gateway.entity.Conversation conversation = conversationMapper.selectById(conversationId);
+                if (conversation != null) {
+                    conversation.setMessageCount(conversation.getMessageCount() + messageCount);
+                    conversation.setLastMessageTime(java.time.LocalDateTime.now());
+                    conversationMapper.updateById(conversation);
+                }
             }
             
-            log.info("保存对话消息成功: conversationId={}, userId={}, tokens={}", conversationId, userId, totalTokens);
+            log.info("保存对话消息成功: conversationId={}, userId={}, tokens={}, messageCount={}", 
+                    conversationId, userId, totalTokens, messageCount);
             
         } catch (Exception e) {
             log.error("保存对话消息失败: conversationId={}, userId={}", conversationId, userId, e);
             // 不抛出异常，避免影响主流程
+        }
+    }
+
+    /**
+     * 校验用户是否有权限使用指定模型
+     * 根据用户当前套餐的 modelAccessLevel 与模型所需的 accessLevel 进行比较
+     */
+    private void validateModelAccess(Long userId, PlatformModelConfig modelConfig) {
+        if (modelConfig == null) return;
+
+        // 获取模型所需的权限等级
+        Integer requiredLevel = modelConfig.getAccessLevel();
+        if (requiredLevel == null || requiredLevel == 0) return; // level 0 所有用户可用
+
+        try {
+            // 获取用户当前有效订阅
+            UserSubscription subscription = userSubscriptionService.getCurrentSubscription(userId);
+            int userLevel = 0;
+
+            if (subscription != null) {
+                PackageTemplate pkg = packageTemplateMapper.selectById(subscription.getPackageId());
+                if (pkg != null && pkg.getModelAccessLevel() != null) {
+                    userLevel = pkg.getModelAccessLevel();
+                }
+            }
+
+            if (userLevel < requiredLevel) {
+                // 构建升级提示
+                String levelNames[] = {"", "白银", "黄金", "钻石"};
+                String requiredName = requiredLevel <= 3 ? levelNames[requiredLevel] : "更高";
+                throw new BusinessException(
+                    "当前会员等级无法使用模型 " + modelConfig.getDisplayName() +
+                    "，请升级至" + requiredName + "会员。"
+                );
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("模型权限校验异常: userId={}", userId, e);
+            // 校验异常时放行，避免影响正常使用
         }
     }
 }

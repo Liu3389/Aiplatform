@@ -69,9 +69,13 @@ public class UserSubscriptionService {
 
     /**
      * 购买套餐（支持优惠券）
+     * @param userId 用户ID
+     * @param packageCode 套餐代码
+     * @param cycle 订阅周期：MONTHLY/QUARTERLY/YEARLY
+     * @param couponId 优惠券ID（可选）
      */
     @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> purchasePackage(Long userId, String packageCode, Long couponId) {
+    public Map<String, Object> purchasePackage(Long userId, String packageCode, String cycle, Long couponId) {
         Map<String, Object> result = new HashMap<>();
         
         // 1. 获取套餐信息
@@ -80,8 +84,28 @@ public class UserSubscriptionService {
             throw new RuntimeException("套餐不存在或已下架: " + packageCode);
         }
 
-        // 2. 计算价格和优惠
-        BigDecimal originalPrice = pkg.getPrice();
+        // 默认订阅周期为月度
+        if (cycle == null || cycle.isEmpty()) {
+            cycle = "MONTHLY";
+        }
+
+        // 2. 计算价格和优惠（根据订阅周期选择价格）
+        BigDecimal originalPrice;
+        switch (cycle) {
+            case "QUARTERLY":
+                originalPrice = pkg.getPriceQuarterly() != null ? pkg.getPriceQuarterly() : pkg.getPriceMonthly().multiply(new BigDecimal("3")).multiply(new BigDecimal("0.9"));
+                break;
+            case "YEARLY":
+                originalPrice = pkg.getPriceYearly() != null ? pkg.getPriceYearly() : pkg.getPriceMonthly().multiply(new BigDecimal("12")).multiply(new BigDecimal("0.7"));
+                break;
+            default: // MONTHLY
+                originalPrice = pkg.getPriceMonthly();
+                break;
+        }
+        
+        if (originalPrice == null || originalPrice.compareTo(BigDecimal.ZERO) < 0) {
+            throw new RuntimeException("套餐价格配置错误");
+        }
         BigDecimal discount = BigDecimal.ZERO;
         BigDecimal actualPrice = originalPrice;
         Long usedCouponId = null;
@@ -115,8 +139,17 @@ public class UserSubscriptionService {
         }
         LocalDateTime startTime = LocalDateTime.now();
         LocalDateTime expireTime = null;
-        if (pkg.getDurationDays() != null) {
-            expireTime = startTime.plusDays(pkg.getDurationDays());
+        // 根据订阅周期计算过期时间
+        switch (cycle) {
+            case "QUARTERLY":
+                expireTime = startTime.plusMonths(3);
+                break;
+            case "YEARLY":
+                expireTime = startTime.plusYears(1);
+                break;
+            default: // MONTHLY
+                expireTime = startTime.plusMonths(1);
+                break;
         }
 
         // 4. 创建订阅记录
@@ -126,7 +159,7 @@ public class UserSubscriptionService {
         subscription.setPackageCode(pkg.getPackageCode());
         subscription.setPackageName(pkg.getPackageName());
         subscription.setIdentityLabel(pkg.getIdentityLabel());
-        subscription.setPointsGranted(pkg.getPoints());
+        subscription.setPointsGranted(pkg.getPointsGranted());
         subscription.setPricePaid(actualPrice);
         subscription.setStartTime(startTime);
         subscription.setExpireTime(expireTime);
@@ -140,14 +173,14 @@ public class UserSubscriptionService {
         
         userSubscriptionMapper.insert(subscription);
 
-        // 5. 授予点数（如果有）
-        if (pkg.getPoints().compareTo(BigDecimal.ZERO) > 0) {
+        // 5. 授予开通赠送点数（永久有效）
+        if (pkg.getPointsGranted() != null && pkg.getPointsGranted().compareTo(BigDecimal.ZERO) > 0) {
             String businessId = "sub_" + subscription.getId();
-            String description = "购买套餐[" + pkg.getPackageName() + "]赠送点数";
+            String description = "购买套餐[" + pkg.getPackageName() + "]赠送点数（永久有效）";
             if (discount.compareTo(BigDecimal.ZERO) > 0) {
                 description += "（使用优惠券优惠" + discount + "元）";
             }
-            pointsService.addPoints(userId, pkg.getPoints(), "GRANT", businessId, description, expireTime);
+            pointsService.addPermanentPoints(userId, pkg.getPointsGranted(), "SUBSCRIPTION_GRANT", description, businessId);
         }
 
         // 6. 更新用户会员标识（如果需要）
@@ -159,15 +192,16 @@ public class UserSubscriptionService {
         result.put("packageCode", pkg.getPackageCode());
         result.put("packageName", pkg.getPackageName());
         result.put("identityLabel", pkg.getIdentityLabel());
-        result.put("pointsGranted", pkg.getPoints());
+        result.put("pointsGranted", pkg.getPointsGranted());
+        result.put("dailyPoints", pkg.getDailyPoints());
         result.put("originalPrice", originalPrice);
         result.put("discount", discount);
         result.put("actualPrice", actualPrice);
         result.put("startTime", startTime);
         result.put("expireTime", expireTime);
-        result.put("dailyCallLimit", pkg.getDailyCallLimit());
-        result.put("monthlyCallLimit", pkg.getMonthlyCallLimit());
-        result.put("maxTokensPerCall", pkg.getMaxTokensPerCall());
+        result.put("maxInputTokens", pkg.getMaxInputTokens());
+        result.put("maxOutputTokens", pkg.getMaxOutputTokens());
+        result.put("modelAccessLevel", pkg.getModelAccessLevel());
         result.put("priorityLevel", pkg.getPriorityLevel());
 
         log.info("用户购买套餐成功: userId={}, package={}, price={}, discount={}", 

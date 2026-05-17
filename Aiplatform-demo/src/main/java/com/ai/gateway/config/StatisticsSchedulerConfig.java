@@ -1,11 +1,17 @@
 package com.ai.gateway.config;
 
-import com.ai.gateway.service.DailyPointsService;
+import com.ai.gateway.entity.UserSubscription;
+import com.ai.gateway.mapper.UserSubscriptionMapper;
+import com.ai.gateway.service.PointsDistributionService;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
+
+import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 统计定时任务配置
@@ -16,21 +22,60 @@ import org.springframework.scheduling.annotation.Scheduled;
 @EnableScheduling
 @RequiredArgsConstructor
 public class StatisticsSchedulerConfig {
-    
-    private final DailyPointsService dailyPointsService;
-    
+
+    private final PointsDistributionService pointsDistributionService;
+    private final UserSubscriptionMapper userSubscriptionMapper;
+
     /**
-     * 每天凌晨0点给用户发放30点（当日有效）
+     * 每天凌晨0点发放每日点数
+     * 免费用户：30限时点数（当日有效）
+     * 付费会员：30限时点数 + 对应套餐永久点数（可叠加）
      * cron表达式：每天00:00执行
      */
     @Scheduled(cron = "0 0 0 * * ?")
     public void distributeDailyPoints() {
         log.info("开始执行每日点数发放任务...");
         try {
-            dailyPointsService.distributeDailyPoints();
+            pointsDistributionService.distributeDailyPoints();
             log.info("每日点数发放任务完成");
         } catch (Exception e) {
             log.error("每日点数发放任务失败", e);
+        }
+    }
+
+    /**
+     * 每天凌晨0点10分检查订阅过期
+     * 将已过期订阅状态设为 EXPIRED，用户降级为免费普通用户
+     * cron表达式：每天00:10执行
+     */
+    @Scheduled(cron = "0 10 0 * * ?")
+    public void checkSubscriptionExpiry() {
+        log.info("开始检查订阅过期...");
+        try {
+            LocalDateTime now = LocalDateTime.now();
+            LambdaQueryWrapper<UserSubscription> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(UserSubscription::getStatus, "ACTIVE")
+                   .lt(UserSubscription::getExpireTime, now);
+
+            List<UserSubscription> expiredSubs = userSubscriptionMapper.selectList(wrapper);
+            if (expiredSubs.isEmpty()) {
+                log.info("无过期订阅需要处理");
+                return;
+            }
+
+            int count = 0;
+            for (UserSubscription sub : expiredSubs) {
+                sub.setStatus("EXPIRED");
+                sub.setUpdateTime(now);
+                userSubscriptionMapper.updateById(sub);
+                count++;
+                log.info("订阅已过期: userId={}, subscriptionId={}, packageId={}",
+                        sub.getUserId(), sub.getId(), sub.getPackageId());
+            }
+
+            log.info("订阅过期检查完成: 处理了{}条过期订阅", count);
+        } catch (Exception e) {
+            log.error("订阅过期检查失败", e);
         }
     }
     

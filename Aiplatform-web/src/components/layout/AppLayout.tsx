@@ -11,7 +11,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import ToastContainer from '@/components/ToastContainer'
 import NotificationBell from '@/components/NotificationBell'
 
-type NavKey = 'overview' | 'usage' | 'tokens' | 'chat' | 'store' | 'billing' | 'wordcloud' | 'admin' | 'security' | 'recharge'
+type NavKey = 'overview' | 'usage' | 'chat' | 'store' | 'billing' | 'tokens' | 'wordcloud' | 'admin' | 'recharge'
 
 const menuItems: { path: string; key: NavKey; icon: string; adminOnly?: boolean }[] = [
   { path: '/', key: 'overview', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4' },
@@ -19,15 +19,15 @@ const menuItems: { path: string; key: NavKey; icon: string; adminOnly?: boolean 
   { path: '/chat', key: 'chat', icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' },
   { path: '/store', key: 'store', icon: 'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z' },
   { path: '/billing', key: 'billing', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+  { path: '/api-keys', key: 'tokens', icon: 'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z' },
   { path: '/recharge', key: 'recharge', icon: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' },
   { path: '/wordcloud', key: 'wordcloud', icon: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-4-4h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z' },
   { path: '/admin', key: 'admin', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 2 0 0112 0v1zm0 0h6v-1a6 2 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z', adminOnly: true },
-  { path: '/security', key: 'security', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
 ]
 
 const navLabels: Record<string, Record<NavKey, string>> = {
-  zh: { overview:'概览', usage:'用量信息', tokens:'令牌管理', chat:'AI 对话', store:'模型商城', billing:'计费策略', recharge:'会员充值', wordcloud:'词云可视化', admin:'管理员后台', security:'账户安全' },
-  en: { overview:'Overview', usage:'Usage', tokens:'API Keys', chat:'AI Chat', store:'Model Store', billing:'Billing', recharge:'Recharge', wordcloud:'Word Cloud', admin:'Admin Panel', security:'Security' },
+  zh: { overview:'概览', usage:'用量信息', chat:'AI 对话', store:'模型商城', billing:'计费策略', tokens:'API Keys', recharge:'会员充值', wordcloud:'词云可视化', admin:'管理员后台' },
+  en: { overview:'Overview', usage:'Usage', chat:'AI Chat', store:'Model Store', billing:'Billing', tokens:'API Keys', recharge:'Recharge', wordcloud:'Word Cloud', admin:'Admin Panel' },
 }
 
 const SIDEBAR_COLLAPSED_W = 64
@@ -104,26 +104,30 @@ export default function AppLayout() {
             </span>
             {isAdmin && <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium" style={{ background: 'rgba(245,158,11,0.15)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.25)' }}>Admin</span>}
           </div>
-          {(membership.monthlyPoints > 0 || (user?.balance ?? 0) > 0) && (
-            <div className="mb-2">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] flex items-center gap-1" style={{ color: 'var(--text-dim)' }}>
-                  <PointsIcon size={10} color={membership.color} /> {lang === 'zh' ? '点数' : 'Points'}
-                </span>
-                <span className="text-[10px] font-bold" style={{ color: membership.color }}>
-                  {balanceInYuan}{membership.monthlyPoints > 0 ? ` / ${membership.monthlyPoints}` : ''}
-                </span>
-              </div>
-              <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--bg-surface)' }}>
-                <div className="h-full rounded-full transition-all" style={{
-                  width: membership.monthlyPoints > 0
-                    ? `${Math.min(100, (Number(user?.balance || 0) / membership.monthlyPoints) * 100)}%`
-                    : '100%',
-                  background: `linear-gradient(90deg, ${membership.color}, ${membership.color}80)`,
-                }} />
-              </div>
+
+          <div className="mb-2">
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-[10px] flex items-center gap-1" style={{ color: 'var(--text-dim)' }}>
+                <PointsIcon size={10} color={membership.color} /> {lang === 'zh' ? '点数余额' : 'Points'}
+              </span>
+              <span className="text-[10px] font-bold" style={{ color: membership.color }}>
+                {balanceInYuan}
+              </span>
             </div>
-          )}
+            {membership.dailyPermanentPoints > 0 && (
+              <div className="text-[9px] mb-1" style={{ color: 'var(--text-dim)' }}>
+                {lang === 'zh'
+                  ? `每日 ${membership.dailyTemporaryPoints}限时 + ${membership.dailyPermanentPoints}永久`
+                  : `Daily ${membership.dailyTemporaryPoints}temp + ${membership.dailyPermanentPoints}perm`}
+              </div>
+            )}
+            {membership.dailyTemporaryPoints === 30 && membership.dailyPermanentPoints === 0 && (
+              <div className="text-[9px] mb-1" style={{ color: 'var(--text-dim)' }}>
+                {lang === 'zh' ? '每日 30 限时点数' : 'Daily 30 temp pts'}
+              </div>
+            )}
+          </div>
+
           <button onClick={() => navigate('/user')} className={`w-full py-2 text-xs font-medium rounded-lg transition-colors ${dark ? 'text-white/70 hover:text-white bg-white/[0.04] hover:bg-white/[0.08]' : 'text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200'}`}>
             {lang==='zh'?'个人中心':'Profile'}
           </button>

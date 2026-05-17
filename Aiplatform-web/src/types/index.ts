@@ -5,7 +5,7 @@ export interface UserInfo {
   balance: number
   role: 'USER' | 'ADMIN' | 'SUPER_ADMIN'
   status: 'ACTIVE' | 'DISABLED'
-  membership: 'free' | 'plus' | 'pro'
+  membership: 'free' | 'silver' | 'gold' | 'diamond'
   freeApiStrategy: 'NONE' | 'UNLIMITED' | 'QUOTA_BASED' | 'COUNT_LIMITED' | 'TIME_LIMITED' | 'MODEL_SPECIFIC'
   freeQuota: number
   dailyCallLimit: number
@@ -48,7 +48,7 @@ export interface ChatRequest {
   stream?: boolean
   maxTokens?: number
   temperature?: number
-  mode?: 'paid' | 'free'
+  mode?: string
   conversationId?: number
   fileUrls?: string[]
 }
@@ -70,126 +70,90 @@ export interface ApiResult<T = unknown> {
   timestamp: number
 }
 
+export interface BackendMessageVO {
+  id: number
+  role: string
+  content: string
+  model: string
+  tokens: number
+  createTime: string
+}
+
+export interface ChatMessagePageVO {
+  messages: BackendMessageVO[]
+  hasMore: boolean
+  nextCursorId: number | null
+  totalCount?: number
+}
+
+export interface ConversationData {
+  id: number
+  title: string
+  model: string
+  messageCount: number
+  lastMessageTime: string
+  createTime: string
+  updateTime: string
+}
+
+export interface TokenStats {
+  inputTokens: number
+  outputTokens: number
+  cost: number
+}
+
+export interface FrontendConversation {
+  id: string
+  title: string
+  messages: FrontendMessage[]
+  createdAt: number
+  updatedAt: number
+  favorited?: boolean
+}
+
+export interface FrontendMessage {
+  id?: number
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  tokens?: string
+}
+
+/** 模型可用列表响应（/api/platform-model/available） */
+export interface AvailableModel {
+  modelId: number
+  displayName: string
+  modelCode: string
+  provider: string
+  fixedPoints: number
+  supportsVision: number
+  sortOrder: number
+  accessible: boolean
+  requiredLevel: number
+  requiredLevelName: string | null
+  upgradeHint: string | null
+}
+
+/** 用户点数详情响应（/api/user/points/info） */
+export interface UserPointsInfo {
+  totalPoints: number
+  temporaryPoints: number
+  permanentPoints: number
+  temporaryExpireTime: string | null
+  membershipLabel: string
+  dailyTemporaryPoints: number
+  dailyPermanentPoints: number
+  hasActiveSubscription: boolean
+}
+
 export const MEMBERSHIP_QUOTAS = {
-  free: { dailyTokens: 50000, monthlyPoints: 0, label: '普通用户', labelEn: 'Free', color: '#94A3B8' },
-  plus: { dailyTokens: 500000, monthlyPoints: 300, label: '畅享用户', labelEn: 'Plus', color: '#3B82F6' },
-  pro: { dailyTokens: 2000000, monthlyPoints: 1000, label: '尊享用户', labelEn: 'Pro', color: '#8B5CF6' },
+  free:    { dailyTemporaryPoints: 30, dailyPermanentPoints: 0,   label: '普通用户', labelEn: 'Free',    color: '#94A3B8' },
+  silver:  { dailyTemporaryPoints: 30, dailyPermanentPoints: 80,  label: '白银会员', labelEn: 'Silver',  color: '#C0C0C0' },
+  gold:    { dailyTemporaryPoints: 30, dailyPermanentPoints: 150, label: '黄金会员', labelEn: 'Gold',    color: '#F59E0B' },
+  diamond: { dailyTemporaryPoints: 30, dailyPermanentPoints: 300, label: '钻石会员', labelEn: 'Diamond', color: '#8B5CF6' },
 } as const
 
 export const MEMBERSHIP_PRICES = {
-  plus: { monthly: 29.9, yearly: 299 },
-  pro: { monthly: 99.9, yearly: 999 },
+  silver:  { monthly: 15.00, quarterly: 40.00, yearly: 100.00 },
+  gold:    { monthly: 30.00, quarterly: 80.00, yearly: 200.00 },
+  diamond: { monthly: 60.00, quarterly: 160.00, yearly: 420.00 },
 } as const
-
-export interface DashboardStatsVO {
-  totalUsers: number
-  todayNewUsers: number
-  totalConversations: number
-  todayConversations: number
-  todayActiveUsers: number
-  systemStatus: string
-  userTrend: TrendDataVO[]
-  conversationTrend: TrendDataVO[]
-  activeUserTrend: TrendDataVO[]
-  quickStats: {
-    totalMessages: number
-    totalPointsConsumed: number
-    apiSuccessRate: number
-    avgConversationLength: number
-  }
-}
-
-export interface TrendDataVO {
-  date: string
-  value: number
-  growthRate: number
-}
-
-export interface UserStatsVO {
-  totalUsers: number
-  todayNewUsers: number
-  activeUsers7d: number
-  inactiveUsers30d: number
-  statusDistribution: Record<string, number>
-  userSegments: {
-    highActive: number
-    mediumActive: number
-    lowActive: number
-    inactive: number
-  }
-}
-
-export interface ConversationStatsVO {
-  totalConversations: number
-  totalMessages: number
-  avgMessagesPerConv: number
-  avgDuration: number
-  todayConversations: number
-  todayMessages: number
-  modelUsage: Record<string, { calls: number; tokens: number }>
-}
-
-export interface PackageTemplate {
-  id: number
-  packageCode: string
-  packageName: string
-  description: string
-  identityLabel: string
-  points: number
-  price: number
-  durationDays: number
-  dailyCallLimit: number
-  monthlyCallLimit: number
-  maxTokensPerCall: number
-  priorityLevel: number
-  features: string[]
-  status: number
-  sortOrder: number
-}
-
-export interface UserSubscription {
-  id: number
-  userId: number
-  packageId: number
-  packageCode: string
-  packageName: string
-  identityLabel: string
-  pointsGranted: number
-  pricePaid: number
-  startTime: string
-  expireTime: string
-  status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED'
-  autoRenew: number
-  orderId: string
-  couponId?: number
-  discountAmount?: number
-}
-
-export interface PointsBill {
-  id: number
-  userId: number
-  changeType: 'RECHARGE' | 'DEDUCT' | 'GRANT' | 'EXPIRE' | 'REFUND'
-  pointsChange: number
-  balanceBefore: number
-  balanceAfter: number
-  businessId?: string
-  description: string
-  modelName?: string
-  expireTime?: string
-  createTime: string
-}
-
-export interface AdminOperationLog {
-  id: number
-  adminId: number
-  adminUsername: string
-  operationType: string
-  operationAction: string
-  targetUserIds: number[]
-  operationDetail: Record<string, unknown>
-  ipAddress: string
-  userAgent: string
-  result: 'SUCCESS' | 'FAILED'
-  errorMessage?: string
-  createTime: string
-}

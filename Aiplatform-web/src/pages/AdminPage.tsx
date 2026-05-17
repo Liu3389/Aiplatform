@@ -74,8 +74,12 @@ export default function AdminPage() {
         adminApi.getUsers({ page, size: pageSize, search: filter.search, membership: filter.membership, status: filter.status }),
         adminApi.getAdmins().catch(() => [] as AdminInfo[])
       ])
-      const r = ulRes as unknown as { records: AdminUser[]; total: number }
-      setUsers(r.records); setTotalUsers(r.total); setAdmins(al as AdminInfo[])
+      const r = ulRes as unknown as { records: any[]; total: number }
+      const normalized = (r.records || []).map((u: any) => ({
+        ...u,
+        status: (u.status === 1 || u.status === 'ACTIVE' ? 'ACTIVE' : 'DISABLED') as 'ACTIVE' | 'DISABLED',
+      }))
+      setUsers(normalized as AdminUser[]); setTotalUsers(r.total); setAdmins(al as AdminInfo[])
     } catch (e) { setError((e as Error).message || '加载失败') }
   }, [page, pageSize, filter])
 
@@ -155,8 +159,8 @@ export default function AdminPage() {
       series:[{ type:'pie', radius:['55%','78%'], center:['50%','50%'], avoidLabelOverlap:false,
         itemStyle:{ borderRadius:6, borderColor: isDark?'#0f172a':'#fff', borderWidth:2 },
         label:{ show:false }, emphasis:{ label:{ show:true, fontSize:12, fontWeight:'bold' } },
-        data: models.map(m => ({ name:m.model, value:m.calls, itemStyle:{ color:m.color || COLORS[models.indexOf(m)%COLORS.length] } })),
-      }],
+        data: models.map(m => ({ name: String(m.model || ''), value: Number(m.calls || 0), itemStyle:{ color:m.color || COLORS[models.indexOf(m)%COLORS.length] } })),
+      }] as any,
     })
 
     const initChart = (el: HTMLDivElement|null, name: string, opt: EChartsOption) => {
@@ -471,5 +475,6 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+    </div>
   )
 }

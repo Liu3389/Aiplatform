@@ -120,7 +120,7 @@ export default function DashboardPage() {
     return <div className="flex items-center justify-center h-full"><div className="w-6 h-6 border-2 border-brand-purple/30 border-t-brand-purple rounded-full animate-spin" /></div>
   }
 
-  const maxTokens = (membership.dailyTokens / 1000).toFixed(0) + 'K'
+  const maxTokens = ((membership.dailyTemporaryPoints + membership.dailyPermanentPoints) / 1000).toFixed(0) + 'K'
   const pointPercent = monthlyPoints > 0 ? Math.min(100, (tokensUsed / 100000) * 100) : 0
 
   return (

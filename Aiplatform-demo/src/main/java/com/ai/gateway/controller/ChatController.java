@@ -178,7 +178,15 @@ public class ChatController {
     @PostMapping("/export-content")
     public void exportContent(
             @RequestBody Map<String, String> request,
+            HttpServletRequest httpRequest,
             HttpServletResponse response) throws IOException {
+        // 获取用户ID进行权限校验
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) {
+            response.sendError(401, "未授权访问");
+            return;
+        }
+        
         String content = request.get("content");
         String fileName = request.get("fileName");
         
@@ -200,6 +208,8 @@ public class ChatController {
         
         response.getOutputStream().write(content.getBytes(StandardCharsets.UTF_8));
         response.getOutputStream().flush();
+        
+        log.info("用户导出文件: userId={}, fileName={}", userId, fileName);
     }
     
     /**

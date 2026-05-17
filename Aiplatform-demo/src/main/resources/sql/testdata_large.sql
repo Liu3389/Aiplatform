@@ -17,19 +17,18 @@ DELETE FROM `chat_message`;
 -- ============================================
 -- 1. 模型配置 (只配置 deepseek-v4-flash)
 -- ============================================
-INSERT INTO `platform_model_config` (`id`, `display_name`, `actual_model`, `fixed_points`, `provider`, `base_url`, `api_key`, `supports_vision`, `status`, `sort_order`) VALUES
-(1, 'DeepSeek-V4-Flash', 'deepseek-v4-flash', 1.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 1),
-(2, 'DeepSeek-V4-Pro',   'deepseek-v4-pro',   3.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 2);
+INSERT INTO `platform_model_config` (`id`, `display_name`, `actual_model`, `fixed_points`, `provider`, `base_url`, `api_key`, `supports_vision`, `access_level`, `status`, `sort_order`) VALUES
+(1, 'DeepSeek-V4-Flash', 'deepseek-v4-flash', 1.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 0, 1, 1),
+(2, 'DeepSeek-V4-Pro',   'deepseek-v4-pro',   3.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 1, 2);
 
 -- ============================================
 -- 2. 套餐模板
 -- ============================================
-INSERT INTO `package_template` (`id`, `package_code`, `package_name`, `description`, `identity_label`, `points`, `price`, `duration_days`, `daily_call_limit`, `monthly_call_limit`, `max_tokens_per_call`, `priority_level`, `features`, `status`, `sort_order`) VALUES
-(1, 'free',     '免费版', '基础免费套餐，适合体验用户',       '普通用户', 0.000,   0.00, NULL, 10,   300,   4096,  0, '{"desc":"每日10次调用"}',     1, 1),
-(2, 'basic',    '基础版', '适合个人开发者日常使用',          '畅享会员', 100.000, 29.90, 30,  50,   1500,  8192,  1, '{"desc":"每日50次调用"}',     1, 2),
-(3, 'premium',  '专业版', '适合专业开发者和小型团队',        '尊享会员', 500.000, 99.90, 30,  200,  6000,  16384, 2, '{"desc":"每日200次调用"}',    1, 3),
-(4, 'ultimate', '旗舰版', '适合企业和重度使用者',            '至尊会员', 2000.000,299.90,30,  1000, 30000, 32768, 3, '{"desc":"每日1000次调用"}',   1, 4),
-(5, 'starter',  '新手套餐','7天试用套餐，自动过期',           '体验会员', 50.000,  9.90, 7,   30,   900,   4096,  0, '{"desc":"7天试用"}',           1, 5);
+INSERT INTO `package_template` (`id`, `package_code`, `package_name`, `description`, `identity_label`, `points_granted`, `daily_points`, `price_monthly`, `price_quarterly`, `price_yearly`, `daily_call_limit`, `monthly_call_limit`, `max_tokens_per_call`, `max_input_tokens`, `max_output_tokens`, `model_access_level`, `priority_level`, `features`, `status`, `sort_order`) VALUES
+(1, 'free',     '免费普通用户', '基础免费套餐，适合体验用户',       '普通用户', 0.000,   30.000,  0.00,   0.00,   0.00,   0,    0,    6000,  6000,  6000,  0, 0, '{"desc":"每日30限时点数"}',              1, 1),
+(2, 'silver',   '白银月卡会员', '适合个人开发者日常使用',          '白银会员', 600.000, 80.000, 15.00,  40.00, 100.00,  0,    0,    12000, 12000, 12000, 1, 1, '{"desc":"每日30限时+80永久点数"}',       1, 2),
+(3, 'gold',     '黄金进阶会员', '适合专业开发者和小型团队',        '黄金会员', 1800.000,150.000,30.00,  80.00, 200.00,  0,    0,    18000, 18000, 18000, 2, 2, '{"desc":"每日30限时+150永久点数"}',      1, 3),
+(4, 'diamond',  '钻石旗舰会员', '适合企业和重度使用者',            '钻石会员', 5000.000,300.000,60.00, 160.00, 420.00,  0,    0,    32000, 32000, 32000, 3, 3, '{"desc":"每日30限时+300永久点数"}',      1, 4);
 
 -- ============================================
 -- 3. 用户数据 (50个用户: 2管理员 + 48普通用户)

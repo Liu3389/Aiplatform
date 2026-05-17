@@ -7,13 +7,12 @@ import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
 
 const HomePage = lazy(() => import('@/pages/HomePage'))
-const ChatPage = lazy(() => import('@/pages/ChatPage'))
+const ChatPage = lazy(() => import('@/pages/chat/ChatPage'))
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
 const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage'))
 const UserCenterPage = lazy(() => import('@/pages/UserCenterPage'))
 const AdminPage = lazy(() => import('@/pages/AdminPage'))
 const PretextWordCloudPage = lazy(() => import('@/pages/PretextWordCloudPage'))
-const SecurityPage = lazy(() => import('@/pages/SecurityPage'))
 const ModelStorePage = lazy(() => import('@/pages/ModelStorePage'))
 const BillingPage = lazy(() => import('@/pages/BillingPage'))
 const RechargePage = lazy(() => import('@/pages/RechargePage'))
@@ -88,7 +87,6 @@ export default function App() {
           <Route path="store" element={<LazyRoute><ModelStorePage /></LazyRoute>} />
           <Route path="billing" element={<LazyRoute><BillingPage /></LazyRoute>} />
           <Route path="recharge" element={<LazyRoute><RechargePage /></LazyRoute>} />
-          <Route path="security" element={<LazyRoute><SecurityPage /></LazyRoute>} />
           <Route path="admin" element={<AdminRoute><LazyRoute><AdminPage /></LazyRoute></AdminRoute>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

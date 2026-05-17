@@ -328,16 +328,16 @@
 |------|------|----------|
 | `user` | 用户表 | id, username, password, balance, points, role, status |
 | `api_key` | API Key 表 | id, user_id, key_value(加密), name, rate_limit, status |
-| `platform_model_config` | 平台模型配置 | id, display_name, actual_model, points_cost, status |
+| `platform_model_config` | 平台模型配置 | id, display_name, actual_model, fixed_points, access_level, status |
 | `chat_message` | 聊天消息（热） | id, conversation_id, user_id, role, content, model, tokens |
 | `chat_message_history` | 聊天消息（冷） | id, conversation_id, user_id, role, content, original_create_time, archive_time |
 | `conversation` | 会话表 | id, user_id, title, model, message_count |
 | `call_log` | 调用日志 | id, user_id, model, tokens_used, cost, status, response_time |
 | `billing_record` | 计费记录 | id, user_id, amount, type, description |
-| `points_bill` | 点数账单 | id, user_id, points_change, change_type, balance_before, balance_after |
-| `user_subscription` | 用户订阅 | id, user_id, package_code, start_time, end_time, status |
-| `package_template` | 套餐模板 | id, code, name, price, points, duration_days, status |
-| `coupon` | 优惠券 | id, code, name, points, total_count, used_count, expire_time |
+| `points_bill` | 点数账单 | id, user_id, points_change, change_type, balance_before, balance_after, is_temporary |
+| `user_subscription` | 用户订阅 | id, user_id, package_code, start_time, expire_time, status |
+| `package_template` | 套餐模板 | id, package_code, package_name, points_granted, daily_points, price_monthly, price_quarterly, price_yearly, model_access_level |
+| `coupon` | 优惠券 | id, code, name, amount, total_count, used_count, expire_time |
 | `coupon_usage_record` | 优惠券使用记录 | id, coupon_id, user_id, use_time |
 | `system_notification` | 系统通知 | id, title, content, type, target_type, publish_time |
 | `user_notification` | 用户通知关联 | id, user_id, notification_id, is_read, read_time |

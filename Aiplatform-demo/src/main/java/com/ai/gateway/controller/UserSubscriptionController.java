@@ -57,9 +57,9 @@ public class UserSubscriptionController {
             result.put("identityLabel", subscription.getIdentityLabel());
             result.put("expireTime", subscription.getExpireTime());
             result.put("pointsGranted", subscription.getPointsGranted());
-            result.put("dailyCallLimit", getDailyCallLimit(subscription.getPackageCode()));
-            result.put("monthlyCallLimit", getMonthlyCallLimit(subscription.getPackageCode()));
-            result.put("maxTokensPerCall", getMaxTokensPerCall(subscription.getPackageCode()));
+            result.put("maxInputTokens", getMaxInputTokens(subscription.getPackageCode()));
+            result.put("maxOutputTokens", getMaxOutputTokens(subscription.getPackageCode()));
+            result.put("modelAccessLevel", getModelAccessLevel(subscription.getPackageCode()));
             result.put("priorityLevel", getPriorityLevel(subscription.getPackageCode()));
         } else {
             result.put("hasSubscription", false);
@@ -104,11 +104,17 @@ public class UserSubscriptionController {
             return Result.error(400, "套餐代码不能为空");
         }
         
+        // 获取订阅周期，默认为月度
+        String cycle = (String) body.get("cycle");
+        if (cycle == null || cycle.isEmpty()) {
+            cycle = "MONTHLY";
+        }
+        
         Long couponId = body.containsKey("couponId") && body.get("couponId") != null
                 ? Long.valueOf(body.get("couponId").toString()) : null;
         
         try {
-            Map<String, Object> result = userSubscriptionService.purchasePackage(userId, packageCode, couponId);
+            Map<String, Object> result = userSubscriptionService.purchasePackage(userId, packageCode, cycle, couponId);
             return Result.success("购买成功", result);
         } catch (Exception e) {
             log.error("购买套餐失败", e);
@@ -139,19 +145,19 @@ public class UserSubscriptionController {
     }
 
     // 辅助方法：根据套餐代码获取限制信息
-    private Integer getDailyCallLimit(String packageCode) {
+    private Integer getMaxInputTokens(String packageCode) {
         PackageTemplate pkg = packageTemplateService.getByCode(packageCode);
-        return pkg != null ? pkg.getDailyCallLimit() : 0;
+        return pkg != null ? pkg.getMaxInputTokens() : 0;
     }
 
-    private Integer getMonthlyCallLimit(String packageCode) {
+    private Integer getMaxOutputTokens(String packageCode) {
         PackageTemplate pkg = packageTemplateService.getByCode(packageCode);
-        return pkg != null ? pkg.getMonthlyCallLimit() : 0;
+        return pkg != null ? pkg.getMaxOutputTokens() : 0;
     }
 
-    private Integer getMaxTokensPerCall(String packageCode) {
+    private Integer getModelAccessLevel(String packageCode) {
         PackageTemplate pkg = packageTemplateService.getByCode(packageCode);
-        return pkg != null ? pkg.getMaxTokensPerCall() : 0;
+        return pkg != null ? pkg.getModelAccessLevel() : 0;
     }
 
     private Integer getPriorityLevel(String packageCode) {

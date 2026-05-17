@@ -673,14 +673,20 @@ curl -X POST "http://localhost:8080/api/admin/points/adjust" \
   "data": [
     {
       "id": 1,
-      "packageCode": "BASIC",
-      "packageName": "基础版",
-      "description": "适合个人用户",
-      "points": 100.000,
-      "price": 29.00,
-      "durationDays": 30,
+      "packageCode": "SILVER",
+      "packageName": "白银月卡会员",
+      "description": "适合个人开发者日常使用",
+      "identityLabel": "白银会员",
+      "pointsGranted": 600.000,
+      "dailyPoints": 80.000,
+      "priceMonthly": 15.00,
+      "priceQuarterly": 40.00,
+      "priceYearly": 100.00,
+      "maxInputTokens": 12000,
+      "maxOutputTokens": 12000,
+      "modelAccessLevel": 1,
       "status": 1,
-      "sortOrder": 1
+      "sortOrder": 2
     }
   ]
 }
@@ -703,14 +709,20 @@ curl -X POST "http://localhost:8080/api/admin/points/adjust" \
 **Body**:
 ```json
 {
-  "packageCode": "PRO",
-  "packageName": "专业版",
-  "description": "适合专业开发者",
-  "points": 1000.000,
-  "price": 99.00,
-  "durationDays": 30,
+  "packageCode": "GOLD",
+  "packageName": "黄金进阶会员",
+  "description": "适合专业开发者和小型团队",
+  "identityLabel": "黄金会员",
+  "pointsGranted": 1800.000,
+  "dailyPoints": 150.000,
+  "priceMonthly": 30.00,
+  "priceQuarterly": 80.00,
+  "priceYearly": 200.00,
+  "maxInputTokens": 18000,
+  "maxOutputTokens": 18000,
+  "modelAccessLevel": 2,
   "status": 1,
-  "sortOrder": 2
+  "sortOrder": 3
 }
 ```
 
@@ -726,8 +738,10 @@ curl -X POST "http://localhost:8080/api/admin/points/adjust" \
 ```json
 {
   "id": 1,
-  "packageName": "基础版（更新）",
-  "price": 39.00
+  "packageName": "白银月卡会员（升级版）",
+  "pointsGranted": 800.000,
+  "dailyPoints": 100.000,
+  "priceMonthly": 18.00
 }
 ```
 

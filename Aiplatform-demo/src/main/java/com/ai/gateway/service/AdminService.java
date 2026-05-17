@@ -464,7 +464,7 @@ public class AdminService {
             Long userId = userIds.get(i);
             String businessId = "admin_batch_" + baseTime + "_" + uuidSuffix + "_" + i + "_" + userId;
             pointsService.addPoints(userId, points, "GRANT", businessId, 
-                    "管理员批量发放点数", null);
+                    "管理员批量发放点数", null, 0);
             successCount++;
         }
         log.info("批量发放点数: 总数={}, 成功={}, 点数={}", userIds.size(), successCount, points);
@@ -483,7 +483,7 @@ public class AdminService {
         
         // 修复 P1-9: 传入原始数值（含符号），确保账单记录与实际变动一致
         pointsService.addPoints(userId, points, changeType, businessId, 
-                "管理员调整: " + reason, null);
+                "管理员调整: " + reason, null, 0);
         
         log.info("调整用户点数: userId={}, 调整={}, 类型={}, 原因={}", userId, points, changeType, reason);
     }

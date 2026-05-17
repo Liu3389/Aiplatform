@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AI Gateway Platform API - 用户接口",
-    "description": "凌点AI模型调度网关用户接口测试 - 使用 X-User-Token Header 认证\n\n**最新更新 (2026-05-16)**:\n- ✅ 架构重构：拆分为 AI 对话平台（点数制）与 模型商店（API Key 中转）双业务线\n- ✅ 新增平台对话模型配置表 platform_model_config（支持虚拟模型映射，多厂商路由）\n- ✅ 新增模型商店相关表（marketplace_provider, user_marketplace_key, usage_log）\n- ✅ 移除旧版 model_config 及用户自定义 API Key 功能\n- ✅ 统一业务术语：所有对话只扣点数，不扣余额；货币单位统一为中文\"元\"\n- ✅ 更新 DeepSeek API 配置（仅保留 deepseek-v4-flash 和 deepseek-v4-pro）\n- ✅ 新增聊天记录管理模块（游标分页 + 冷热分离）\n- ✅ 统一点数体系，新增点数账单查询接口\n\n**主要功能模块**:\n1. 用户认证（10个接口）\n2. 平台对话模型（/platform-model/list）\n3. 会话管理（7个接口）\n4. 聊天对话（7个接口）\n5. 模型商店（/marketplace/keys, /buy-key）\n6. 用户中心（点数、套餐、账单、2FA、设备管理）\n7. 通知与优惠券（8个接口）\n\n**总计: 73 个用户端 API 接口**",
+    "description": "凌点AI模型调度网关用户接口测试 - 使用 X-User-Token Header 认证\n\n**最新更新 (2026-05-17)**:\n- ✅ 架构重构：拆分为 AI 对话平台（点数制）与 模型商店（API Key 中转）双业务线\n- ✅ 新增平台对话模型配置表 platform_model_config（支持虚拟模型映射，多厂商路由）\n- ✅ 新增模型商店相关表（marketplace_provider, user_marketplace_key, usage_log）\n- ✅ 移除旧版 model_config 及用户自定义 API Key 功能\n- ✅ 统一业务术语：所有对话只扣点数，不扣余额；货币单位统一为中文\"元\"\n- ✅ 更新 DeepSeek API 配置（仅保留 deepseek-v4-flash 和 deepseek-v4-pro）\n- ✅ 新增聊天记录管理模块（游标分页 + 冷热分离）\n- ✅ 统一点数体系，新增点数账单查询接口\n- ✅ **新增 AI 文档助手模块**：文件上传、解析、与 AI 对话，支持流式（SSE）和非流式两种模式\n\n**主要功能模块**:\n1. 用户认证（10个接口）\n2. 平台对话模型（/platform-model/list）\n3. 会话管理（7个接口）\n4. 聊天对话（7个接口）\n5. 模型商店（/marketplace/keys, /buy-key）\n6. 用户中心（点数、套餐、账单、2FA、设备管理）\n7. 通知与优惠券（8个接口）\n8. **AI 文档助手**（3个接口：非流式、流式、导出）\n\n**总计: 76 个用户端 API 接口**",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -2223,6 +2223,123 @@
           ]
         }
       }
+    },
+    {
+      "name": "AI 文档助手",
+      "description": "文件上传、解析、与 AI 对话功能，支持流式和非流式两种模式",
+      "item": [
+        {
+          "name": "文件解析与AI对话（非流式）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "question",
+                  "value": "请总结这个文档的主要内容",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/ai-doc/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "ai-doc",
+                "chat"
+              ]
+            },
+            "description": "上传文件并与 AI 进行对话（非流式）\n\n支持的文件格式：\n- 文本类：.txt, .md, .java, .py, .cpp, .html, .css, .js, .xml, .json\n- Office 文档：.docx, .xlsx\n\n文件大小限制：最大 10MB\n\n响应格式：JSON，返回完整的 AI 回复内容"
+          }
+        },
+        {
+          "name": "文件解析与AI对话（流式 - SSE）⭐推荐",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "question",
+                  "value": "请总结这个文档的主要内容",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/ai-doc/chat/stream",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "ai-doc",
+                "chat",
+                "stream"
+              ]
+            },
+            "description": "上传文件并与 AI 进行对话（流式输出 - SSE）\n\n✅ 推荐使用此接口，提供更好的用户体验\n\nSSE 事件流程：\n1. status:parsing - 正在解析文件\n2. status:parsed - 文件解析完成，正在与AI对话\n3. content - AI 回复内容（完整文本）\n4. done - 对话完成\n5. error - 错误信息\n\n前端需要使用 EventSource 或 Fetch API 读取流式响应"
+          }
+        },
+        {
+          "name": "导出AI结果",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"# AI 分析报告\\n\\n这是AI生成的内容...\",\n  \"format\": \"md\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/ai-doc/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "ai-doc",
+                "export"
+              ]
+            },
+            "description": "将 AI 回复内容导出为文件\n\n支持的格式：\n- md: Markdown 文件\n- txt: 纯文本文件\n- pdf: PDF 文档（待实现）\n- docx: Word 文档（待实现）\n\n响应：文件下载（application/octet-stream）"
+          }
+        }
+      ]
     }
   ]
 }

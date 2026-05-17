@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@SuppressWarnings("unchecked")
 public class UserService {
 
     private final UserMapper userMapper;
@@ -663,8 +664,8 @@ public class UserService {
             throw new BusinessException("请选择要购买的套餐");
         }
         
-        // 委托给 UserSubscriptionService 处理扣费和创建订阅
-        userSubscriptionService.purchasePackage(userId, packageCode, null);
+        // 委托给 UserSubscriptionService 处理扣费和创建订阅（默认月度）
+        userSubscriptionService.purchasePackage(userId, packageCode, "MONTHLY", null);
         
         log.info("用户完成套餐订阅: userId={}, package={}, method={}", userId, packageCode, paymentMethod);
     }

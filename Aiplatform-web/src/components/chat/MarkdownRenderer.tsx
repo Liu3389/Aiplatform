@@ -1,135 +1,166 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useThemeStore } from '@/stores/themeStore'
 
 interface Props { content: string; isStreaming?: boolean }
 
-export default function MarkdownRenderer({ content, isStreaming }: Props) {
-  const { theme } = useThemeStore()
-  const isDark = theme === 'dark'
+const COPY_TIMEOUT = 1500
 
-  const doCopy = (e: React.MouseEvent<HTMLButtonElement>) => {
-    const wrapper = (e.currentTarget as HTMLElement).closest('.code-block-wrapper')
-    const pre = wrapper?.querySelector('pre')
-    const text = pre?.textContent || ''
-    try {
-      navigator.clipboard.writeText(text)
-    } catch {
-      const ta = document.createElement('textarea')
-      ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px'
-      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
-    }
-    e.currentTarget.textContent = 'COPIED'
-    setTimeout(() => { e.currentTarget.textContent = 'COPY' }, 1500)
+function doCopy(text: string, setter: (v: string) => void) {
+  navigator.clipboard.writeText(text).catch(() => {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.left = '-9999px'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  })
+  setter('COPIED')
+  setTimeout(() => setter('COPY'), COPY_TIMEOUT)
+}
+
+function doDownload(text: string, language: string, setter: (v: string) => void) {
+  const extensionMap: Record<string, string> = {
+    js: 'js', ts: 'ts', jsx: 'jsx', tsx: 'tsx',
+    py: 'py', python: 'py',
+    java: 'java', cpp: 'cpp', c: 'c', cs: 'cs', go: 'go', rs: 'rust', rb: 'rb',
+    html: 'html', css: 'css', scss: 'scss', less: 'less',
+    json: 'json', xml: 'xml', yaml: 'yaml', yml: 'yml', toml: 'toml',
+    sql: 'sql', sh: 'sh', bash: 'sh', zsh: 'sh',
+    md: 'md', markdown: 'md',
+    txt: 'txt', text: 'txt', plaintext: 'txt',
+    dockerfile: 'Dockerfile', docker: 'Dockerfile',
   }
+  const ext = extensionMap[language.toLowerCase()] || 'txt'
+  const fileName = `code_${Date.now()}.${ext}`
+  const blob = new Blob([text], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  a.click()
+  URL.revokeObjectURL(url)
+  setter('DOWNLOADED')
+  setTimeout(() => setter('DOWNLOAD'), COPY_TIMEOUT)
+}
 
-  const themeStyles = useMemo(() => ({
-    text: isDark ? '#E2E8F0' : '#334155',
-    dim: isDark ? '#94A3B8' : '#64748B',
-    code: isDark ? '#1E293B' : '#F1F5F9',
-    codeText: isDark ? '#E2E8F0' : '#1E293B',
-    codeBorder: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-    tableBorder: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-    tableHead: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-    blockquote: isDark ? 'rgba(139,92,246,0.15)' : 'rgba(139,92,246,0.08)',
-    blockquoteBorder: isDark ? '#8B5CF6' : '#7C3AED',
-  }), [isDark])
+function CodeBlockHeader({ language, codeText, dimColor }: { language: string; codeText: string; dimColor: string }) {
+  const [copyLabel, setCopyLabel] = useState('COPY')
+  const [downloadLabel, setDownloadLabel] = useState('DOWNLOAD')
+
+  const handleCopy = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    doCopy(codeText, setCopyLabel)
+  }, [codeText])
+
+  const handleDownload = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    doDownload(codeText, language, setDownloadLabel)
+  }, [codeText, language])
 
   return (
-    <div
-      className="prose prose-sm max-w-none"
-      style={{
-        color: themeStyles.text,
-        '--tw-prose-headings': themeStyles.text,
-        '--tw-prose-links': '#8B5CF6',
-        '--tw-prose-bold': themeStyles.text,
-      } as React.CSSProperties}
-    >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          h1: ({ children, ...props }) => (
-            <h1 className="text-xl font-bold mt-6 mb-3 pb-2" style={{ borderBottom: `2px solid ${themeStyles.blockquoteBorder}40`, color: themeStyles.text }} {...props}>{children}</h1>
-          ),
-          h2: ({ children, ...props }) => (
-            <h2 className="text-lg font-bold mt-5 mb-2" style={{ color: themeStyles.text }} {...props}>{children}</h2>
-          ),
-          h3: ({ children, ...props }) => (
-            <h3 className="text-base font-semibold mt-4 mb-2" style={{ color: themeStyles.text }} {...props}>{children}</h3>
-          ),
-          p: ({ children, ...props }) => (
-            <p className="my-2 leading-relaxed" style={{ color: themeStyles.text }} {...props}>{children}</p>
-          ),
-          ul: ({ children, ...props }) => (
-            <ul className="my-2 pl-5 space-y-1 list-disc" style={{ color: themeStyles.text }} {...props}>{children}</ul>
-          ),
-          ol: ({ children, ...props }) => (
-            <ol className="my-2 pl-5 space-y-1 list-decimal" style={{ color: themeStyles.text }} {...props}>{children}</ol>
-          ),
-          li: ({ children, ...props }) => (
-            <li className="leading-relaxed" style={{ color: themeStyles.text }} {...props}>{children}</li>
-          ),
-          strong: ({ children, ...props }) => (
-            <strong className="font-semibold" style={{ color: '#8B5CF6' }} {...props}>{children}</strong>
-          ),
-          a: ({ children, href, ...props }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2" style={{ color: '#8B5CF6' }} {...props}>{children}</a>
-          ),
-          code: ({ className, children, ...props }: any) => {
-            const isInline = !className
-            if (isInline) {
-              return (
-                <code className="px-1.5 py-0.5 rounded text-xs font-mono" style={{ background: themeStyles.code, border: `1px solid ${themeStyles.codeBorder}`, color: '#8B5CF6' }} {...props}>{children}</code>
-              )
-            }
-            const language = className?.replace('language-', '') || ''
-            return (
-              <div className="code-block-wrapper my-3 rounded-xl overflow-hidden border" style={{ borderColor: themeStyles.codeBorder, background: themeStyles.code }}>
-                <div className="flex items-center justify-between px-4 py-1.5" style={{ borderBottom: `1px solid ${themeStyles.codeBorder}` }}>
-                  <span className="text-[10px] font-mono uppercase tracking-wider" style={{ color: themeStyles.dim }}>{language || 'code'}</span>
-                  <button
-                    onClick={doCopy}
-                    className="text-[10px] px-2 py-0.5 rounded transition-colors hover:bg-white/5 cursor-pointer select-none"
-                    style={{ color: themeStyles.dim }}
-                  >
-                    COPY
-                  </button>
-                </div>
-                <pre className="p-4 overflow-x-auto text-xs font-mono leading-relaxed" style={{ color: themeStyles.codeText }}><code className={className}>{children}</code></pre>
-              </div>
-            )
-          },
-          table: ({ children, ...props }) => (
-            <div className="my-3 overflow-x-auto rounded-xl border" style={{ borderColor: themeStyles.tableBorder }}>
-              <table className="w-full text-sm border-collapse" {...props}>{children}</table>
-            </div>
-          ),
-          thead: ({ children, ...props }) => (
-            <thead style={{ background: themeStyles.tableHead }} {...props}>{children}</thead>
-          ),
-          th: ({ children, ...props }) => (
-            <th className="px-3 py-2 text-left text-xs font-semibold border-b" style={{ borderColor: themeStyles.tableBorder, color: themeStyles.dim }} {...props}>{children}</th>
-          ),
-          td: ({ children, ...props }) => (
-            <td className="px-3 py-2 text-xs border-b" style={{ borderColor: themeStyles.tableBorder, color: themeStyles.text }} {...props}>{children}</td>
-          ),
-          blockquote: ({ children, ...props }) => (
-            <blockquote className="my-3 px-4 py-2 rounded-r-lg border-l-4" style={{ background: themeStyles.blockquote, borderColor: themeStyles.blockquoteBorder, color: themeStyles.text }} {...props}>{children}</blockquote>
-          ),
-          hr: (props) => (
-            <hr className="my-4" style={{ borderColor: themeStyles.tableBorder }} {...props} />
-          ),
-          img: ({ src, alt, ...props }) => (
-            <img src={src} alt={alt} className="my-3 rounded-xl max-w-full" style={{ border: `1px solid ${themeStyles.tableBorder}` }} {...props} />
-          ),
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-      {isStreaming && (
-        <span className="inline-block w-2 h-4 ml-0.5 bg-brand-purple animate-pulse align-middle rounded-sm" />
-      )}
+    <div className="flex items-center justify-between px-4 py-1.5 select-none" style={{ borderBottom: '1px solid var(--code-block-border)' }}>
+      <span className="text-[10px] font-mono uppercase tracking-wider" style={{ color: dimColor }}>
+        {language || 'code'}
+      </span>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={handleCopy}
+          className="text-[10px] px-2 py-0.5 rounded transition-colors hover:bg-white/5 cursor-pointer font-mono"
+          style={{ color: dimColor }}
+        >
+          {copyLabel}
+        </button>
+        <button
+          onClick={handleDownload}
+          className="text-[10px] px-2 py-0.5 rounded transition-colors hover:bg-white/5 cursor-pointer font-mono"
+          style={{ color: dimColor }}
+        >
+          {downloadLabel}
+        </button>
+      </div>
     </div>
+  )
+}
+
+export default function MarkdownRenderer({ content, isStreaming }: Props) {
+  const isDark = useThemeStore(s => s.theme) === 'dark'
+  const dimColor = isDark ? '#94A3B8' : '#64748B'
+
+  const components = useMemo(() => ({
+    code({ node, inline, className, children, ...props }: any) {
+      const rawText = String(children).replace(/\n$/, '')
+      if (!inline && rawText) {
+        const match = /language-(\w+)/.exec(className || '')
+        const language = match ? match[1] : ''
+        return (
+          <div className="my-3 rounded-xl overflow-hidden border" style={{
+            borderColor: 'var(--code-block-border)',
+            background: isDark ? '#0F172A' : '#F1F5F9',
+          }}>
+            <CodeBlockHeader language={language} codeText={rawText} dimColor={dimColor} />
+            <pre className="!m-0 !p-4 overflow-x-auto text-xs sm:text-sm leading-relaxed" style={{
+              background: isDark ? '#0F172A' : '#F1F5F9',
+            }}>
+              <code className={className} {...props}>
+                {rawText}
+              </code>
+            </pre>
+          </div>
+        )
+      }
+      return (
+        <code className="px-1 py-0.5 rounded text-[0.85em] font-mono" style={{
+          background: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(71,85,105,0.08)',
+          color: isDark ? '#E2E8F0' : '#334155',
+        }}>
+          {children}
+        </code>
+      )
+    },
+    p({ children }: any) {
+      if (typeof children === 'string' || (Array.isArray(children) && children.every((c: any) => typeof c === 'string' || c?.type === 'code'))) {
+        return <p className="my-2 leading-7">{children}</p>
+      }
+      return <div className="my-2 leading-7">{children}</div>
+    },
+    ul({ children }: any) {
+      return <ul className="list-disc pl-6 my-2 space-y-1">{children}</ul>
+    },
+    ol({ children }: any) {
+      return <ol className="list-decimal pl-6 my-2 space-y-1">{children}</ol>
+    },
+    a({ href, children }: any) {
+      return <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2" style={{ color: 'var(--accent-purple)' }}>{children}</a>
+    },
+    blockquote({ children }: any) {
+      return <blockquote className="border-l-3 pl-4 my-2 italic opacity-80" style={{ borderColor: 'var(--accent-purple)' }}>{children}</blockquote>
+    },
+    table({ children }: any) {
+      return <div className="overflow-x-auto my-3"><table className="min-w-full border-collapse text-xs sm:text-sm" style={{ border: '1px solid var(--border-color)' }}>{children}</table></div>
+    },
+    th({ children }: any) {
+      return <th className="border px-3 py-2 text-left font-medium" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-surface)' }}>{children}</th>
+    },
+    td({ children }: any) {
+      return <td className="border px-3 py-2" style={{ borderColor: 'var(--border-color)' }}>{children}</td>
+    },
+    hr() {
+      return <hr className="my-4" style={{ borderColor: 'var(--border-color)' }} />
+    },
+    h1({ children }: any) { return <h1 className="text-xl font-semibold mt-5 mb-2" style={{ color: 'var(--text-primary)' }}>{children}</h1> },
+    h2({ children }: any) { return <h2 className="text-lg font-semibold mt-4 mb-2" style={{ color: 'var(--text-primary)' }}>{children}</h2> },
+    h3({ children }: any) { return <h3 className="text-base font-semibold mt-3 mb-1.5" style={{ color: 'var(--text-primary)' }}>{children}</h3> },
+    strong({ children }: any) { return <strong style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{children}</strong> },
+    em({ children }: any) { return <em className="italic opacity-90">{children}</em> },
+  }), [isDark, dimColor])
+
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      {content || (isStreaming ? '' : '')}
+    </ReactMarkdown>
   )
 }

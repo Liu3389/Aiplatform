@@ -120,7 +120,7 @@ export const authApi = {
 export const userApi = {
   request: <T>(opts: { method?: string; url: string; headers?: Record<string, string>; data?: any; params?: Record<string, any> }): Promise<T> =>
     request<T>(opts.url, { method: opts.method || 'GET', headers: opts.headers, body: opts.data ? JSON.stringify(opts.data) : undefined }),
-  getInfo: () => request<{ id: number; username: string; email: string | null; balance: number; role: string; status: string; membership: string; freeApiStrategy: string; freeQuota: number; dailyCallLimit: number; monthlyCallLimit: number; createTime: string }>('/user/info'),
+  getInfo: () => request<{ id: number; username: string; email: string | null; balance: number; role: string; status: string; membership: string; freeApiStrategy: string; freeQuota: number; dailyCallLimit: number; monthlyCallLimit: number; points: number; membershipExpireTime?: string; createTime: string }>('/user/info'),
   getBalance: () => request<number>('/user/balance'),
   getFreeQuota: () => request<{ usedCalls: number; maxCalls: number; usedTokens: number; maxTokens: number; monthlyPoints: number }>('/user/free-quota'),
   recharge: (amount: number) => request<null>('/user/recharge?amount=' + amount, { method: 'POST' }),
@@ -129,6 +129,12 @@ export const userApi = {
   fetchConversations: () => request<{ conversations: any[]; version: number }>('/user/conversations/fetch'),
   getConversationVersion: () => request<{ version: number }>('/user/conversations/version'),
   clearCloudConversations: () => request<null>('/user/conversations/clear', { method: 'DELETE' }),
+  getRechargeRecords: (page = 1, size = 20) => request<any[]>('/user/recharge-records?page=' + page + '&size=' + size),
+  getPointsBills: (page = 1, size = 20, changeType?: string) => {
+    let url = '/user/points-bills?page=' + page + '&size=' + size
+    if (changeType) url += '&changeType=' + changeType
+    return request<{ records: any[]; total: number; page: number; size: number }>(url)
+  },
 };
 
 export const modelStoreApi = {
@@ -149,8 +155,27 @@ export const apiKeyApi = {
   updateRateLimit: (id: number, rateLimit: number) => request<null>('/api-key/' + id + '/rate-limit?rateLimit=' + rateLimit, { method: 'PUT' }),
 };
 
+export interface UserApiKeyItem {
+  id: number
+  provider: string
+  displayName: string
+  apiKey: string
+  baseUrl?: string
+  status: number
+  createTime?: string
+  lastUsedTime?: string
+}
+
+export const userApiKeyApi = {
+  list: () => request<UserApiKeyItem[]>('/user/api-keys'),
+  add: (data: { provider: string; displayName?: string; apiKey: string; baseUrl?: string }) =>
+    request<UserApiKeyItem>('/user/api-keys', { method: 'POST', body: JSON.stringify(data) }),
+  delete: (id: number) => request<null>('/user/api-keys/' + id, { method: 'DELETE' }),
+};
+
 export const modelApi = {
   list: () => request<Array<{ id: number; modelName: string; provider: string; baseUrl: string; inputPrice: number; outputPrice: number; status: number }>>('/platform-model/list'),
+  getAvailable: () => request<import('@/types').AvailableModel[]>('/platform-model/available'),
 };
 
 export const notificationApi = {
@@ -208,12 +233,9 @@ export async function ensureApiKey(): Promise<string | undefined> {
 
 export const chatApi = {
   nonStream: (
-    apiKeyValue: string,
     data: ChatRequest & { customApiKey?: string; customBaseUrl?: string; customFormat?: string }
   ) => {
     const h: Record<string, string> = { 'Content-Type': 'application/json' };
-    // API Key 是可选的，优先使用 X-User-Token 进行用户认证
-    if (apiKeyValue) h['X-API-Key'] = apiKeyValue;
     const token = localStorage.getItem('lingdian_token');
     if (token) h['X-User-Token'] = token;
     return fetch(BASE_URL + '/chat/completions', { method: 'POST', headers: h, body: JSON.stringify(data) })
@@ -226,121 +248,129 @@ export const chatApi = {
   },
 
   stream: (
-    apiKeyValue: string,
     data: ChatRequest & { customApiKey?: string; customBaseUrl?: string; customFormat?: string },
-    onMessage: (content: string) => void,
-    onDone: (result: { inputTokens: number; outputTokens: number; cost: number }) => void,
-    onError: (error: string) => void
+    callbacks: {
+      onMessage: (content: string) => void
+      onDone: (finished: boolean, inputTokens?: number, outputTokens?: number, cost?: number) => void
+      onError: (error: string) => void
+    },
+    signal?: AbortSignal
   ): AbortController => {
-    const controller = new AbortController();
+    const controller = new AbortController()
+    const combinedSignal = signal
+
+    if (combinedSignal) {
+      combinedSignal.addEventListener('abort', () => controller.abort())
+    }
+
     const run = async () => {
       try {
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
-        };
-        // API Key 是可选的，优先使用 X-User-Token 进行用户认证
-        if (apiKeyValue) {
-          headers['X-API-Key'] = apiKeyValue;
         }
-        const token = localStorage.getItem('lingdian_token');
-        if (token) headers['X-User-Token'] = token;
+        const token = localStorage.getItem('lingdian_token')
+        if (token) headers['X-User-Token'] = token
 
         const response = await fetch(BASE_URL + '/chat/stream', {
           method: 'POST',
           headers,
           body: JSON.stringify({ ...data, stream: true }),
           signal: controller.signal
-        });
+        })
 
         if (!response.ok) {
-          const text = await response.text().catch(() => '');
-          let msg = 'HTTP ' + response.status;
-          try { const j = JSON.parse(text); msg = j.message || msg; } catch {}
-          onError(msg);
-          return;
+          const text = await response.text().catch(() => '')
+          let msg = 'HTTP ' + response.status
+          try { const j = JSON.parse(text); msg = j.message || msg } catch {}
+          callbacks.onError(msg)
+          return
         }
 
-        const reader = response.body?.getReader();
-        if (!reader) { onError('无法读取响应流'); return; }
+        const reader = response.body?.getReader()
+        if (!reader) { callbacks.onError('无法读取响应流'); return }
 
-        const decoder = new TextDecoder();
-        let buffer = '';
-
+        const decoder = new TextDecoder()
+        let buffer = ''
         let receivedDone = false
+        let eventType = ''
+        let dataLine = ''
+        let debugChunkCount = 0
 
         while (true) {
-          const { done, value } = await reader.read();
+          const { done, value } = await reader.read()
 
-          // Always decode value if present (Streams API may return data + done=true together)
           if (value) {
-            buffer += decoder.decode(value, { stream: !done });
+            buffer += decoder.decode(value, { stream: !done })
           }
 
-          // Process all complete SSE events from buffer
-          const events = buffer.split('\n\n');
-          buffer = events.pop() || '';
+          const lines = buffer.split(/\r?\n/)
+          buffer = lines.pop() || ''
 
-          for (const event of events) {
-            if (!event.trim()) continue;
-            const lines = event.split('\n');
-            let dataLine = '';
-            let eventType = '';
+          for (const line of lines) {
+            const t = line.trim()
 
-            for (const line of lines) {
-              if (line.startsWith('event:')) eventType = line.slice(6).trim();
-              else if (line.startsWith('data:')) dataLine = line.slice(5).trim();
+            if (t === '') {
+              if (dataLine && dataLine !== '[DONE]') {
+                try {
+                  const json = JSON.parse(dataLine)
+                  if (eventType === 'message') {
+                    if (json.content) {
+                      callbacks.onMessage(json.content)
+                      debugChunkCount++
+                    }
+                  } else if (eventType === 'done') {
+                    receivedDone = true
+                    console.log(`[SSE] Done. Total chunks received: ${debugChunkCount}, tokens: in=${json.inputTokens}, out=${json.outputTokens}`)
+                    callbacks.onDone(true, json.inputTokens || 0, json.outputTokens || 0, json.cost || 0)
+                  } else if (eventType === 'error') {
+                    callbacks.onError(json.message || '发生错误')
+                  }
+                } catch {
+                  console.warn('SSE parse error:', dataLine.slice(0, 200))
+                }
+              }
+              eventType = ''
+              dataLine = ''
+              continue
             }
 
-            if (!dataLine || dataLine === '[DONE]') continue;
+            if (t.startsWith(':')) continue
 
-            try {
-              const json = JSON.parse(dataLine);
-              if (eventType === 'message') {
-                if (json.content) onMessage(json.content);
-              } else if (eventType === 'done') {
-                receivedDone = true;
-                onDone({
-                  inputTokens: json.inputTokens || 0,
-                  outputTokens: json.outputTokens || 0,
-                  cost: json.cost || 0,
-                });
-              } else if (eventType === 'error') {
-                onError(json.message || '发生错误');
-              }
-            } catch {}
+            if (t.startsWith('event:')) {
+              eventType = t.slice(6).trim()
+            } else if (t.startsWith('data:')) {
+              const dataPart = t.slice(5).trim()
+              if (dataLine) dataLine += '\n' + dataPart
+              else dataLine = dataPart
+            }
           }
 
           if (done) {
-            // Flush any remaining incomplete data in buffer (last event without \n\n)
-            if (buffer.trim() && !receivedDone) {
-              const lines = buffer.split('\n');
-              let dataLine = '';
-              let eventType = '';
-              for (const line of lines) {
-                if (line.startsWith('event:')) eventType = line.slice(6).trim();
-                else if (line.startsWith('data:')) dataLine = line.slice(5).trim();
-              }
-              if (dataLine && dataLine !== '[DONE]') {
-                try {
-                  const json = JSON.parse(dataLine);
-                  if (eventType === 'done') {
-                    receivedDone = true;
-                    onDone({ inputTokens: json.inputTokens || 0, outputTokens: json.outputTokens || 0, cost: json.cost || 0 });
-                  }
-                } catch {}
-              }
+            if (dataLine && dataLine !== '[DONE]') {
+              try {
+                const json = JSON.parse(dataLine)
+                if (eventType === 'message' && json.content) {
+                  callbacks.onMessage(json.content)
+                  debugChunkCount++
+                }
+                else if (eventType === 'done') {
+                  receivedDone = true
+                  callbacks.onDone(true, json.inputTokens || 0, json.outputTokens || 0, json.cost || 0)
+                }
+              } catch { console.warn('SSE final parse error:', dataLine.slice(0, 200)) }
             }
-            if (!receivedDone) onDone({ inputTokens: 0, outputTokens: 0, cost: 0 });
-            break;
+            console.log(`[SSE] Stream ended. Total chunks: ${debugChunkCount}`)
+            if (!receivedDone) callbacks.onDone(true, 0, 0, 0)
+            break
           }
         }
       } catch (err) {
-        if ((err as Error).name === 'AbortError') return;
-        onError((err as Error).message || '连接错误');
+        if ((err as Error).name === 'AbortError') return
+        callbacks.onError((err as Error).message || '连接错误')
       }
-    };
-    run();
-    return controller;
+    }
+    run()
+    return controller
   }
 };
 
@@ -389,6 +419,7 @@ export const adminApi = {
 
 export const pointsApi = {
   getBalance: () => request<number>('/user/points'),
+  getInfo: () => request<import('@/types').UserPointsInfo>('/user/points/info'),
   getBills: (page = 1, size = 20, changeType?: string) => {
     const qs = new URLSearchParams()
     qs.set('page', String(page))
@@ -445,8 +476,8 @@ export const subscriptionApi = {
   getPackages: () => request<any[]>('/user/subscriptions/packages'),
   getCurrent: () => request<any>('/user/subscriptions/current'),
   getHistory: () => request<any[]>('/user/subscriptions/history'),
-  purchase: (packageCode: string, couponId?: number) =>
-    request<any>('/user/subscriptions/purchase', { method: 'POST', body: JSON.stringify({ packageCode, couponId }) }),
+  purchase: (packageCode: string, cycle = 'MONTHLY', couponId?: number) =>
+    request<any>('/user/subscriptions/purchase', { method: 'POST', body: JSON.stringify({ packageCode, cycle, couponId }) }),
   cancel: (subscriptionId: number) =>
     request<null>('/user/subscriptions/cancel/' + subscriptionId, { method: 'POST' }),
 };
@@ -635,19 +666,193 @@ export const chatFileApi = {
 };
 
 export const aiDocApi = {
-  chat: (file: File, question: string) => {
+  /** 独立上传文件并解析 */
+  upload: (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('question', question)
     const token = localStorage.getItem('lingdian_token')
-    return fetch('/api/v1/ai-doc/chat', {
+    return fetch('/api/v1/ai-doc/upload', {
       method: 'POST',
       headers: { 'X-User-Token': token || '' },
       body: formData,
     }).then(async r => {
       const j = await r.json()
-      if (j.code !== 200) throw new Error(j.message || '请求失败')
-      return j.data
+      if (j.code !== 200) throw new Error(j.message || '上传解析失败')
+      return j.data as { fileId: string; fileName: string; fileSize: number; status: string; ossUrl: string }
+    })
+  },
+  /** 查询文件解析状态 */
+  getParseStatus: (fileId: string) => {
+    const token = localStorage.getItem('lingdian_token')
+    return fetch('/api/v1/ai-doc/parse-status/' + fileId, {
+      method: 'GET',
+      headers: { 'X-User-Token': token || '' },
+    }).then(async r => {
+      const j = await r.json()
+      if (j.code !== 200) throw new Error(j.message || '查询失败')
+      return j.data as { fileId: string; fileName: string; status: string; createdAt: number }
+    })
+  },
+  /** 删除已上传的文件 */
+  deleteUpload: (fileId: string) => {
+    const token = localStorage.getItem('lingdian_token')
+    return fetch('/api/v1/ai-doc/upload/' + fileId, {
+      method: 'DELETE',
+      headers: { 'X-User-Token': token || '' },
+    }).then(async r => {
+      const j = await r.json()
+      if (j.code !== 200) throw new Error(j.message || '删除失败')
+      return true
+    })
+  },
+  /** 基于已解析文件进行流式对话 (fileId + question) */
+  chatStreamWithFileId: (
+    fileId: string,
+    question: string,
+    callbacks: {
+      onContent?: (text: string) => void
+      onDone?: (message: string) => void
+      onError?: (error: string) => void
+    },
+    signal?: AbortSignal
+  ) => {
+    const token = localStorage.getItem('lingdian_token')
+    return fetch('/api/v1/ai-doc/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-User-Token': token || '' },
+      body: JSON.stringify({ fileId, question }),
+      signal,
+    }).then(async response => {
+      if (!response.ok) {
+        const errText = await response.text()
+        throw new Error(errText || `请求失败 (${response.status})`)
+      }
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('不支持流式读取')
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let eventName = ''
+      let dataLine = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (value) buffer += decoder.decode(value, { stream: !done })
+
+        const lines = buffer.split(/\r?\n/)
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          const t = line.trim()
+          if (t === '') {
+            if (dataLine) {
+              try {
+                const data = JSON.parse(dataLine)
+                if (eventName === 'content') callbacks.onContent?.(data.text || '')
+                else if (eventName === 'done') callbacks.onDone?.(data.message || '对话完成')
+                else if (eventName === 'error') callbacks.onError?.(data.message || '未知错误')
+              } catch {}
+            }
+            eventName = ''
+            dataLine = ''
+            continue
+          }
+          if (t.startsWith(':')) continue
+          if (t.startsWith('event:')) eventName = t.slice(6).trim()
+          else if (t.startsWith('data:')) {
+            const dataPart = t.slice(5).trim()
+            if (dataLine) dataLine += '\n' + dataPart
+            else dataLine = dataPart
+          }
+        }
+
+        if (done) {
+          if (dataLine) {
+            try {
+              const data = JSON.parse(dataLine)
+              if (eventName === 'content') callbacks.onContent?.(data.text || '')
+              else if (eventName === 'done') callbacks.onDone?.(data.message || '对话完成')
+            } catch {}
+          }
+          break
+        }
+      }
+    })
+  },
+  /** 文件对话流式输出 SSE (旧接口，保留兼容) */
+  chatStream: (
+    file: File,
+    question: string,
+    callbacks: {
+      onStatus?: (stage: string, message: string) => void
+      onContent?: (text: string) => void
+      onDone?: (message: string) => void
+      onError?: (error: string) => void
+    },
+    signal?: AbortSignal
+  ) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('question', question)
+    const token = localStorage.getItem('lingdian_token')
+    return fetch('/api/v1/ai-doc/chat/stream', {
+      method: 'POST',
+      headers: { 'X-User-Token': token || '' },
+      body: formData,
+      signal,
+    }).then(async response => {
+      if (!response.ok) {
+        const errText = await response.text()
+        throw new Error(errText || `请求失败 (${response.status})`)
+      }
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('不支持流式读取')
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let eventName = ''
+      let dataLine = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (value) buffer += decoder.decode(value, { stream: !done })
+
+        const lines = buffer.split(/\r?\n/)
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          const t = line.trim()
+          if (t === '') {
+            if (dataLine) {
+              try {
+                const data = JSON.parse(dataLine)
+                if (eventName === 'status') callbacks.onStatus?.(data.stage, data.message)
+                else if (eventName === 'content') callbacks.onContent?.(data.text || '')
+                else if (eventName === 'done') callbacks.onDone?.(data.message || '对话完成')
+                else if (eventName === 'error') callbacks.onError?.(data.message || '未知错误')
+              } catch {}
+            }
+            eventName = ''
+            dataLine = ''
+            continue
+          }
+          if (t.startsWith(':')) continue
+          if (t.startsWith('event:')) eventName = t.slice(6).trim()
+          else if (t.startsWith('data:')) {
+            const dataPart = t.slice(5).trim()
+            if (dataLine) dataLine += '\n' + dataPart
+            else dataLine = dataPart
+          }
+        }
+
+        if (done) {
+          if (dataLine) {
+            try {
+              const data = JSON.parse(dataLine)
+              if (eventName === 'status') callbacks.onStatus?.(data.stage, data.message)
+              else if (eventName === 'content') callbacks.onContent?.(data.text || '')
+              else if (eventName === 'done') callbacks.onDone?.(data.message || '对话完成')
+            } catch {}
+          }
+          break
+        }
+      }
     })
   },
   exportResult: (content: string, format = 'md') => {

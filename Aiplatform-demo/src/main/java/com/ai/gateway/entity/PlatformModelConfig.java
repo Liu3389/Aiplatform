@@ -25,6 +25,9 @@ public class PlatformModelConfig implements Serializable {
     private Integer sortOrder; // 排序字段 (P3-20)
     private Integer status;
     private Integer supportsVision; // 是否支持图片：0-不支持，1-支持
+
+    /** 所需会员等级（0-基础，1-中端，2-高端，3-全部） */
+    private Integer accessLevel;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

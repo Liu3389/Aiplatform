@@ -5,7 +5,7 @@ type Lang = 'zh' | 'en'
 interface I18nState {
   lang: Lang
   toggleLang: () => void
-  t: (key: string) => string
+  t: (key: string, fallbackEn?: string) => string
 }
 
 const zh: Record<string, string> = {
@@ -107,5 +107,10 @@ export const useI18nStore = create<I18nState>((set, get) => ({
     localStorage.setItem('lingdian_lang', next)
     set({ lang: next })
   },
-  t: (key: string) => texts[get().lang]?.[key] || texts.zh[key] || key,
+  t: (key: string, fallbackEn?: string) => {
+    const dict = texts[get().lang]
+    if (dict?.[key]) return dict[key]
+    if (get().lang === 'zh') return key
+    return fallbackEn || key
+  },
 }))

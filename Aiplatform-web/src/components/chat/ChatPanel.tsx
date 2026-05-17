@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useId } from 'react'
-import { chatApi, ensureApiKey } from '@/services/api'
+import { chatApi } from '@/services/api'
+import { useAppStore } from '@/stores/appStore'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { motion } from 'framer-motion'
 
@@ -19,16 +20,15 @@ function saveHistory(msgs: ChatMsg[]) {
 
 export default function ChatPanel() {
   const gradientId = useId().replace(/:/g, '')
+  const { token } = useAppStore()
   const [messages, setMessages] = useState<ChatMsg[]>(() => loadHistory())
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState('')
   const abortRef = useRef<AbortController | null>(null)
-  const apiKeyRef = useRef<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { ensureApiKey().then(k => { if (k) apiKeyRef.current = k }) }, [])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   const updateMessages = useCallback((newMsgs: ChatMsg[]) => { setMessages(newMsgs); saveHistory(newMsgs) }, [])
@@ -46,7 +46,7 @@ export default function ChatPanel() {
   const handleSend = useCallback(async () => {
     const content = input.trim()
     if (!content || isStreaming) return
-    if (!apiKeyRef.current) { setError('请先创建一个 API Key（侧边栏→令牌管理）'); return }
+    if (!token) { setError('请先登录'); return }
 
     setInput(''); setError('')
     const newMessages: ChatMsg[] = [...messages, { role: 'user' as const, content }]
@@ -55,14 +55,15 @@ export default function ChatPanel() {
 
     let fullContent = ''
     abortRef.current = chatApi.stream(
-      apiKeyRef.current,
       { model: 'deepseek-v4-flash', messages: newMessages, temperature: 0.7 },
-      (chunk: string) => {
-        fullContent += chunk
-        updateMessages([...newMessages, { role: 'assistant', content: fullContent }])
-      },
-      () => setIsStreaming(false),
-      (err: string) => { setError(err); setIsStreaming(false) }
+      {
+        onMessage: (chunk: string) => {
+          fullContent += chunk
+          updateMessages([...newMessages, { role: 'assistant', content: fullContent }])
+        },
+        onDone: () => setIsStreaming(false),
+        onError: (err: string) => { setError(err); setIsStreaming(false) }
+      }
     )
   }, [input, isStreaming, messages, updateMessages])
 
