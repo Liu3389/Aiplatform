@@ -9,33 +9,41 @@
 
 ## 🚀 启动步骤
 
-### 第一步：初始化数据库
+### 第一步：初始化数据库（推荐方式）
 
+**方式一：使用自动化脚本（推荐）**
 ```bash
-# 连接到本地 MySQL
-mysql -h localhost -P 3307 -u root -p123456
+cd $HOME/Documents/Aiplatform/Aiplatform-demo
+chmod +x scripts/database/*.sh
 
-# 在 MySQL 命令行中执行：
-CREATE DATABASE IF NOT EXISTS ai_gateway DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE ai_gateway;
-SOURCE $HOME/Documents/Aiplatform/Aiplatform-demo/src/main/resources/sql/schema.sql;
-
-# 验证表是否创建成功
-SHOW TABLES;
-
-# 应该看到以下表：
-# - user
-# - api_key
-# - model_config
-# - call_log
-# - billing_record
-
-# 查看模型配置数据
-SELECT model_name, provider, status FROM model_config;
-
-# 退出 MySQL
-EXIT;
+# 完整初始化（包含测试数据）
+./scripts/database/init_full.sh
 ```
+
+**方式二：手动执行SQL**
+```bash
+# 完全重建数据库
+mysql -h localhost -P 3307 -u root -p123456 ai_gateway < src/main/resources/sql/rebuild.sql
+
+# （可选）插入测试数据
+mysql -h localhost -P 3307 -u root -p123456 ai_gateway < src/main/resources/sql/testdata_large.sql
+```
+
+**验证数据**
+```bash
+mysql -h localhost -P 3307 -u root -p123456 ai_gateway -e "
+SELECT COUNT(*) as user_count FROM user;
+SELECT COUNT(*) as model_count FROM platform_model_config;
+"
+```
+
+应该看到：
+- 用户数：53（rebuild.sql是3个，加testdata后是53个）
+- 模型数：10
+
+**默认管理员账号**
+- 用户名：superadmin
+- 密码：Test@123456
 
 ### 第二步：编译项目
 

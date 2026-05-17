@@ -33,6 +33,11 @@ public class Constants {
     public static final String HEADER_API_KEY = "X-API-Key";
 
     /**
+     * HTTP Header - 用户 Token
+     */
+    public static final String HEADER_USER_TOKEN = "X-User-Token";
+
+    /**
      * HTTP Header - Authorization
      */
     public static final String HEADER_AUTHORIZATION = "Authorization";

@@ -1,24 +1,23 @@
 {
   "info": {
     "name": "AI Gateway Platform API - 用户接口",
-    "description": "凌点AI模型调度网关用户接口测试 - 使用 X-User-Token Header 认证\n\n**最新更新 (2026-05-15)**:\n- ✅ 架构重构：拆分为 AI 对话平台（点数制）与 模型商店（API Key 中转）双业务线\n- ✅ 新增平台对话模型配置表 platform_model_config（支持虚拟模型映射，多厂商路由）\n- ✅ 新增模型商店相关表（marketplace_provider, user_marketplace_key, usage_log）\n- ✅ 移除旧版 model_config 及用户自定义 API Key 功能\n- ✅ 统一业务术语：所有对话只扣点数，不扣余额；货币单位统一为中文“元”\n- ✅ 更新 DeepSeek API 配置（仅保留 deepseek-v4-flash 和 deepseek-v4-pro）\n- ✅ 新增聊天记录管理模块（游标分页 + 冷热分离）\n- ✅ 统一点数体系，新增点数账单查询接口\n\n**主要功能模块**:\n1. 用户认证（6个接口）\n2. 平台对话模型列表（/platform-model/list）\n3. 会话管理（4个接口）\n4. 聊天对话（4个接口）\n5. 模型商店（/marketplace/keys, /buy-key）\n6. 用户中心（点数、套餐、账单）\n7. 通知与优惠券（6个接口）",
+    "description": "凌点AI模型调度网关用户接口测试 - 使用 X-User-Token Header 认证\n\n**最新更新 (2026-05-16)**:\n- ✅ 架构重构：拆分为 AI 对话平台（点数制）与 模型商店（API Key 中转）双业务线\n- ✅ 新增平台对话模型配置表 platform_model_config（支持虚拟模型映射，多厂商路由）\n- ✅ 新增模型商店相关表（marketplace_provider, user_marketplace_key, usage_log）\n- ✅ 移除旧版 model_config 及用户自定义 API Key 功能\n- ✅ 统一业务术语：所有对话只扣点数，不扣余额；货币单位统一为中文\"元\"\n- ✅ 更新 DeepSeek API 配置（仅保留 deepseek-v4-flash 和 deepseek-v4-pro）\n- ✅ 新增聊天记录管理模块（游标分页 + 冷热分离）\n- ✅ 统一点数体系，新增点数账单查询接口\n\n**主要功能模块**:\n1. 用户认证（10个接口）\n2. 平台对话模型（/platform-model/list）\n3. 会话管理（7个接口）\n4. 聊天对话（7个接口）\n5. 模型商店（/marketplace/keys, /buy-key）\n6. 用户中心（点数、套餐、账单、2FA、设备管理）\n7. 通知与优惠券（8个接口）\n\n**总计: 73 个用户端 API 接口**",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
-  "auth": {
-    "type": "apikey",
-    "apikey": [
-      {
-        "key": "value",
-        "value": "{{token}}",
-        "type": "string"
-      },
-      {
-        "key": "key",
-        "value": "X-User-Token",
-        "type": "string"
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          "var token = pm.collectionVariables.get('token');",
+          "if (token && token.length > 0) {",
+          "    pm.request.headers.add({ key: 'X-User-Token', value: token });",
+          "}"
+        ],
+        "type": "text/javascript"
       }
-    ]
-  },
+    }
+  ],
   "variable": [
     {
       "key": "baseUrl",
@@ -252,8 +251,89 @@
                 "auth",
                 "logout"
               ]
-            }
+            },
+            "description": "退出登录并清除所有用户缓存\n\n清除的缓存包括：\n1. Token本身\n2. 会话信息（单设备登录机制）\n3. 对话列表缓存 (conversations:{userId})\n4. 对话版本号 (conversations:version:{userId})\n5. 消息缓存 (chat:messages:{userId}:*)\n6. 免费配额缓存 (free:limit:*:{userId}:*)\n7. 会员等级缓存 (membership:{userId})\n\n安全特性：\n- 防止下一个用户看到前一个用户的数据\n- 使用SCAN方式删除，避免KEYS阻塞Redis\n- 异常不影响Token撤销（保证退出成功）"
           }
+        },
+        {
+          "name": "OAuth第三方登录",
+          "item": [
+            {
+              "name": "获取OAuth授权URL",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/oauth/url?provider=github",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "auth", "oauth", "url"],
+                  "query": [{"key": "provider", "value": "github", "description": "第三方平台：github/google/wechat"}]
+                },
+                "description": "获取第三方OAuth登录授权URL\n\n支持的provider：github、google、wechat"
+              },
+              "response": []
+            },
+            {
+              "name": "OAuth回调登录",
+              "request": {
+                "method": "POST",
+                "header": [{"key": "Content-Type", "value": "application/json"}],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"provider\": \"github\",\n  \"code\": \"oauth_authorization_code\",\n  \"state\": \"random_state_string\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/oauth/callback",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "auth", "oauth", "callback"]
+                },
+                "description": "处理OAuth回调，使用授权码登录或注册"
+              },
+              "response": []
+            },
+            {
+              "name": "绑定OAuth（需登录）",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {"key": "Content-Type", "value": "application/json"},
+                  {"key": "X-User-Token", "value": "{{token}}"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"provider\": \"github\",\n  \"code\": \"oauth_authorization_code\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/oauth/bind",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "auth", "oauth", "bind"]
+                },
+                "description": "为已登录用户绑定第三方OAuth账号"
+              },
+              "response": []
+            },
+            {
+              "name": "解绑OAuth（需登录）",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {"key": "Content-Type", "value": "application/json"},
+                  {"key": "X-User-Token", "value": "{{token}}"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"provider\": \"github\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/oauth/unbind",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "auth", "oauth", "unbind"]
+                },
+                "description": "解绑已绑定的第三方OAuth账号"
+              },
+              "response": []
+            }
+          ]
         }
       ]
     },
@@ -462,7 +542,8 @@
                 "conversations",
                 "fetch"
               ]
-            }
+            },
+            "description": "获取用户的对话列表（支持懒加载机制）\n\n特性：\n- Redis有缓存 → 直接返回（1-5ms）\n- Redis无缓存 → 自动从数据库加载并缓存（50-100ms）\n- 按最后消息时间倒序排列\n- 包含对话ID、标题、模型、消息数等信息\n\n返回格式：\n{\n  \"conversations\": [\n    {\n      \"id\": \"101\",\n      \"title\": \"Java并发编程学习\",\n      \"model\": \"deepseek-v4-flash\",\n      \"messageCount\": 8,\n      \"lastMessageTime\": \"2026-05-15T10:00:00\",\n      \"createTime\": \"2026-05-15T09:00:00\"\n    }\n  ],\n  \"version\": 1715760000000\n}"
           }
         },
         {
@@ -633,7 +714,7 @@
           }
         },
         {
-          "name": "自定义模型 - 非流式对话（平台模式）",
+          "name": "非流式对话（平台模式）",
           "request": {
             "method": "POST",
             "header": [
@@ -652,7 +733,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"model\": \"deepseek-v4-pro\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"你好\"\n    }\n  ],\n  \"stream\": false,\n  \"temperature\": 0.7\n}"
+              "raw": "{\n  \"model\": \"deepseek-v4-flash\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"你好\"\n    }\n  ],\n  \"stream\": false,\n  \"temperature\": 0.7,\n  \"conversationId\": null\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/chat/completions",
@@ -664,7 +745,8 @@
                 "chat",
                 "completions"
               ]
-            }
+            },
+            "description": "非流式对话接口\n\n特性：\n- 自动创建或使用已有会话\n- 消息保存到MySQL数据库\n- 支持free/paid两种模式\n- 点数计费（预扣→调用→结算）\n- 返回完整的AI回复\n\n请求参数：\n- model: 模型名称\n- messages: 消息列表\n- conversationId: 会话ID（可选，不传则自动创建）\n- mode: free或paid"
           }
         },
         {
@@ -947,21 +1029,20 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"content\": \"# AI分析结果\\n\\n这是AI对文档的分析结果。\",\n  \"format\": \"md\"\n}"
+              "raw": "{\n  \"content\": \"# AI分析结果\\n\\n这是AI对文档的分析结果。\",\n  \"fileName\": \"result.md\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/api/v1/ai-doc/export",
+              "raw": "{{baseUrl}}/api/chat/export-content",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "v1",
-                "ai-doc",
-                "export"
+                "chat",
+                "export-content"
               ]
             },
-            "description": "将AI结果导出为指定格式文件"
+            "description": "将AI结果导出为指定格式文件（不收费）\n\n支持格式：md, txt, html, css, js, java, py, json, xml, csv等\n\n请求参数：\n- content: 要导出的内容\n- fileName: 文件名（包含扩展名）\n\n前端使用：\n1. 调用接口获取二进制流\n2. 创建Blob对象\n3. 创建下载链接触发下载"
           },
           "response": []
         }
@@ -969,6 +1050,7 @@
     },
     {
       "name": "💬 聊天记录管理（游标分页）",
+      "description": "聊天记录管理模块 - 支持游标分页和冷热数据分离\n\n核心特性：\n1. 对话列表懒加载：Redis无缓存时自动从数据库加载\n2. 消息首次加载：默认获取最新10条消息\n3. 上翻加载更多：使用游标分页查询历史消息\n4. 退出登录清除缓存：防止账号串号\n5. 冷热数据分离：30天内热数据，30天外冷数据\n6. Redis缓存加速：对话列表90天过期，消息30分钟过期",
       "item": [
         {
           "name": "获取会话最新消息（首页加载）",
@@ -1075,7 +1157,7 @@
                 "clear"
               ]
             },
-            "description": "切换账号时调用，强制删除Redis中的聊天记录缓存\n\n防止账号串号，确保新账号不会看到旧账号的缓存数据"
+            "description": "【已废弃】切换账号时调用，强制删除Redis中的聊天记录缓存\n\n注意：此接口已被 /api/auth/logout 替代！\n现在退出登录时会自动清除所有用户缓存，无需手动调用此接口。\n\n原功能：防止账号串号，确保新账号不会看到旧账号的缓存数据"
           },
           "response": []
         }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -22,21 +23,24 @@ public class JacksonConfig {
     @Bean
     public ObjectMapper objectMapper() {
         ObjectMapper mapper = new ObjectMapper();
+
+        // 注册 Java 8 时间模块（修复 LocalDateTime 序列化）
+        mapper.registerModule(new JavaTimeModule());
+
         SimpleModule module = new SimpleModule();
-        
+
         // 自定义 BigDecimal 序列化器：前端展示统一保留两位小数
         module.addSerializer(BigDecimal.class, new JsonSerializer<BigDecimal>() {
             @Override
             public void serialize(BigDecimal value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
                 if (value != null) {
-                    // 四舍五入保留两位小数
                     gen.writeNumber(value.setScale(2, RoundingMode.HALF_UP));
                 } else {
                     gen.writeNull();
                 }
             }
         });
-        
+
         mapper.registerModule(module);
         return mapper;
     }

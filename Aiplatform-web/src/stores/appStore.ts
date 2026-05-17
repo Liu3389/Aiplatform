@@ -60,11 +60,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   openMobileSidebar: () => set({ mobileSidebarOpen: true }),
 
   fetchUserInfo: async () => {
-    const { token } = get()
+    const { token, setUserId } = get()
     if (!token) return
     set({ isLoading: true })
     try {
       const info = await userApi.getInfo()
+      setUserId(info.id)
       set({
         user: {
           id: info.id,
@@ -73,7 +74,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           balance: info.balance,
           role: info.role as UserInfo['role'],
           status: info.status as UserInfo['status'],
-          membership: (info.membership || 'free') as UserInfo['membership'],
+          membership: (info.membership?.toLowerCase() || 'free') as UserInfo['membership'],
           freeApiStrategy: (info.freeApiStrategy || 'NONE') as UserInfo['freeApiStrategy'],
           freeQuota: 0,
           dailyCallLimit: 0,

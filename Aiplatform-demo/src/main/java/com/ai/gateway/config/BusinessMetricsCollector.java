@@ -3,13 +3,11 @@ package com.ai.gateway.config;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.TimeUnit;
 
 @Component
-@RequiredArgsConstructor
 public class BusinessMetricsCollector {
 
     private final MeterRegistry meterRegistry;

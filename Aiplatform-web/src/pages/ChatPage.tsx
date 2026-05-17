@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { chatApi, ensureApiKey, userApi, userApiKeyApi, type UserApiKeyItem } from '@/services/api'
+import { chatApi, userApi, modelApi, conversationApi, chatFileApi } from '@/services/api'
 import MarkdownRenderer from '@/components/chat/MarkdownRenderer'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { motion } from 'framer-motion'
@@ -16,7 +16,12 @@ export interface ChatConversation {
   favorited?: boolean
 }
 
-export interface Message { role: 'user' | 'assistant' | 'system'; content: string }
+export interface Message { 
+  id?: number
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  tokens?: number
+}
 
 const WELCOME_SUGGESTIONS = [
   '用一句话介绍凌点 AI 平台',
@@ -60,14 +65,17 @@ function genTitle(s: string) { return s.length > 30 ? s.slice(0, 30) + '...' : s
 export default function ChatPage() {
   const { lang } = useI18nStore()
   const user = useAppStore(s => s.user)
-  const uid = user?.id
+  const token = useAppStore(s => s.token)
 
-  const [freeModel, setFreeModel] = useState(() => localStorage.getItem('ld_free_model') || 'deepseek-v4-flash')
-  const [paidModel, setPaidModel] = useState(() => localStorage.getItem('ld_paid_model') || 'deepseek-v4-flash')
+  const resolveUid = (): number | undefined => {
+    if (user?.id) return user.id
+    try { const v = localStorage.getItem('lingdian_uid'); return v ? parseInt(v) : undefined } catch { return undefined }
+  }
+
+  const [model, setModel] = useState(() => localStorage.getItem('ld_chat_model') || 'deepseek-v4-flash')
+  const [availableModels, setAvailableModels] = useState<any[]>([])
+  const [showModelSelector, setShowModelSelector] = useState(false)
   const [temperature] = useState(0.7)
-  const [mode, setMode] = useState<'free' | 'paid'>('free')
-  const [storedKeys, setStoredKeys] = useState<UserApiKeyItem[]>([])
-  const [freeQuota, setFreeQuota] = useState<{ usedCalls: number; maxCalls: number; usedTokens: number; maxTokens: number } | null>(null)
 
   const [conversations, setConversations] = useState<ChatConversation[]>([])
   const [currentConvId, setCurrentConvId] = useState<string | null>(null)
@@ -85,25 +93,29 @@ export default function ChatPage() {
   const [pendingClear, setPendingClear] = useState(false)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
+  const [pageReady, setPageReady] = useState(false)
+  const [hasMoreMessages, setHasMoreMessages] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [lastMessageId, setLastMessageId] = useState<number | null>(null)
+
   const abortRef = useRef<AbortController | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const apiKeyRef = useRef<string | null>(null)
-  const apiKeyInitRef = useRef(false)
-  const prevUid = useRef<number | undefined>(undefined)
   const initialized = useRef(false)
 
   const currentConv = conversations.find(c => c.id === currentConvId)
 
   const saveAndSync = useCallback((convs: ChatConversation[]) => {
+    const uid = resolveUid()
     if (!uid) return
     setConversations(convs)
     saveLocal(uid, convs)
     saveVersion(uid, Date.now())
     userApi.syncConversations(convs).catch(() => {})
-  }, [uid])
+  }, [user?.id, conversations])
 
   const createConv = useCallback(() => {
+    const uid = resolveUid()
     if (!uid) return
     const id = genId()
     const conv: ChatConversation = { id, title: '新对话', messages: [], createdAt: Date.now(), updatedAt: Date.now() }
@@ -113,17 +125,54 @@ export default function ChatPage() {
     setMessages([])
     setTokenStats(null)
     saveCurrentId(uid, id)
-  }, [uid, conversations, saveAndSync])
+  }, [conversations, saveAndSync])
 
-  const selectConv = useCallback((id: string) => {
+  const selectConv = useCallback(async (id: string) => {
+    const uid = resolveUid()
     const conv = conversations.find(c => c.id === id)
-    if (conv) {
-      setCurrentConvId(id)
-      setMessages(conv.messages)
-      setTokenStats(null)
-      if (uid) saveCurrentId(uid, id)
+    
+    setCurrentConvId(id)
+    setTokenStats(null)
+    setHasMoreMessages(false)
+    setLastMessageId(null)
+    if (uid) saveCurrentId(uid, id)
+    
+    // 后端优先：尝试从后端加载最新消息
+    if (id && !id.startsWith('local_')) {
+      try {
+        const backendId = parseInt(id)
+        const result = await conversationApi.getLatestMessages(backendId, 20)
+        const backendMessages = result.messages.map((m: any) => ({
+          id: m.id,
+          role: m.role as 'user' | 'assistant' | 'system',
+          content: m.content,
+          tokens: m.tokens,
+        }))
+        
+        // 如果后端有消息，使用后端数据
+        if (backendMessages.length > 0) {
+          setMessages(backendMessages)
+          setHasMoreMessages(result.hasMore)
+          setLastMessageId(result.nextCursorId)
+          // 更新本地缓存
+          if (uid && conv) {
+            const updated = conversations.map(c => c.id === id ? { ...c, messages: backendMessages } : c)
+            saveLocal(uid, updated)
+          }
+          return
+        }
+      } catch (e) {
+        console.error('从后端加载消息失败，使用本地缓存', e)
+      }
     }
-  }, [conversations, uid])
+    
+    // 降级：使用本地缓存
+    if (conv) {
+      setMessages(conv.messages)
+    } else {
+      setMessages([])
+    }
+  }, [conversations, user?.id])
 
   const updateCurrentConv = useCallback((msgs: Message[]) => {
     if (!currentConvId) return
@@ -137,6 +186,7 @@ export default function ChatPage() {
   }, [conversations, currentConvId, saveAndSync])
 
   const doDeleteConv = useCallback(() => {
+    const uid = resolveUid()
     if (!pendingDeleteId || !uid) return
     const filtered = conversations.filter(c => c.id !== pendingDeleteId)
     saveAndSync(filtered)
@@ -145,7 +195,7 @@ export default function ChatPage() {
       if (filtered.length > 0) selectConv(filtered[0].id)
       else createConv()
     }
-  }, [uid, conversations, currentConvId, pendingDeleteId, saveAndSync, selectConv, createConv])
+  }, [conversations, currentConvId, pendingDeleteId, saveAndSync, selectConv, createConv])
 
   const renameConv = useCallback((id: string, title: string) => {
     saveAndSync(conversations.map(c => c.id === id ? { ...c, title } : c))
@@ -163,101 +213,92 @@ export default function ChatPage() {
     if (currentConvId) saveAndSync(conversations.map(c => c.id === currentConvId ? { ...c, messages: [], updatedAt: Date.now() } : c))
   }
 
-  // ========== 核心初始化：userId驱动的一次性加载 + 切换清缓存 ==========
+  // ========== 核心初始化：本地缓存优先 + 版本比较同步 ==========
   useEffect(() => {
-    if (!uid) return
+    const uid = resolveUid()
+    if (!uid || initialized.current) return
+    initialized.current = true
 
-    // 首次初始化（页面刷新）
-    if (!initialized.current) {
-      initialized.current = true
-      prevUid.current = uid
-      const local = loadLocal(uid)
-      const savedId = loadCurrentId(uid)
-      setConversations(local)
-      if (savedId && local.find(c => c.id === savedId)) {
-        setCurrentConvId(savedId)
-        setMessages(local.find(c => c.id === savedId)!.messages)
-      } else if (local.length > 0) {
-        setCurrentConvId(local[0].id)
-        setMessages(local[0].messages)
-      }
-      // 后台异步拉取最新版本
-      userApi.getConversationVersion().then(r => {
-        const serverVersion = r?.version || 0
-        const localVer = loadVersion(uid)
-        if (serverVersion > localVer) {
-          userApi.fetchConversations().then(f => {
-            if (f?.conversations?.length) {
-              setConversations(f.conversations as ChatConversation[])
-              saveLocal(uid, f.conversations as ChatConversation[])
-              saveVersion(uid, serverVersion)
-              const cur = loadCurrentId(uid)
-              if (cur && f.conversations.find((c: any) => c.id === cur)) {
-                setCurrentConvId(cur)
-                setMessages(f.conversations.find((c: any) => c.id === cur).messages)
-              }
-            }
-          }).catch(() => {})
-        } else {
-          // 本地最新，主动推一次到服务端对齐
-          if (local.length > 0) userApi.syncConversations(local).catch(() => {})
-        }
-      }).catch(() => {})
-      return
-    }
+    // 1. 先加载本地缓存
+    const local = loadLocal(uid)
+    const savedId = loadCurrentId(uid)
 
-    // 账号切换
-    if (prevUid.current !== uid) {
-      if (prevUid.current) clearChatData(prevUid.current)
-      prevUid.current = uid
-      const local = loadLocal(uid)
-      const savedId = loadCurrentId(uid)
+    if (savedId && local.find(c => c.id === savedId)) {
       setConversations(local)
+      setCurrentConvId(savedId)
+      setMessages(local.find(c => c.id === savedId)!.messages)
+    } else if (local.length > 0) {
+      setConversations(local)
+      setCurrentConvId(local[0].id)
+      setMessages(local[0].messages)
+    } else {
+      // 本地没有缓存，创建新对话
+      const id = genId()
+      const conv: ChatConversation = { id, title: '新对话', messages: [], createdAt: Date.now(), updatedAt: Date.now() }
+      setConversations([conv])
+      setCurrentConvId(id)
       setMessages([])
-      setTokenStats(null)
-      if (savedId && local.find(c => c.id === savedId)) {
-        setCurrentConvId(savedId)
-        setMessages(local.find(c => c.id === savedId)!.messages)
-      } else if (local.length > 0) {
-        setCurrentConvId(local[0].id)
-        setMessages(local[0].messages)
-      } else {
-        setCurrentConvId(null)
-      }
-      userApi.getConversationVersion().then(r => {
-        if ((r?.version || 0) > loadVersion(uid)) {
-          userApi.fetchConversations().then(f => {
-            if (f?.conversations?.length) {
-              setConversations(f.conversations as ChatConversation[])
-              saveLocal(uid, f.conversations as ChatConversation[])
-              saveVersion(uid, r.version)
+      saveLocal(uid, [conv])
+      saveCurrentId(uid, id)
+      saveVersion(uid, Date.now())
+    }
+
+    setPageReady(true)
+
+    // 2. 检查后端版本，决定是否同步
+    userApi.getConversationVersion().then(r => {
+      const serverVersion = r?.version || 0
+      const localVer = loadVersion(uid)
+      
+      if (serverVersion > localVer) {
+        // 后端数据更新，拉取最新数据并覆盖本地缓存
+        userApi.fetchConversations().then(f => {
+          const convs = (f?.conversations || []).map((c: any) => ({
+            id: String(c.id),
+            title: c.title,
+            messages: c.messages || [],
+            createdAt: c.createdAt || Date.now(),
+            updatedAt: c.updatedAt || Date.now(),
+          }))
+          if (convs.length > 0) {
+            setConversations(convs)
+            saveLocal(uid, convs)
+            saveVersion(uid, serverVersion)
+            const cur = loadCurrentId(uid)
+            if (cur && convs.find(c => c.id === cur)) {
+              setCurrentConvId(cur)
+              setMessages(convs.find(c => c.id === cur)!.messages)
+            } else {
+              setCurrentConvId(convs[0].id)
+              setMessages(convs[0].messages)
+              saveCurrentId(uid, convs[0].id)
             }
-          }).catch(() => {})
-        }
-      }).catch(() => {})
-    }
-  }, [uid])
+          }
+        }).catch(() => {})
+      } else if (local.length > 0) {
+        // 本地数据更新，同步到后端
+        userApi.syncConversations(local).catch(() => {})
+      }
+    }).catch(() => {})
 
-  // ========== 当conversations有数据但无currentConvId时，自动创建 ==========
-  useEffect(() => {
-    if (!uid || !initialized.current) return
-    if (conversations.length === 0 && initialized.current) {
-      createConv()
-    }
-  }, [uid, conversations.length])
+    // 3. 加载可用模型列表
+    modelApi.list().then(m => {
+      const active = (m || []).filter((item: any) => item.status === 1)
+      setAvailableModels(active)
+      // 如果当前选中的模型不可用，切换到第一个可用模型
+      if (active.length > 0 && !active.find((item: any) => item.modelName === model)) {
+        setModel(active[0].modelName)
+        localStorage.setItem('ld_chat_model', active[0].modelName)
+      }
+    }).catch(() => {})
 
-  // ========== API Key + Quota + Mobile ==========
-  useEffect(() => {
-    if (!apiKeyInitRef.current) { apiKeyInitRef.current = true; ensureApiKey().then(k => { if (k) apiKeyRef.current = k }) }
-  }, [])
-  useEffect(() => {
-    userApiKeyApi.list().then(k => setStoredKeys(k || [])).catch(() => {})
-    userApi.getFreeQuota().then(q => setFreeQuota(q)).catch(() => {})
+    // 4. 移动端检测
     const chk = () => { const m = window.innerWidth < 768; setIsMobile(m); if (m) setShowSidebar(false) }
     chk(); window.addEventListener('resize', chk)
     return () => window.removeEventListener('resize', chk)
   }, [])
 
+  // 生命周期管理
   useEffect(() => { return () => abortRef.current?.abort() }, [])
   useEffect(() => { if (!isStreaming) setTimeout(() => inputRef.current?.focus(), 50) }, [isStreaming])
   useEffect(() => { containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight, behavior: 'smooth' }) }, [messages])
@@ -265,34 +306,101 @@ export default function ChatPage() {
   const handleSend = async (overrideInput?: string) => {
     const content = (overrideInput || input).trim()
     if (!content || isStreaming) return
-    if (!currentConvId && uid) createConv()
+    if (!currentConvId) { createConv(); return }
+    
     setError(''); setInput(''); setTokenStats(null)
-    const apiKey = apiKeyRef.current
-    if (!apiKey) { setError('请先创建并启用一个API Key'); return }
+    
+    // 从后端获取可用的 model（如果 storedKeys 为空则使用默认值）
+    const selectedModel = availableModels.length > 0 ? model : 'deepseek-v4-flash'
+    
     const newMsgs: Message[] = [...messages, { role: 'user' as const, content }]
     setMessages(newMsgs); updateCurrentConv(newMsgs); setIsStreaming(true)
     let fullContent = ''
+    
     abortRef.current = chatApi.stream(
-      apiKey,
+      '',  // 不再需要 API Key，后端使用 X-User-Token 认证
       {
-        model: mode === 'free' ? freeModel : paidModel,
+        model: selectedModel,
         messages: [
           { role: 'system', content: 'You are a helpful AI assistant. Always respond in well-formatted Markdown. Use headers, lists, code blocks with language tags, tables, and bold text where appropriate. Structure your answers to be visually clear and scannable.' },
           ...newMsgs,
         ],
+        conversationId: parseInt(currentConvId),  // P0 FIX: 传递会话ID到后端
+        mode: 'paid',  // P0 FIX: 传递计费模式
         temperature,
-        mode,
       } as any,
       (chunk: string) => { fullContent += chunk; setMessages([...newMsgs, { role: 'assistant' as const, content: fullContent }]) },
-      (result) => { setIsStreaming(false); setTokenStats(result); userApi.getFreeQuota().then(q => setFreeQuota(q)).catch(() => {}); const final: Message[] = [...newMsgs, { role: 'assistant' as const, content: fullContent }]; setMessages(final); updateCurrentConv(final) },
-      (err: string) => { setIsStreaming(false); setError(err); useToastStore.getState().showToast({ title: '对话失败', message: err, type: 'error' }) }
+      (result) => {
+        setIsStreaming(false)
+        setTokenStats(result)
+        const final: Message[] = [...newMsgs, { role: 'assistant' as const, content: fullContent }]
+        setMessages(final)
+        updateCurrentConv(final)
+        // 同步到云端
+        const uid = resolveUid()
+        if (uid) {
+          const convs = conversations.map(c => c.id === currentConvId ? { ...c, messages: final, updatedAt: Date.now() } : c)
+          userApi.syncConversations(convs).catch(() => {})
+        }
+      },
+      (err: string) => {
+        setIsStreaming(false)
+        setError(err)
+        useToastStore.getState().showToast({ title: '对话失败', message: err, type: 'error' })
+      }
     )
   }
 
   const handleStop = () => { abortRef.current?.abort(); setIsStreaming(false) }
+  
+  // 游标分页：加载更多历史消息
+  const loadMoreMessages = useCallback(async () => {
+    if (!currentConvId || loadingMore || !hasMoreMessages) return
+    setLoadingMore(true)
+    try {
+      const backendId = parseInt(currentConvId)
+      const result = await conversationApi.getMessagesByCursor(backendId, lastMessageId ?? undefined, 20)
+      const moreMessages = result.messages.map((m: any) => ({
+        id: m.id,
+        role: m.role as 'user' | 'assistant' | 'system',
+        content: m.content,
+        tokens: m.tokens,
+      }))
+      
+      // 将历史消息插入到当前消息列表前面
+      setMessages(prev => [...moreMessages, ...prev])
+      setHasMoreMessages(result.hasMore)
+      setLastMessageId(result.nextCursorId)
+    } catch (e) {
+      console.error('加载更多消息失败', e)
+    }
+    setLoadingMore(false)
+  }, [currentConvId, loadingMore, hasMoreMessages, lastMessageId])
+
+  // 导出当前对话为 Markdown 文件
+  const handleExportChat = async () => {
+    if (!currentConvId) return
+    const conv = conversations.find(c => c.id === currentConvId)
+    if (!conv) return
+    
+    const markdown = conv.messages
+      .filter(m => m.role !== 'system')
+      .map(m => `### ${m.role === 'user' ? lang === 'zh' ? '用户' : 'User' : lang === 'zh' ? 'AI' : 'AI'}\n\n${m.content}`)
+      .join('\n\n---\n\n')
+    
+    const header = `# ${conv.title}\n\n> ${lang === 'zh' ? '导出时间' : 'Exported at'}: ${new Date().toLocaleString()}\n\n---\n\n`
+    
+    try {
+      await chatFileApi.exportContent(header + markdown, `${conv.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}_${Date.now()}.md`)
+    } catch (e) {
+      useToastStore.getState().showToast({ title: lang === 'zh' ? '导出失败' : 'Export failed', message: (e as Error).message, type: 'error' })
+    }
+  }
+  
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }
 
   const cloudRestore = async () => {
+    const uid = resolveUid()
     if (!uid) return
     try {
       const r = await userApi.fetchConversations()
@@ -329,8 +437,7 @@ export default function ChatPage() {
     c.title.toLowerCase().includes(searchQuery.toLowerCase()) || c.messages.some(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
   )
 
-  // If uid not yet resolved, show spinner
-  if (!uid) {
+  if (!pageReady) {
     return <div className="flex items-center justify-center h-full"><div className="w-6 h-6 border-2 border-brand-purple/30 border-t-brand-purple rounded-full animate-spin" /></div>
   }
 
@@ -422,14 +529,70 @@ export default function ChatPage() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>}
           <div className="flex items-center gap-2 ml-auto">
-            <button onClick={() => setMode('free')} className={`px-3 py-1.5 text-xs rounded-md transition-colors ${mode === 'free' ? 'text-white' : ''}`}
-              style={{ background: mode === 'free' ? 'var(--accent-emerald)' : 'transparent', color: mode === 'free' ? '#fff' : 'var(--text-dim)' }}>
-              {lang === 'zh' ? '免费' : 'Free'}
-            </button>
-            <button onClick={() => setMode('paid')} className={`px-3 py-1.5 text-xs rounded-md transition-colors ${mode === 'paid' ? 'text-white' : ''}`}
-              style={{ background: mode === 'paid' ? 'var(--accent-purple)' : 'transparent', color: mode === 'paid' ? '#fff' : 'var(--text-dim)' }}>
-              {lang === 'zh' ? '付费' : 'Paid'}
-            </button>
+            {/* 模型选择器 */}
+            <div className="relative">
+              <button onClick={() => setShowModelSelector(s => !s)}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg transition-all hover:opacity-80"
+                style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+                <span className="font-medium">{model}</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+              </button>
+              
+              {/* 模型下拉列表 */}
+              {showModelSelector && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowModelSelector(false)} />
+                  <div className="absolute right-0 top-full mt-2 z-50 w-64 rounded-xl shadow-2xl overflow-hidden"
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                    <div className="p-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                      <div className="text-[10px] font-medium px-2 py-1" style={{ color: 'var(--text-dim)' }}>
+                        {lang === 'zh' ? '选择模型' : 'Select Model'}
+                      </div>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto p-1.5">
+                      {availableModels.map((m: any) => (
+                        <button key={m.id}
+                          onClick={() => {
+                            setModel(m.modelName)
+                            localStorage.setItem('ld_chat_model', m.modelName)
+                            setShowModelSelector(false)
+                          }}
+                          className={`w-full text-left px-3 py-2.5 rounded-lg transition-all hover:opacity-80 ${
+                            m.modelName === model ? 'border' : ''
+                          }`}
+                          style={{
+                            background: m.modelName === model ? 'var(--accent-purple)' + '15' : 'transparent',
+                            borderColor: m.modelName === model ? 'var(--accent-purple)' + '40' : 'transparent',
+                          }}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={m.modelName === model ? 'var(--accent-purple)' : 'var(--text-dim)'} strokeWidth="2">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                              </svg>
+                              <div>
+                                <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{m.modelName}</div>
+                                <div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{m.provider}</div>
+                              </div>
+                            </div>
+                            {m.modelName === model && (
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" strokeWidth="3">
+                                <polyline points="20 6 9 17 4 12"/>
+                              </svg>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            
             <button onClick={handleClear} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--bg-surface)' }} title={lang === 'zh' ? '清空对话' : 'Clear chat'}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
             </button>
@@ -445,8 +608,7 @@ export default function ChatPage() {
               </div>
               <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? '有什么可以帮助你的？' : 'How can I help you?'}</h2>
               <p className="text-sm mb-8" style={{ color: 'var(--text-dim)' }}>
-                {mode === 'free' ? (lang === 'zh' ? `免费模型 (${freeModel}) · 每日${freeQuota?.maxCalls || 30}次/50K tokens` : `Free (${freeModel}) · ${freeQuota?.maxCalls || 30} calls/day`)
-                  : (lang === 'zh' ? '付费模型 · 按点数计费' : 'Paid model · Points billed')}
+                {lang === 'zh' ? `当前模型: ${model}` : `Current model: ${model}`}
               </p>
               <div className="grid grid-cols-2 gap-3 w-full max-w-lg">
                 {WELCOME_SUGGESTIONS.map((s, i) => (
@@ -489,6 +651,8 @@ export default function ChatPage() {
                   <span>Input {tokenStats.inputTokens.toLocaleString()} tokens</span>
                   <span>·</span>
                   <span>Output {tokenStats.outputTokens.toLocaleString()} tokens</span>
+                  <span>·</span>
+                  <span style={{ color: 'var(--accent-purple)' }}>{tokenStats.cost.toFixed(4)} 点</span>
                 </motion.div>
               )}
               <div ref={el => el?.scrollIntoView({ behavior: 'smooth' })} />

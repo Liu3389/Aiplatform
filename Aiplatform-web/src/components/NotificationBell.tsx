@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useI18nStore } from '@/stores/i18nStore'
 import { useThemeStore } from '@/stores/themeStore'
+import { notificationApi } from '@/services/api'
 
 interface NotifItem {
   id: number
@@ -25,23 +26,15 @@ export default function NotificationBell() {
 
   const fetchUnread = useCallback(async () => {
     try {
-      const token = localStorage.getItem('lingdian_token')
-      const res = await fetch('/api/user/notifications/unread-count', {
-        headers: { 'X-User-Token': token || '' },
-      })
-      const j = await res.json()
-      if (j.code === 200) setUnread(j.data.count || 0)
+      const data = await notificationApi.unreadCount()
+      setUnread(data.unreadCount || 0)
     } catch {}
   }, [])
 
   const fetchList = useCallback(async () => {
     try {
-      const token = localStorage.getItem('lingdian_token')
-      const res = await fetch('/api/user/notifications?unreadOnly=false', {
-        headers: { 'X-User-Token': token || '' },
-      })
-      const j = await res.json()
-      if (j.code === 200) setList(j.data || [])
+      const data = await notificationApi.list()
+      setList(data || [])
     } catch {}
   }, [])
 
@@ -53,11 +46,7 @@ export default function NotificationBell() {
 
   const markAllRead = async () => {
     try {
-      const token = localStorage.getItem('lingdian_token')
-      await fetch('/api/user/notifications/read-all', {
-        method: 'PUT',
-        headers: { 'X-User-Token': token || '' },
-      })
+      await notificationApi.markAllRead()
       setUnread(0)
       setList(list.map(n => ({ ...n, isRead: true })))
     } catch {}

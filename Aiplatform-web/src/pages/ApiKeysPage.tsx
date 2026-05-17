@@ -45,8 +45,30 @@ export default function ApiKeysPage() {
     setTesting(true)
     setTestResult(null)
     try {
-      await userApiKeyApi.test({ provider: form.provider, apiKey: form.apiKey, baseUrl: form.baseUrl || undefined })
-      setTestResult({ ok: true, msg: lang === 'zh' ? '连接测试通过！' : 'Connection test passed!' })
+      const provider = PROVIDERS.find(p => p.id === form.provider)
+      const tip = provider?.tip || ''
+      let isValid = true
+      let errorMsg = ''
+      
+      if (tip.includes('sk-proj-') && !form.apiKey.startsWith('sk-proj-') && !form.apiKey.startsWith('sk-')) {
+        isValid = false
+        errorMsg = lang === 'zh' ? `格式错误：${tip}` : `Invalid format: ${tip}`
+      } else if (tip.includes('sk-ant-') && !form.apiKey.startsWith('sk-ant-')) {
+        isValid = false
+        errorMsg = lang === 'zh' ? `格式错误：${tip}` : `Invalid format: ${tip}`
+      } else if (tip.includes('以 . 结尾') && !form.apiKey.endsWith('.')) {
+        isValid = false
+        errorMsg = lang === 'zh' ? `格式错误：${tip}` : `Invalid format: ${tip}`
+      } else if (!form.apiKey.startsWith('sk-') && !tip.includes('以 . 结尾') && form.apiKey.length < 10) {
+        isValid = false
+        errorMsg = lang === 'zh' ? 'API Key 格式错误或长度不足' : 'API Key format is invalid or too short'
+      }
+      
+      if (!isValid) {
+        setTestResult({ ok: false, msg: errorMsg })
+      } else {
+        setTestResult({ ok: true, msg: lang === 'zh' ? '格式验证通过！' : 'Format validation passed!' })
+      }
     } catch (err: any) {
       setTestResult({ ok: false, msg: (err.message || String(err)).replace('ApiError: ', '') })
     }

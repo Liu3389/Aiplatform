@@ -3,6 +3,7 @@ package com.ai.gateway.service;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
 import com.ai.gateway.common.Constants;
+import com.ai.gateway.common.ResultCode;
 import com.ai.gateway.dto.ChatRequest;
 import com.ai.gateway.entity.CallLog;
 import com.ai.gateway.entity.PlatformModelConfig;
@@ -25,18 +26,22 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Service
 public class OpenAiChatService {
 
-    private static final String SYSTEM_PROMPT = "你是一个智能助手。在回答代码、技术文档或复杂逻辑时，请务必使用 Markdown 格式（包括代码块和 Mermaid 流程图）。对于简单的日常对话或简短问答，请直接自然回复，无需强制使用 Markdown。";
+    private static final String SYSTEM_PROMPT = "你是一个智能助手。在回答代码、技术文档或复杂逻辑时，请务必使用 Markdown 格式（包括代码块和 Mermaid 流程图）。" +
+            "对于简单的日常对话或简短问答，请直接自然回复，无需强制使用 Markdown。";
 
     private final PlatformModelService platformModelService;
     private final CallLogService callLogService;
     private final PointsService pointsService;
     private final FreeLimitService freeLimitService;
     private final StringRedisTemplate redisTemplate;
+    private final ChatMessageService chatMessageService;
+    private final com.ai.gateway.mapper.ConversationMapper conversationMapper;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
@@ -47,12 +52,16 @@ public class OpenAiChatService {
                              CallLogService callLogService,
                              PointsService pointsService,
                              FreeLimitService freeLimitService,
-                             StringRedisTemplate redisTemplate) {
+                             StringRedisTemplate redisTemplate,
+                             ChatMessageService chatMessageService,
+                             com.ai.gateway.mapper.ConversationMapper conversationMapper) {
         this.platformModelService = platformModelService;
         this.callLogService = callLogService;
         this.pointsService = pointsService;
         this.freeLimitService = freeLimitService;
         this.redisTemplate = redisTemplate;
+        this.chatMessageService = chatMessageService;
+        this.conversationMapper = conversationMapper;
     }
 
     /**
@@ -64,6 +73,11 @@ public class OpenAiChatService {
         String apiKey = null; // 平台模式不再需要用户传入 API Key
         long startTime = System.currentTimeMillis();
         ChatConfig config = resolveChatConfig(request, userId);
+
+        // 图片能力检查
+        if (hasImageMessage(request) && !supportsVision(config)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "模型 " + request.getModel() + " 不支持图片输入");
+        }
 
         // 修复 P0-2: 恢复 free/paid 模式判断，但移除已废弃的 custom 模式
         if ("free".equals(request.getMode())) {
@@ -111,6 +125,10 @@ public class OpenAiChatService {
                 log.info("点数结算完成: userId={}, requestId={}, model={}, points={}", userId, requestId, request.getModel(), pointsCost);
             }
 
+            // 保存对话消息到数据库
+            Long conversationId = getOrCreateConversation(userId, request);
+            saveChatMessages(conversationId, userId, request, content, request.getModel(), inputTokens + outputTokens);
+
             saveCallLog(apiKey, userId, request.getModel(), inputTokens, outputTokens,
                        cost, System.currentTimeMillis() - startTime, true, null);
 
@@ -119,6 +137,8 @@ public class OpenAiChatService {
 
             return content;
 
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             log.error("对话失败: userId={}, model={}", userId, request.getModel(), e);
             if ("paid".equals(request.getMode())) {
@@ -184,6 +204,16 @@ public class OpenAiChatService {
 
         ChatConfig config = resolveChatConfig(request, userId);
 
+        if (hasImageMessage(request) && !supportsVision(config)) {
+            try {
+                Map<String, Object> errData = new HashMap<>();
+                errData.put("message", "模型 " + request.getModel() + " 不支持图片输入");
+                emitter.send(SseEmitter.event().name("error").data(errData));
+                emitter.complete();
+            } catch (IOException ignored) {}
+            return emitter;
+        }
+
         if ("free".equals(request.getMode())) {
             if (!freeLimitService.checkAndRecord(userId, config.model)) {
                 try {
@@ -211,12 +241,14 @@ public class OpenAiChatService {
         }
 
         CompletableFuture.runAsync(() -> {
+            HttpResponse response = null;
+            BufferedReader reader = null;
             try {
                 // 修复 P0-1: 流式请求同样使用 actualModel
                 Map<String, Object> requestBody = buildRequestBody(request, config);
                 requestBody.put("stream", true);
 
-                HttpResponse response = HttpRequest.post(config.baseUrl)
+                response = HttpRequest.post(config.baseUrl)
                         .header("Authorization", "Bearer " + config.apiKey)
                         .header("Content-Type", "application/json")
                         .body(objectMapper.writeValueAsString(requestBody))
@@ -232,7 +264,7 @@ public class OpenAiChatService {
                     return;
                 }
 
-                BufferedReader reader = new BufferedReader(
+                reader = new BufferedReader(
                         new InputStreamReader(response.bodyStream(), StandardCharsets.UTF_8));
 
                 StringBuilder fullContent = new StringBuilder();
@@ -241,17 +273,23 @@ public class OpenAiChatService {
 
                 String line;
                 while ((line = reader.readLine()) != null) {
+                    if (isCompleted.get()) {
+                        break;
+                    }
                     if (line.startsWith("data: ")) {
                         String data = line.substring(6);
                         if ("[DONE]".equals(data)) break;
                         try {
                             JsonNode node = objectMapper.readTree(data);
-                            String content = node.path("choices").get(0).path("delta").path("content").asText();
-                            if (content != null && !content.isEmpty()) {
-                                fullContent.append(content);
-                                Map<String, Object> eventData = new HashMap<>();
-                                eventData.put("content", content);
-                                emitter.send(SseEmitter.event().name("message").data(eventData));
+                            JsonNode contentNode = node.path("choices").get(0).path("delta").path("content");
+                            if (!contentNode.isMissingNode() && !contentNode.isNull()) {
+                                String content = contentNode.asText();
+                                if (!content.isEmpty()) {
+                                    fullContent.append(content);
+                                    Map<String, Object> eventData = new HashMap<>();
+                                    eventData.put("content", content);
+                                    emitter.send(SseEmitter.event().name("message").data(eventData));
+                                }
                             }
                         } catch (Exception e) {
                             log.warn("解析流式数据失败", e);
@@ -259,9 +297,12 @@ public class OpenAiChatService {
                     }
                 }
 
-                // 更准确的token估算方法
+                if (isCompleted.get()) {
+                    return;
+                }
+
                 String promptText = request.getMessages().stream()
-                        .map(msg -> msg.getContent() != null ? msg.getContent() : "")
+                        .map(ChatRequest.ChatMessage::getTextContent)
                         .reduce("", String::concat);
                 inputTokens = estimateTokens(promptText);
                 outputTokens = estimateTokens(fullContent.toString());
@@ -276,6 +317,10 @@ public class OpenAiChatService {
                     pointsService.settlePoints(userId, requestId, pointsCost, request.getModel());
                 }
 
+                // 保存对话消息到数据库
+                Long conversationId = getOrCreateConversation(userId, request);
+                saveChatMessages(conversationId, userId, request, fullContent.toString(), request.getModel(), inputTokens + outputTokens);
+
                 saveCallLog(apiKey, userId, request.getModel(), inputTokens, outputTokens,
                            cost, System.currentTimeMillis() - startTime, true, null);
 
@@ -289,6 +334,9 @@ public class OpenAiChatService {
                 emitter.complete();
 
             } catch (Exception e) {
+                if (isCompleted.get()) {
+                    return;
+                }
                 log.error("流式对话失败: userId={}", userId, e);
                 try {
                     Map<String, Object> errData = new HashMap<>();
@@ -297,6 +345,21 @@ public class OpenAiChatService {
                     if ("paid".equals(request.getMode())) pointsService.rollbackPreDeduct(userId, requestId);
                 } catch (IOException ignored) {}
                 emitter.completeWithError(e);
+            } finally {
+                if (reader != null) {
+                    try {
+                        reader.close();
+                    } catch (IOException e) {
+                        log.warn("关闭流式响应reader失败", e);
+                    }
+                }
+                if (response != null) {
+                    try {
+                        response.close();
+                    } catch (Exception e) {
+                        log.warn("关闭流式响应失败", e);
+                    }
+                }
             }
         }, chatExecutor);
 
@@ -426,6 +489,101 @@ public class OpenAiChatService {
             this.modelConfig = modelConfig;
             this.isCustom = isCustom;
             this.model = model;
+        }
+    }
+
+    private boolean hasImageMessage(ChatRequest request) {
+        return request.getMessages().stream().anyMatch(ChatRequest.ChatMessage::hasImage);
+    }
+
+    private boolean supportsVision(ChatConfig config) {
+        return config.modelConfig != null
+            && config.modelConfig.getSupportsVision() != null
+            && config.modelConfig.getSupportsVision() == 1;
+    }
+
+    /**
+     * 获取或创建会话
+     */
+    private Long getOrCreateConversation(Long userId, ChatRequest request) {
+        // 如果前端传入了conversationId，直接使用
+        if (request.getConversationId() != null) {
+            return request.getConversationId();
+        }
+
+        // 否则创建新会话
+        com.ai.gateway.entity.Conversation conversation = new com.ai.gateway.entity.Conversation();
+        conversation.setUserId(userId);
+        
+        // 使用第一条用户消息作为标题（截取前20个字符）
+        String firstUserMessage = request.getMessages().stream()
+                .filter(msg -> "user".equals(msg.getRole()))
+                .findFirst()
+                .map(msg -> msg.getTextContent())
+                .orElse("新对话");
+        
+        String title = firstUserMessage.length() > 20 ? firstUserMessage.substring(0, 20) + "..." : firstUserMessage;
+        conversation.setTitle(title);
+        conversation.setModel(request.getModel());
+        conversation.setMessageCount(0);
+        conversation.setLastMessageTime(java.time.LocalDateTime.now());
+        
+        conversationMapper.insert(conversation);
+        
+        log.info("创建新会话: userId={}, conversationId={}, title={}", userId, conversation.getId(), title);
+        
+        return conversation.getId();
+    }
+
+    /**
+     * 保存对话消息到数据库
+     */
+    private void saveChatMessages(Long conversationId, Long userId, ChatRequest request, 
+                                  String aiResponse, String model, int totalTokens) {
+        try {
+            // 1. 保存用户消息（取最后一条用户消息）
+            String userMessage = request.getMessages().stream()
+                    .filter(msg -> "user".equals(msg.getRole()))
+                    .reduce((first, second) -> second) // 取最后一条
+                    .map(msg -> msg.getTextContent())
+                    .orElse("");
+            
+            if (!userMessage.isEmpty()) {
+                chatMessageService.saveMessage(
+                    conversationId, 
+                    userId, 
+                    "user", 
+                    userMessage, 
+                    model, 
+                    null // 用户消息不计算token
+                );
+            }
+            
+            // 2. 保存AI回复
+            if (!aiResponse.isEmpty()) {
+                chatMessageService.saveMessage(
+                    conversationId, 
+                    userId, 
+                    "assistant", 
+                    aiResponse, 
+                    model, 
+                    totalTokens
+                );
+            }
+            
+            // 3. 更新会话的消息计数和最后消息时间
+            com.ai.gateway.entity.Conversation conversation = conversationMapper.selectById(conversationId);
+            if (conversation != null) {
+                conversation.setMessageCount(conversation.getMessageCount() + 2); // 用户消息 + AI回复
+                conversation.setLastMessageTime(java.time.LocalDateTime.now());
+                conversationMapper.updateById(conversation);
+            }
+            
+            log.info("保存对话消息成功: conversationId={}, userId={}, tokens={}", conversationId, userId, totalTokens);
+            
+        } catch (Exception e) {
+            log.error("保存对话消息失败: conversationId={}, userId={}", conversationId, userId, e);
+            // 不抛出异常，避免影响主流程
         }
     }
 }

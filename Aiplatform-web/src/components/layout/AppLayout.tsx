@@ -43,7 +43,7 @@ export default function AppLayout() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
 
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN'
-  const membership = MEMBERSHIP_QUOTAS[user?.membership || 'free']
+  const membership = MEMBERSHIP_QUOTAS[(user?.membership?.toLowerCase() || 'free') as keyof typeof MEMBERSHIP_QUOTAS] || MEMBERSHIP_QUOTAS.free
   const dark = theme === 'dark'
   const borderColor = dark ? 'border-white/[0.04]' : 'border-gray-200'
   const headerBg = dark ? 'rgba(10,15,26,0.5)' : 'rgba(255,255,255,0.8)'
@@ -104,16 +104,23 @@ export default function AppLayout() {
             </span>
             {isAdmin && <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium" style={{ background: 'rgba(245,158,11,0.15)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.25)' }}>Admin</span>}
           </div>
-          {membership.monthlyPoints > 0 && (
+          {(membership.monthlyPoints > 0 || (user?.balance ?? 0) > 0) && (
             <div className="mb-2">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] flex items-center gap-1" style={{ color: 'var(--text-dim)' }}>
                   <PointsIcon size={10} color={membership.color} /> {lang === 'zh' ? '点数' : 'Points'}
                 </span>
-                <span className="text-[10px] font-bold" style={{ color: membership.color }}>{balanceInYuan} / {membership.monthlyPoints}</span>
+                <span className="text-[10px] font-bold" style={{ color: membership.color }}>
+                  {balanceInYuan}{membership.monthlyPoints > 0 ? ` / ${membership.monthlyPoints}` : ''}
+                </span>
               </div>
               <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--bg-surface)' }}>
-                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, (Number(user?.balance || 0) / membership.monthlyPoints) * 100)}%`, background: `linear-gradient(90deg, ${membership.color}, ${membership.color}80)` }} />
+                <div className="h-full rounded-full transition-all" style={{
+                  width: membership.monthlyPoints > 0
+                    ? `${Math.min(100, (Number(user?.balance || 0) / membership.monthlyPoints) * 100)}%`
+                    : '100%',
+                  background: `linear-gradient(90deg, ${membership.color}, ${membership.color}80)`,
+                }} />
               </div>
             </div>
           )}
@@ -231,7 +238,7 @@ export default function AppLayout() {
 
         <main className={`flex-1 overflow-y-auto ${dark ? 'bg-aurora' : 'bg-gradient-to-br from-gray-50 via-white to-gray-50'}`}>
           <ErrorBoundary>
-            <AnimatePresence mode="wait">
+            <AnimatePresence>
               <motion.div key={location.pathname} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }} className="h-full">
                 <Outlet />
               </motion.div>

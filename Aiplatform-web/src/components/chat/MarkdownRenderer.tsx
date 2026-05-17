@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
 import { useThemeStore } from '@/stores/themeStore'
 
 interface Props { content: string; isStreaming?: boolean }
@@ -49,7 +48,6 @@ export default function MarkdownRenderer({ content, isStreaming }: Props) {
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
         components={{
           h1: ({ children, ...props }) => (
             <h1 className="text-xl font-bold mt-6 mb-3 pb-2" style={{ borderBottom: `2px solid ${themeStyles.blockquoteBorder}40`, color: themeStyles.text }} {...props}>{children}</h1>

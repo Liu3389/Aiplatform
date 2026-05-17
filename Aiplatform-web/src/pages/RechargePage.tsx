@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import { useI18nStore } from '@/stores/i18nStore'
 import { useThemeStore } from '@/stores/themeStore'
 import PointsIcon from '@/components/PointsIcon'
+import { userApi } from '@/services/api'
 
 export default function RechargePage() {
   const { user, fetchUserInfo } = useAppStore()
@@ -27,7 +28,7 @@ export default function RechargePage() {
       period: lang === 'zh' ? '永久' : 'Forever',
       monthlyPoints: MEMBERSHIP_QUOTAS.free.monthlyPoints,
       features: [
-        lang === 'zh' ? '每日 30 次免费调用' : '30 free calls/day',
+        lang === 'zh' ? '使用平台模型' : 'Platform model access',
         lang === 'zh' ? '每日 50K Token 额度' : '50K tokens/day',
         lang === 'zh' ? '使用免费模型' : 'Free models access',
       ],
@@ -43,7 +44,6 @@ export default function RechargePage() {
       monthlyPoints: MEMBERSHIP_QUOTAS.plus.monthlyPoints,
       features: [
         lang === 'zh' ? `每月 ${MEMBERSHIP_QUOTAS.plus.monthlyPoints} 点数` : `${MEMBERSHIP_QUOTAS.plus.monthlyPoints} pts/month`,
-        lang === 'zh' ? '每日 500 次调用' : '500 calls/day',
         lang === 'zh' ? '每日 500K Token 额度' : '500K tokens/day',
         lang === 'zh' ? '使用全平台模型' : 'All model access',
         lang === 'zh' ? '优先响应队列' : 'Priority queue',
@@ -61,7 +61,6 @@ export default function RechargePage() {
       monthlyPoints: MEMBERSHIP_QUOTAS.pro.monthlyPoints,
       features: [
         lang === 'zh' ? `每月 ${MEMBERSHIP_QUOTAS.pro.monthlyPoints} 点数` : `${MEMBERSHIP_QUOTAS.pro.monthlyPoints} pts/month`,
-        lang === 'zh' ? '每日无限次调用' : 'Unlimited calls',
         lang === 'zh' ? '每日 2M Token 额度' : '2M tokens/day',
         lang === 'zh' ? '使用全平台模型' : 'All model access',
         lang === 'zh' ? '最高优先响应队列' : 'Top priority queue',
@@ -80,21 +79,12 @@ export default function RechargePage() {
     }
     setLoading(true)
     try {
-      const token = localStorage.getItem('lingdian_token')
-      const res = await fetch(`/api/user/recharge?amount=${Number(amount)}`, {
-        method: 'POST',
-        headers: { 'X-User-Token': token || '' },
-      })
-      const j = await res.json()
-      if (j.code === 200) {
-        setMsg({ text: lang === 'zh' ? `充值成功！余额 ¥${Number(amount).toFixed(2)}` : `Recharged ¥${Number(amount).toFixed(2)}!`, ok: true })
-        setAmount('')
-        await fetchUserInfo()
-      } else {
-        setMsg({ text: j.message || (lang === 'zh' ? '充值失败' : 'Failed'), ok: false })
-      }
-    } catch {
-      setMsg({ text: lang === 'zh' ? '网络错误' : 'Network error', ok: false })
+      await userApi.recharge(Number(amount))
+      setMsg({ text: lang === 'zh' ? `充值成功！余额 ¥${Number(amount).toFixed(2)}` : `Recharged ¥${Number(amount).toFixed(2)}!`, ok: true })
+      setAmount('')
+      await fetchUserInfo()
+    } catch (e: any) {
+      setMsg({ text: e.message || (lang === 'zh' ? '充值失败' : 'Failed'), ok: false })
     }
     setLoading(false)
   }

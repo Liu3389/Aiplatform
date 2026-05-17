@@ -1,24 +1,23 @@
 {
   "info": {
     "name": "AI Gateway - Admin API",
-    "description": "管理员后台接口测试集合\n\n**最新更新 (2026-05-16)**:\n- ✅ 系统统计（5个接口）\n- ✅ 核心统计（3个新接口：仪表盘、用户统计、对话统计）\n- ✅ 用户管理（8个接口：基础查询、高级筛选、详情、状态切换、角色分配、撤销角色、密码重置、充值点数）\n- ✅ 批量操作（3个接口：封禁/解封、发放点数、开通会员）\n- ✅ 点数管理（4个接口：增减点数、设置免费次数、手动充值点数、每日点数发放）\n- ✅ 会员管理（3个接口：等级调整、有效期设置、批量开通）\n- ✅ 操作日志查询（1个接口）\n- ✅ 通知管理（6个接口：未读数、列表、已读、全部已读、删除、最新通知）\n- ✅ 统计分析（4个接口：日/周/月查询、CSV导出）\n- ✅ 优惠券管理（1个接口：发放优惠券）\n- ✅ 通知发送（1个接口：发送系统通知）\n- ✅ 套餐模板管理（6个接口：列表、详情、创建、更新、上架/下架、删除）\n- ✅ 测试数据管理（3个接口：初始化、重置、修复点数配置）\n- ✅ 用户优惠券（3个接口：我的优惠券、使用记录、优惠券充值）\n\n**总计**: 48个API接口\n\n**权限要求**: ADMIN 或 SUPER_ADMIN（所有接口均需管理员权限，部分用户接口除外）\n\n**安全增强 (2026-05-16)**:\n- ✅ 统一使用 @RequireAdmin 注解进行权限控制\n- ✅ 关键操作自动记录管理员操作日志\n- ✅ 操作日志包含 IP 地址、User-Agent、操作详情\n- ✅ 支持成功/失败操作的全量审计追踪\n- ✅ 修复统计服务逻辑，实现真实数据查询\n- ✅ 统一业务术语：将\"免费额度\"、\"付费模型\"统一修正为\"点数额度\"和\"充值点数\"\n- ✅ 优化冷热分页查询性能（基于时间游标）\n- ✅ 增加缓存防击穿机制（分布式锁）\n- ✅ 完善事务回滚配置（rollbackFor = Exception.class）\n- ✅ 增强 API Key 验证状态标识\n- ✅ 完善日志敏感信息脱敏\n- ✅ 修复接口编号重复问题，统一接口序号\n- ✅ 添加每日点数发放接口\n- ✅ 添加修复模型点数配置接口\n- ✅ 批量操作支持字符串类型用户ID转换\n- ✅ 统计数据全部使用真实数据库查询，无假数据\n- ✅ 全面使用 DTO 替代 Map 接收参数，提升类型安全和自动校验\n- ✅ 新增统一异常处理错误码（40001~40009）\n- ✅ 新增 Actuator 业务指标监控（对话成功率、扣费耗时等）\n- ✅ 优惠券防重领机制（按面额+套餐去重）\n- ✅ 套餐软删除（status=-1）并检查活跃订阅\n- ✅ 环境隔离强化（TestDataController 双重校验）\n\n**使用说明**:\n1. 先设置环境变量 adminToken（通过登录获取）\n2. 所有接口会自动在Header中添加 X-User-Token\n3. 所有管理员操作都会被自动记录到操作日志中",
+    "description": "管理员后台接口测试集合\n\n**最新更新 (2026-05-16)**:\n- ✅ 系统统计（5个接口：stats, analytics/full, dashboard, users, conversations）\n- ✅ 用户管理（9个接口：用户列表、高级查询、用户详情、切换状态、封禁/解封、充值点数、分配角色、撤销角色、重置密码）\n- ✅ 批量操作（3个接口：批量更新状态、批量赠送点数、批量激活会员）\n- ✅ 点数管理（4个接口：增减点数、设置免费次数、充值点数、每日点数发放）\n- ✅ 会员管理（2个接口：更新会员等级、设置过期时间）\n- ✅ 操作日志查询（1个接口）\n- ✅ 通知管理（6个接口：未读数、列表、标记已读、全部已读、删除、最新通知）\n- ✅ 统计分析（6个接口：日/周/月查询、CSV导出、用户增长趋势、收入趋势）\n- ✅ 优惠券管理（1个接口：发放优惠券）\n- ✅ 通知发送（1个接口：发送系统通知）\n- ✅ 套餐模板管理（6个接口：列表、详情、创建、更新、上架/下架、删除）\n- ✅ 测试数据管理（2个接口：重置、修复点数配置）\n- ✅ 用户优惠券（3个接口：我的优惠券、使用记录、优惠券充值）\n\n**总计**: 45个管理员API接口\n\n**权限要求**: ADMIN 或 SUPER_ADMIN（所有接口均需管理员权限，部分用户接口除外）\n\n**安全增强 (2026-05-16)**:\n- ✅ 统一使用 @RequireAdmin 注解进行权限控制\n- ✅ 关键操作自动记录管理员操作日志\n- ✅ 操作日志包含 IP 地址、User-Agent、操作详情\n- ✅ 支持成功/失败操作的全量审计追踪\n- ✅ 修复统计服务逻辑，实现真实数据查询\n- ✅ 统一业务术语：将\"免费额度\"、\"付费模型\"统一修正为\"点数额度\"和\"充值点数\"\n- ✅ 优化冷热分页查询性能（基于时间游标）\n- ✅ 增加缓存防击穿机制（分布式锁）\n- ✅ 完善事务回滚配置（rollbackFor = Exception.class）\n- ✅ 增强 API Key 验证状态标识\n- ✅ 完善日志敏感信息脱敏\n- ✅ 修复接口编号重复问题，统一接口序号\n- ✅ 添加每日点数发放接口\n- ✅ 添加修复模型点数配置接口\n- ✅ 批量操作支持字符串类型用户ID转换\n- ✅ 统计数据全部使用真实数据库查询，无假数据\n- ✅ 全面使用 DTO 替代 Map 接收参数，提升类型安全和自动校验\n- ✅ 新增统一异常处理错误码（40001~40009）\n- ✅ 新增 Actuator 业务指标监控（对话成功率、扣费耗时等）\n- ✅ 优惠券防重领机制（按面额+套餐去重）\n- ✅ 套餐软删除（status=-1）并检查活跃订阅\n- ✅ 环境隔离强化（TestDataController 双重校验）\n\n**使用说明**:\n1. 先设置环境变量 adminToken（通过登录获取）\n2. 所有接口会自动在Header中添加 X-User-Token\n3. 所有管理员操作都会被自动记录到操作日志中",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
-  "auth": {
-    "type": "apikey",
-    "apikey": [
-      {
-        "key": "value",
-        "value": "{{adminToken}}",
-        "type": "string"
-      },
-      {
-        "key": "key",
-        "value": "X-User-Token",
-        "type": "string"
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          "var token = pm.collectionVariables.get('adminToken');",
+          "if (token && token.length > 0) {",
+          "    pm.request.headers.add({ key: 'X-User-Token', value: token });",
+          "}"
+        ],
+        "type": "text/javascript"
       }
-    ]
-  },
+    }
+  ],
   "variable": [
     {
       "key": "baseUrl",
@@ -32,6 +31,54 @@
     }
   ],
   "item": [
+    {
+      "name": "🔑 管理员登录（先执行这个！）",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const resp = pm.response.json();",
+              "if (resp.code === 200 && resp.data && resp.data.token) {",
+              "    pm.collectionVariables.set('adminToken', resp.data.token);",
+              "    console.log('✅ Token已自动设置: ' + resp.data.token.substring(0, 30) + '...');",
+              "} else {",
+              "    console.error('❌ 登录失败: ' + JSON.stringify(resp));",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"testadmin2\",\n  \"password\": \"Test@123456\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "auth", "login"]
+        },
+        "description": "管理员登录接口\n\n**默认账号**: testadmin2\n**默认密码**: Test@123456\n\n🎯 执行后会自动将返回的 Token 存入 collection 变量 `adminToken`，后续所有接口自动携带 X-User-Token Header。\n\n只需点击一次 Send，然后就可以测试下面所有 45 个管理员接口了！"
+      },
+      "response": [
+        {
+          "name": "登录成功",
+          "status": "OK",
+          "code": 200,
+          "header": [{"key": "Content-Type", "value": "application/json"}],
+          "body": "{\n  \"code\": 200,\n  \"message\": \"登录成功\",\n  \"data\": {\n    \"token\": \"eyJhbG...\",\n    \"deviceId\": \"xxxxx\",\n    \"role\": \"ADMIN\"\n  }\n}"
+        }
+      ]
+    },
     {
       "name": "📊 系统统计",
       "item": [
@@ -265,6 +312,29 @@
               "path": ["admin", "user", "status"]
             },
             "description": "禁用或启用用户账号\n\nstatus可选值：\n- ACTIVE：启用\n- DISABLED：禁用"
+          },
+          "response": []
+        },
+        {
+          "name": "封禁/解封用户",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"违反平台规则\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/user/1/ban",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "user", "1", "ban"]
+            },
+            "description": "封禁或解封用户账号\n\n再次调用此接口可解封用户"
           },
           "response": []
         },
@@ -614,7 +684,7 @@
             "description": "设置会员过期时间\n\nexpireTime格式：yyyy-MM-ddTHH:mm:ss"
           },
           "response": []
-        },
+        }
       ]
     },
     {
@@ -879,6 +949,48 @@
               ]
             },
             "description": "导出CSV格式的统计报表\n\ntype可选值：\n- user：用户统计数据\n- revenue：营收统计数据\n- business：业务统计数据"
+          },
+          "response": []
+        },
+        {
+          "name": "用户增长趋势 ⭐NEW",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/statistics/user-growth?months=6",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "user-growth"],
+              "query": [
+                {
+                  "key": "months",
+                  "value": "6",
+                  "description": "最近N个月"
+                }
+              ]
+            },
+            "description": "查询用户增长趋势数据"
+          },
+          "response": []
+        },
+        {
+          "name": "收入趋势 ⭐NEW",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/statistics/revenue?months=6",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "revenue"],
+              "query": [
+                {
+                  "key": "months",
+                  "value": "6",
+                  "description": "最近N个月"
+                }
+              ]
+            },
+            "description": "查询平台收入趋势数据"
           },
           "response": []
         }

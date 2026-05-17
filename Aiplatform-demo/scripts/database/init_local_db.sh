@@ -108,15 +108,16 @@ mysql -h $MYSQL_HOST -P $MYSQL_PORT -u $MYSQL_USER -p$MYSQL_PASS -e "USE $DB_NAM
 # 验证初始数据
 echo ""
 echo "6. 验证初始数据..."
-MODEL_COUNT=$(mysql -h $MYSQL_HOST -P $MYSQL_PORT -u $MYSQL_USER -p$MYSQL_PASS -N -e "USE $DB_NAME; SELECT COUNT(*) FROM model_config;" 2>/dev/null)
+MODEL_COUNT=$(mysql -h $MYSQL_HOST -P $MYSQL_PORT -u $MYSQL_USER -p$MYSQL_PASS -N -e "USE $DB_NAME; SELECT COUNT(*) FROM platform_model_config;" 2>/dev/null)
 
-if [ "$MODEL_COUNT" -gt 0 ]; then
+if [ "$MODEL_COUNT" -gt 0 ] 2>/dev/null; then
     echo "✅ 模型配置数据已插入（$MODEL_COUNT 条记录）"
     echo ""
     echo "可用模型："
-    mysql -h $MYSQL_HOST -P $MYSQL_PORT -u $MYSQL_USER -p$MYSQL_PASS -e "USE $DB_NAME; SELECT model_name, provider, points_mode, status FROM model_config;" 2>/dev/null
+    mysql -h $MYSQL_HOST -P $MYSQL_PORT -u $MYSQL_USER -p$MYSQL_PASS -e "USE $DB_NAME; SELECT display_name, actual_model, status FROM platform_model_config;" 2>/dev/null
 else
     echo "⚠️  模型配置数据为空"
+    echo "提示：rebuild.sql 已包含基础数据，无需额外执行 init_data.sql"
 fi
 
 echo ""

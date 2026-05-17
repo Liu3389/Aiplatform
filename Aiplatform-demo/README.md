@@ -47,7 +47,7 @@
 
 ### 1.3 关键数字
 
-- **98+** 个 API 接口（50+ 用户接口 + 48 管理员接口）
+- **118** 个 API 接口（73 用户接口 + 45 管理员接口）
 - **24** 张数据库表
 - **5** 个 Redis Lua 脚本（计费、限流、结算等原子操作）
 - **14** 个 Controller
@@ -583,7 +583,7 @@ src/main/java/com/ai/gateway/
 │   ├── StatisticsSchedulerConfig.java # 定时任务配置
 │   └── WebMvcConfig.java              # Web MVC 配置（拦截器注册）
 ├── controller/                        # 14 个控制器
-│   ├── AdminController.java           # 管理员后台（48个接口）
+│   ├── AdminController.java           # 管理员后台（35个接口）
 │   ├── AiDocController.java           # AI 文档助手
 │   ├── ApiKeyController.java          # API Key 管理
 │   ├── AuthController.java            # 用户认证
@@ -651,17 +651,20 @@ src/main/java/com/ai/gateway/
 
 | 分组 | 路径前缀 | 接口数 | 认证 | 说明 |
 |------|---------|--------|------|------|
-| 用户认证 | `/api/auth/*` | 4 | 无 | 注册、登录、退出、刷新Token |
-| 用户中心 | `/api/user/*` | 15+ | X-User-Token | 余额、点数、充值、个人信息 |
-| 平台模型 | `/api/platform-model/*` | 2 | X-User-Token | 获取可用模型列表 |
-| AI 对话 | `/api/chat/*` | 7 | X-User-Token | 流式/非流式对话、文件对话、文件生成 |
-| 会话管理 | `/api/conversation/*` | 4 | X-User-Token | 创建、查询、保存、清空会话 |
-| AI 文档 | `/api/v1/ai-doc/*` | 2 | X-User-Token | 文档对话、结果导出 |
-| 订阅管理 | `/api/user/subscriptions/*` | 5 | X-User-Token | 套餐购买、订阅状态 |
-| 通知 | `/api/notification/*` | 3 | X-User-Token | 未读数、通知列表、标记已读 |
-| 优惠券 | `/api/coupon/*` | 2 | X-User-Token | 兑换优惠券 |
-| 管理员 | `/api/admin/*` | 48 | X-User-Token + ADMIN | 用户管理、统计、套餐、通知 |
-| 模型商店 | `/api/marketplace/*` | 2 | X-User-Token | ⏸️ 搁置中 |
+| 用户认证 | `/api/auth/*` | **10** | 无/Token | 注册、登录、刷新Token、退出、OAuth |
+| 用户中心 | `/api/user/*` | **27** | X-User-Token | 余额、点数、充值、个人信息、2FA、设备管理、优惠券 |
+| 平台模型 | `/api/platform-model/*` | **1** | 无 | 获取可用模型列表 |
+| AI 对话 | `/api/chat/*` | **7** | X-User-Token | 流式/非流式对话、文件对话、文件生成、导出（支持md/txt/html/java/py等格式） |
+| 会话管理 | `/api/user/conversations/*` | **7** | X-User-Token | 同步、获取（懒加载）、版本、清除、游标分页（冷热数据分离） |
+| AI 文档 | `/api/v1/ai-doc/*` | **2** | X-User-Token | 文档对话、结果导出 |
+| API Key | `/api/api-key/*` | **6** | X-User-Token | 生成、列表、启用/禁用、限流、删除 |
+| 订阅管理 | `/api/user/subscriptions/*` | **5** | X-User-Token | 套餐浏览、购买、当前订阅、历史、取消 |
+| 用户通知 | `/api/user/notifications/*` | **4** | X-User-Token | 未读数、通知列表、标记已读 |
+| 用户优惠券 | `/api/user/coupons/*` 等 | **4** | X-User-Token | 我的优惠券、使用记录、兑换 |
+| 管理员 | `/api/admin/*` | **45** | X-User-Token + ADMIN | 用户管理、统计、批量操作、日志、通知、套餐管理 |
+| 模型商店 | `/api/marketplace/*` | **2** | X-User-Token | ⏸️ 搁置中 |
+
+> **总计: 118 个接口** (用户端 73 个 + 管理员端 45 个)
 
 ### 10.2 统一响应格式
 
@@ -922,6 +925,6 @@ A: 旧版接口（`/api/user/subscription/*`）已标记 `@Deprecated`，仍然�
 
 **最后更新**: 2026年5月16日  
 **项目版本**: v3.1  
-**接口总数**: 98+ 个  
+**接口总数**: 118 个  
 **数据库表**: 24 张  
 **Redis Lua 脚本**: 5 个

@@ -770,11 +770,67 @@ public class UserService {
     public List<Map<String, Object>> fetchConversations(Long userId) {
         String key = CONVERSATIONS_KEY + userId;
         String json = redisTemplate.opsForValue().get(key);
-        if (json == null || json.isEmpty()) return new ArrayList<>();
+        
+        // Redis中没有数据，从数据库加载并缓存（懒加载机制）
+        if (json == null || json.isEmpty()) {
+            log.info("Redis缓存未命中，从数据库加载对话列表: userId={}", userId);
+            return loadConversationsFromDatabase(userId);
+        }
+        
         try {
             return new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, List.class);
         } catch (Exception e) {
-            log.error("反序列化对话失败: userId={}", userId, e);
+            log.error("反序列化对话失败，从数据库重新加载: userId={}", userId, e);
+            return loadConversationsFromDatabase(userId);
+        }
+    }
+    
+    /**
+     * 从数据库加载对话列表并写入Redis缓存
+     */
+    private List<Map<String, Object>> loadConversationsFromDatabase(Long userId) {
+        try {
+            // 1. 查询数据库
+            java.util.List<com.ai.gateway.entity.Conversation> conversations = conversationMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.ai.gateway.entity.Conversation>()
+                    .eq(com.ai.gateway.entity.Conversation::getUserId, userId)
+                    .eq(com.ai.gateway.entity.Conversation::getIsDeleted, 0)
+                    .orderByDesc(com.ai.gateway.entity.Conversation::getLastMessageTime)
+            );
+            
+            if (conversations.isEmpty()) {
+                log.info("用户{}没有历史对话", userId);
+                return new ArrayList<>();
+            }
+            
+            // 2. 转换为前端需要的格式
+            List<Map<String, Object>> convList = conversations.stream()
+                .map(conv -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("id", String.valueOf(conv.getId()));
+                    map.put("title", conv.getTitle());
+                    map.put("model", conv.getModel());
+                    map.put("messageCount", conv.getMessageCount());
+                    map.put("lastMessageTime", conv.getLastMessageTime());
+                    map.put("createTime", conv.getCreateTime());
+                    return map;
+                })
+                .collect(Collectors.toList());
+            
+            // 3. 写入Redis缓存（90天过期）
+            String jsonData = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(convList);
+            redisTemplate.opsForValue().set(CONVERSATIONS_KEY + userId, jsonData, 90, TimeUnit.DAYS);
+            
+            // 4. 更新版本号
+            long version = System.currentTimeMillis();
+            redisTemplate.opsForValue().set(CONVERSATIONS_VERSION_KEY + userId, String.valueOf(version), 90, TimeUnit.DAYS);
+            
+            log.info("✅ 从数据库加载对话列表成功: userId={}, count={}, version={}", userId, convList.size(), version);
+            
+            return convList;
+            
+        } catch (Exception e) {
+            log.error("❌ 从数据库加载对话列表失败: userId={}", userId, e);
             return new ArrayList<>();
         }
     }

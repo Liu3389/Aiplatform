@@ -1,25 +1,25 @@
 package com.ai.gateway.controller;
 
-import com.ai.gateway.annotation.RequireAdmin;
 import com.ai.gateway.common.Result;
-import com.ai.gateway.service.AdminOperationLogService;
-import com.ai.gateway.service.UserService;
-import com.ai.gateway.service.TokenService;
+import com.ai.gateway.entity.Conversation;
+import com.ai.gateway.mapper.ConversationMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.jdbc.datasource.init.ScriptUtils;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
-import javax.sql.DataSource;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
- * 测试数据管理控制器
- * 用于在开发环境中快速重置或修复平台基础配置数据
+ * 测试数据控制器 - 用于初始化和修复测试数据
+ * 
+ * @author AI Gateway Platform
  */
 @Slf4j
 @RestController
@@ -27,89 +27,226 @@ import java.nio.charset.StandardCharsets;
 @RequiredArgsConstructor
 public class TestDataController {
 
-    private final DataSource dataSource;
-    private final AdminOperationLogService operationLogService;
-    private final UserService userService;
-    private final TokenService tokenService;
+    private final ConversationMapper conversationMapper;
+    private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${app.allow-data-reset:false}")
-    private boolean allowDataReset;
+    private static final String CONVERSATIONS_KEY = "conversations:";
+    private static final String CONVERSATIONS_VERSION_KEY = "conversations:version:";
 
-    private void checkEnvAllowance() {
-        if (!allowDataReset) {
-            throw new RuntimeException("数据重置功能未启用，请设置 app.allow-data-reset=true 环境变量");
+    /**
+     * 初始化用户对话缓存（从数据库同步到Redis）
+     * 
+     * @param userId 用户ID
+     * @return 操作结果
+     */
+    @PostMapping("/init-conversation-cache")
+    public Result<Map<String, Object>> initConversationCache(@RequestParam Long userId) {
+        try {
+            // 1. 从数据库查询用户的所有会话
+            List<Conversation> conversations = conversationMapper.selectList(
+                new LambdaQueryWrapper<Conversation>()
+                    .eq(Conversation::getUserId, userId)
+                    .eq(Conversation::getIsDeleted, 0)
+                    .orderByDesc(Conversation::getLastMessageTime)
+            );
+
+            // 2. 转换为前端需要的格式
+            List<Map<String, Object>> convList = conversations.stream()
+                .map(conv -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("id", String.valueOf(conv.getId()));
+                    map.put("title", conv.getTitle());
+                    map.put("model", conv.getModel());
+                    map.put("messageCount", conv.getMessageCount());
+                    map.put("lastMessageTime", conv.getLastMessageTime());
+                    map.put("createTime", conv.getCreateTime());
+                    return map;
+                })
+                .collect(Collectors.toList());
+
+            // 3. 写入Redis
+            String json = objectMapper.writeValueAsString(convList);
+            redisTemplate.opsForValue().set(
+                CONVERSATIONS_KEY + userId, 
+                json, 
+                90, 
+                TimeUnit.DAYS
+            );
+
+            // 4. 设置版本号
+            long version = System.currentTimeMillis();
+            redisTemplate.opsForValue().set(
+                CONVERSATIONS_VERSION_KEY + userId,
+                String.valueOf(version),
+                90,
+                TimeUnit.DAYS
+            );
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("userId", userId);
+            result.put("conversationCount", convList.size());
+            result.put("version", version);
+
+            log.info("✅ 用户{}的对话缓存初始化完成，共{}个会话", userId, convList.size());
+            
+            return Result.success("缓存初始化成功", result);
+
+        } catch (Exception e) {
+            log.error("❌ 初始化对话缓存失败: userId={}", userId, e);
+            return Result.error("初始化失败: " + e.getMessage());
         }
     }
 
     /**
-     * 重新初始化所有平台基础测试数据
-     * 注意：此操作会清空 platform_model_config, marketplace_provider, package_template 表
+     * 批量初始化所有用户的对话缓存
+     * 
+     * @return 操作结果
      */
-    @RequireAdmin
-    @org.springframework.context.annotation.Profile({"dev", "test"})
-    @PostMapping("/reset")
-    public Result<String> resetTestData(@RequestHeader("X-User-Token") String token) {
-        checkEnvAllowance();
+    @PostMapping("/init-all-conversation-cache")
+    public Result<Map<String, Object>> initAllConversationCache() {
         try {
-            log.info("开始执行测试数据重置...");
-            
-            // 读取 SQL 脚本
-            ClassPathResource resource = new ClassPathResource("sql/init_test_data.sql");
-            
-            // 使用 Spring ScriptUtils 安全执行（修复 P1-39: 避免简单 split 导致的问题）
-            ScriptUtils.executeSqlScript(dataSource.getConnection(), resource);
-            
-            log.info("测试数据重置成功");
-            
-            // 修复 P0-3: 记录操作日志
-            Long adminId = tokenService.getUserIdFromToken(token);
-            com.ai.gateway.entity.User adminUser = userService.getUserEntityById(adminId);
-            String adminUsername = adminUser != null ? adminUser.getUsername() : "Unknown_Admin";
-            operationLogService.logSuccess(adminId, adminUsername, "SYSTEM_CONFIG", 
-                    "RESET_TEST_DATA", null, java.util.Map.of("status", "SUCCESS"));
-            
-            return Result.success("平台基础测试数据已重置", null);
-        } catch (Exception e) {
-            log.error("重置测试数据失败", e);
-            
-            // 修复 P0-4: 记录失败日志
-            try {
-                Long adminId = tokenService.getUserIdFromToken(token);
-                com.ai.gateway.entity.User adminUser = userService.getUserEntityById(adminId);
-                String adminUsername = adminUser != null ? adminUser.getUsername() : "Unknown_Admin";
-                operationLogService.logFailure(adminId, adminUsername, "SYSTEM_CONFIG", 
-                        "RESET_TEST_DATA", null, java.util.Map.of(), e.getMessage());
-            } catch (Exception ex) {
-                log.error("记录失败日志异常", ex);
+            // 查询所有有会话的用户
+            List<Long> userIds = conversationMapper.selectObjs(
+                new LambdaQueryWrapper<Conversation>()
+                    .select(Conversation::getUserId)
+                    .eq(Conversation::getIsDeleted, 0)
+                    .groupBy(Conversation::getUserId)
+            ).stream().map(obj -> (Long) obj).collect(Collectors.toList());
+
+            int successCount = 0;
+            int failCount = 0;
+            Map<Long, Integer> userConvCount = new HashMap<>();
+
+            for (Long userId : userIds) {
+                try {
+                    List<Conversation> conversations = conversationMapper.selectList(
+                        new LambdaQueryWrapper<Conversation>()
+                            .eq(Conversation::getUserId, userId)
+                            .eq(Conversation::getIsDeleted, 0)
+                            .orderByDesc(Conversation::getLastMessageTime)
+                    );
+
+                    List<Map<String, Object>> convList = conversations.stream()
+                        .map(conv -> {
+                            Map<String, Object> map = new HashMap<>();
+                            map.put("id", String.valueOf(conv.getId()));
+                            map.put("title", conv.getTitle());
+                            map.put("model", conv.getModel());
+                            map.put("messageCount", conv.getMessageCount());
+                            map.put("lastMessageTime", conv.getLastMessageTime());
+                            map.put("createTime", conv.getCreateTime());
+                            return map;
+                        })
+                        .collect(Collectors.toList());
+
+                    String json = objectMapper.writeValueAsString(convList);
+                    redisTemplate.opsForValue().set(
+                        CONVERSATIONS_KEY + userId, 
+                        json, 
+                        90, 
+                        TimeUnit.DAYS
+                    );
+
+                    long version = System.currentTimeMillis();
+                    redisTemplate.opsForValue().set(
+                        CONVERSATIONS_VERSION_KEY + userId,
+                        String.valueOf(version),
+                        90,
+                        TimeUnit.DAYS
+                    );
+
+                    userConvCount.put(userId, convList.size());
+                    successCount++;
+                    
+                    log.info("✅ 用户{}的对话缓存初始化完成，共{}个会话", userId, convList.size());
+
+                } catch (Exception e) {
+                    log.error("❌ 用户{}的对话缓存初始化失败", userId, e);
+                    failCount++;
+                }
             }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("totalUsers", userIds.size());
+            result.put("successCount", successCount);
+            result.put("failCount", failCount);
+            result.put("userConversationCount", userConvCount);
+
+            log.info("✅ 批量初始化完成: 总用户数={}, 成功={}, 失败={}", userIds.size(), successCount, failCount);
             
-            return Result.error("重置失败: " + e.getMessage());
+            return Result.success("批量初始化完成", result);
+
+        } catch (Exception e) {
+            log.error("❌ 批量初始化对话缓存失败", e);
+            return Result.error("批量初始化失败: " + e.getMessage());
         }
     }
 
     /**
-     * 修复模型点数配置
-     * 将所有未配置固定点数的模型统一设置为默认值
+     * 查看用户的对话缓存状态
+     * 
+     * @param userId 用户ID
+     * @return 缓存状态
      */
-    @RequireAdmin
-    @org.springframework.context.annotation.Profile("dev")
-    @PostMapping("/fix-points")
-    public Result<String> fixModelPoints(@RequestHeader("X-User-Token") String token) {
-        checkEnvAllowance();
+    @GetMapping("/check-conversation-cache")
+    public Result<Map<String, Object>> checkConversationCache(@RequestParam Long userId) {
         try {
-            org.springframework.jdbc.core.JdbcTemplate jt = new org.springframework.jdbc.core.JdbcTemplate(dataSource);
-            jt.update("UPDATE platform_model_config SET fixed_points = 3.000 WHERE fixed_points IS NULL OR fixed_points <= 0");
+            String conversationsJson = redisTemplate.opsForValue().get(CONVERSATIONS_KEY + userId);
+            String versionStr = redisTemplate.opsForValue().get(CONVERSATIONS_VERSION_KEY + userId);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("userId", userId);
             
-            // 修复 P0-3: 记录操作日志
-            Long adminId = tokenService.getUserIdFromToken(token);
-            com.ai.gateway.entity.User adminUser = userService.getUserEntityById(adminId);
-            String adminUsername = adminUser != null ? adminUser.getUsername() : "Unknown_Admin";
-            operationLogService.logSuccess(adminId, adminUsername, "SYSTEM_CONFIG", 
-                    "FIX_MODEL_POINTS", null, java.util.Map.of("status", "SUCCESS"));
-            
-            return Result.success("模型点数配置已修复", null);
+            if (conversationsJson != null) {
+                List<Map<String, Object>> conversations = objectMapper.readValue(
+                    conversationsJson, 
+                    List.class
+                );
+                result.put("hasCache", true);
+                result.put("conversationCount", conversations.size());
+                result.put("version", versionStr);
+            } else {
+                result.put("hasCache", false);
+                result.put("conversationCount", 0);
+                result.put("version", null);
+            }
+
+            // 查询数据库中的实际数量
+            long dbCount = conversationMapper.selectCount(
+                new LambdaQueryWrapper<Conversation>()
+                    .eq(Conversation::getUserId, userId)
+                    .eq(Conversation::getIsDeleted, 0)
+            );
+            result.put("dbConversationCount", dbCount);
+
+            return Result.success(result);
+
         } catch (Exception e) {
-            return Result.error("修复失败: " + e.getMessage());
+            log.error("❌ 检查对话缓存失败: userId={}", userId, e);
+            return Result.error("检查失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 清除用户的对话缓存
+     * 
+     * @param userId 用户ID
+     * @return 操作结果
+     */
+    @DeleteMapping("/clear-conversation-cache")
+    public Result<Void> clearConversationCache(@RequestParam Long userId) {
+        try {
+            redisTemplate.delete(CONVERSATIONS_KEY + userId);
+            redisTemplate.delete(CONVERSATIONS_VERSION_KEY + userId);
+            
+            log.info("✅ 用户{}的对话缓存已清除", userId);
+            
+            return Result.success("缓存已清除", null);
+
+        } catch (Exception e) {
+            log.error("❌ 清除对话缓存失败: userId={}", userId, e);
+            return Result.error("清除失败: " + e.getMessage());
         }
     }
 }

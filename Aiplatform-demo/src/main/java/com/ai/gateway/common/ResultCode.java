@@ -53,6 +53,7 @@ public enum ResultCode {
     /**
      * API Key无效
      */
+    INVALID_TOKEN(401, "Token无效或已过期"),
     INVALID_API_KEY(401, "API Key无效或已过期"),
 
     /**

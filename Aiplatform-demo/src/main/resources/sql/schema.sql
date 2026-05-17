@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS `platform_model_config` (
   `api_key` varchar(128) DEFAULT NULL COMMENT '平台持有的 API Key',
   `sort_order` int DEFAULT 0 COMMENT '前端展示排序',
   `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：0-禁用，1-启用',
+  `supports_vision` tinyint NOT NULL DEFAULT 0 COMMENT '是否支持图片：0-不支持，1-支持',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
@@ -201,7 +202,7 @@ CREATE TABLE IF NOT EXISTS `chat_message_history` (
 
 CREATE TABLE IF NOT EXISTS `call_log` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `api_key` varchar(64) NOT NULL COMMENT '使用的API Key',
+  `api_key` varchar(64) DEFAULT NULL COMMENT '使用的API Key（平台对话模式可为空）',
   `user_id` bigint NOT NULL COMMENT '用户ID',
   `model` varchar(64) NOT NULL COMMENT '使用的模型名称',
   `input_tokens` int NOT NULL DEFAULT '0' COMMENT '输入Token数量',

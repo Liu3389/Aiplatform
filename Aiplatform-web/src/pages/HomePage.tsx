@@ -24,9 +24,7 @@ export default function HomePage() {
   const colors = getChartColors(isDark)
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN'
 
-  const BILLING = { freeModelCallLimit: 30, freeModelTokenLimit: 50000, minTopUp: 1.0 }
-
-  const [stats, setStats] = useState({ balance: 0, todayCalls: 0, todayTokens: 0, todayCost: 0 })
+  const [stats, setStats] = useState({ balance: 0, todayTokens: 0 })
   const [systemStats, setSystemStats] = useState<any>(null)
   const [models, setModels] = useState<any[]>([])
   const chartRef = useRef<ECharts | null>(null)
@@ -36,13 +34,11 @@ export default function HomePage() {
       try {
         const [b, c] = await Promise.all([
           userApi.getBalance().catch(() => 0),
-          userApi.getFreeQuota().catch(() => ({ usedCalls: 0, maxCalls: 30, usedTokens: 0, maxTokens: 50000 })),
+          userApi.getFreeQuota().catch(() => ({ usedTokens: 0, maxTokens: 50000 })),
         ])
         setStats({
           balance: Number(b) || 0,
-          todayCalls: c.usedCalls || 0,
           todayTokens: c.usedTokens || 0,
-          todayCost: 0,
         })
       } catch {}
       try {
@@ -85,15 +81,14 @@ export default function HomePage() {
   }, [isDark])
 
   const quickActions = [
-    { label: lang === 'zh' ? 'AI 对话' : 'AI Chat', desc: lang === 'zh' ? '免费使用 DeepSeek 模型' : 'Free DeepSeek models', path: '/chat', color: colors[0], icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' },
+    { label: lang === 'zh' ? 'AI 对话' : 'AI Chat', desc: lang === 'zh' ? '使用 DeepSeek 模型对话' : 'Chat with DeepSeek models', path: '/chat', color: colors[0], icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' },
     { label: lang === 'zh' ? '令牌管理' : 'API Keys', desc: lang === 'zh' ? '管理 API 访问密钥' : 'Manage API keys', path: '/api-keys', color: colors[3], icon: 'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z' },
     { label: lang === 'zh' ? '用量信息' : 'Usage', desc: lang === 'zh' ? '查看用量数据分析' : 'Usage analytics', path: '/dashboard', color: colors[1], icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
   ]
 
   const statCards = [
     { label: lang === 'zh' ? '账户余额' : 'Balance', value: `¥${stats.balance.toFixed(2)}`, color: colors[3] },
-    { label: lang === 'zh' ? '今日已用' : 'Today Used', value: `${stats.todayCalls}/${30} ${lang==='zh'?'次':'calls'}`, color: colors[0] },
-    { label: lang === 'zh' ? 'Token消耗' : 'Tokens', value: `${(stats.todayTokens/1000).toFixed(1)}K`, color: colors[1] },
+    { label: lang === 'zh' ? '今日Token' : 'Today Tokens', value: `${(stats.todayTokens/1000).toFixed(1)}K`, color: colors[0] },
   ]
 
   return (
@@ -150,9 +145,9 @@ export default function HomePage() {
         </div>
       </motion.div>
 
-      {/* Stat Cards */}
+      {/* Stat Cards - Token + Points only */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-        className="grid grid-cols-1 sm:grid-cols-3 gap-4"
+        className="grid grid-cols-1 sm:grid-cols-2 gap-4"
       >
         {statCards.map((card, i) => (
           <div key={i} className="rounded-2xl p-5 border card-lift" style={{
@@ -161,18 +156,11 @@ export default function HomePage() {
           }}>
             <p className="text-[11px] font-medium mb-1.5" style={{ color: 'var(--text-dim)' }}>{card.label}</p>
             <p className="text-xl font-bold" style={{ color: card.color }}>{card.value}</p>
-            <div className="mt-3 h-1 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
-              <motion.div className="h-full rounded-full" initial={{ width: 0 }}
-                animate={{ width: i === 1 ? `${Math.min((stats.todayCalls/30)*100, 100)}%` : i === 2 ? `${Math.min((stats.todayTokens/50000)*100, 100)}%` : '40%' }}
-                transition={{ duration: 1, delay: 0.3 + i * 0.1 }}
-                style={{ background: `linear-gradient(90deg, ${card.color}, ${card.color}80)` }}
-              />
-            </div>
           </div>
         ))}
       </motion.div>
 
-      {/* Billing Summary Card */}
+      {/* Points Info Card */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
         className="rounded-2xl p-5 border flex flex-col sm:flex-row sm:items-center justify-between gap-3" style={{
           background: isDark ? 'rgba(139,92,246,0.04)' : 'rgba(124,58,237,0.03)',
@@ -184,10 +172,10 @@ export default function HomePage() {
           </div>
           <div>
             <div className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-              {lang === 'zh' ? '双重计费模式' : 'Dual Billing Mode'}
+              {lang === 'zh' ? '点数计费模式' : 'Points Billing'}
             </div>
             <div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
-              {lang === 'zh' ? `免费：每日${BILLING.freeModelCallLimit}次/${(BILLING.freeModelTokenLimit/1000).toFixed(0)}K Token · 付费：按Token精确计费 · Lua原子结算` : `Free: ${BILLING.freeModelCallLimit} calls/${(BILLING.freeModelTokenLimit/1000)}K tokens daily · Paid: per-token · Lua atomic`}
+              {lang === 'zh' ? '按 Token 精确计费 · Redis Lua 原子结算 · 消费透明可追溯' : 'Per-token billing · Redis Lua atomic settlement · Transparent & traceable'}
             </div>
           </div>
         </div>
@@ -258,7 +246,6 @@ export default function HomePage() {
                   <span className="text-[10px]" style={{ color: model.status === 1 ? 'var(--accent-emerald)' : 'var(--accent-rose)' }}>
                     {model.status === 1 ? (lang === 'zh' ? '可用' : 'Active') : (lang === 'zh' ? '停用' : 'Inactive')}
                   </span>
-                  {model.inputPrice === 0 && <span className="text-[10px] ml-auto px-1.5 py-0.5 rounded-md" style={{ background: 'var(--accent-emerald)' + '15', color: 'var(--accent-emerald)' }}>{lang==='zh'?'免费':'Free'}</span>}
                 </div>
               </div>
             ))}
@@ -280,7 +267,7 @@ export default function HomePage() {
           {[
             { title: lang === 'zh' ? '多模型调度' : 'Multi-Model', desc: lang === 'zh' ? '统一接入 OpenAI、DeepSeek 等主流模型' : 'Unified access to major AI models', icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4' },
             { title: lang === 'zh' ? '流式渲染' : 'Streaming', desc: lang === 'zh' ? 'Pretext 极速流式引擎，120FPS 零卡顿' : 'Pretext engine, 120FPS zero jank', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
-            { title: lang === 'zh' ? '安全计费' : 'Billing', desc: lang === 'zh' ? 'Redis Lua 原子性计费，毫秒级结算' : 'Atomic billing with Redis Lua', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+            { title: lang === 'zh' ? '点数计费' : 'Points Billing', desc: lang === 'zh' ? 'Redis Lua 原子性计费，按 Token 精确扣点' : 'Atomic billing per token with Redis Lua', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
             { title: lang === 'zh' ? '智能限流' : 'Rate Limit', desc: lang === 'zh' ? '令牌桶算法 + IP 级防护' : 'Token bucket + IP protection', icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z' },
           ].map((f, i) => (
             <div key={i} className="flex gap-3">

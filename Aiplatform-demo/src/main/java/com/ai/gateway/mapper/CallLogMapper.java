@@ -51,15 +51,15 @@ public interface CallLogMapper extends BaseMapper<CallLog> {
     /**
      * 统计今日调用次数
      */
-    @Select("SELECT COUNT(*) FROM call_log WHERE create_time &gt;= #{startOfDay}")
+    @Select("<script>SELECT COUNT(*) FROM call_log WHERE create_time <![CDATA[>=]]> #{startOfDay}</script>")
     Long countTodayCalls(@Param("startOfDay") LocalDateTime startOfDay);
     
     /**
      * 按日期聚合调用数据
      */
-    @Select("SELECT DATE(create_time) as date, COUNT(*) as calls, COALESCE(SUM(cost), 0) as cost " +
+    @Select("<script>SELECT DATE(create_time) as date, COUNT(*) as calls, COALESCE(SUM(cost), 0) as cost " +
             "FROM call_log WHERE create_time &gt;= #{startDate} AND create_time &lt; #{endDate} " +
-            "GROUP BY DATE(create_time) ORDER BY date")
+            "GROUP BY DATE(create_time) ORDER BY date</script>")
     List<Map<String, Object>> aggregateByDate(@Param("startDate") LocalDateTime startDate, 
                                                @Param("endDate") LocalDateTime endDate);
     
@@ -73,22 +73,22 @@ public interface CallLogMapper extends BaseMapper<CallLog> {
     /**
      * 按月份聚合收入数据
      */
-    @Select("SELECT DATE_FORMAT(create_time, '%Y-%m') as month, COALESCE(SUM(cost), 0) as revenue " +
-            "FROM call_log WHERE create_time &gt;= #{startDate} GROUP BY month ORDER BY month")
+    @Select("<script>SELECT DATE_FORMAT(create_time, '%Y-%m') as month, COALESCE(SUM(cost), 0) as revenue " +
+            "FROM call_log WHERE create_time &gt;= #{startDate} GROUP BY month ORDER BY month</script>")
     List<Map<String, Object>> aggregateRevenueByMonth(@Param("startDate") LocalDateTime startDate);
     
     /**
      * 按月份聚合用户增长数据
      */
-    @Select("SELECT DATE_FORMAT(create_time, '%Y-%m') as month, COUNT(*) as new_users " +
-            "FROM user WHERE create_time &gt;= #{startDate} GROUP BY month ORDER BY month")
+    @Select("<script>SELECT DATE_FORMAT(create_time, '%Y-%m') as month, COUNT(*) as new_users " +
+            "FROM user WHERE create_time &gt;= #{startDate} GROUP BY month ORDER BY month</script>")
     List<Map<String, Object>> aggregateUserGrowthByMonth(@Param("startDate") LocalDateTime startDate);
     
     /**
      * 按周聚合数据
      */
-    @Select("SELECT YEARWEEK(create_time, 1) as week, COUNT(*) as count " +
-            "FROM call_log WHERE create_time &gt;= #{startDate} GROUP BY week ORDER BY week")
+    @Select("<script>SELECT YEARWEEK(create_time, 1) as week, COUNT(*) as count " +
+            "FROM call_log WHERE create_time &gt;= #{startDate} GROUP BY week ORDER BY week</script>")
     List<Map<String, Object>> aggregateByWeek(@Param("startDate") LocalDateTime startDate);
     
     /**
@@ -113,7 +113,7 @@ public interface CallLogMapper extends BaseMapper<CallLog> {
     /**
      * 按日期统计cost
      */
-    @Select("SELECT COALESCE(SUM(cost), 0) FROM call_log WHERE create_time &gt;= #{startOfDay}")
+    @Select("<script>SELECT COALESCE(SUM(cost), 0) FROM call_log WHERE create_time <![CDATA[>=]]> #{startOfDay}</script>")
     BigDecimal sumCostByDate(@Param("startOfDay") LocalDateTime startOfDay);
     
     /**

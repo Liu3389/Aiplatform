@@ -1,23 +1,30 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { modelApi } from '@/services/api'
 import { motion } from 'framer-motion'
 import { useI18nStore } from '@/stores/i18nStore'
 import { useThemeStore } from '@/stores/themeStore'
-import PointsIcon from '@/components/PointsIcon'
 
-function getColors(isDark: boolean) {
-  return isDark
-    ? ['#8B5CF6', '#3B82F6', '#06B6D4', '#10B981', '#F59E0B', '#F43F5E']
-    : ['#7C3AED', '#2563EB', '#0891B2', '#059669', '#D97706', '#E11D48']
-}
+// 聊天页面可用的模型列表（与 platform_model_config 表中的模型对应）
+const CHAT_MODELS = new Set([
+  'deepseek-v4-flash',
+  'deepseek-v3',
+  'gpt-4o',
+  'gpt-4-turbo',
+  'claude-3-5-sonnet',
+  'gemini-2.0-flash',
+  'grok-3',
+  'qwen-max',
+  'glm-4',
+  'doubao-seed-1.6',
+  'mini-max-m1',
+])
 
 export default function ModelStorePage() {
   const { lang } = useI18nStore()
   const { theme } = useThemeStore()
   const navigate = useNavigate()
   const isDark = theme === 'dark'
-  const colors = getColors(isDark)
   const [models, setModels] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -25,31 +32,15 @@ export default function ModelStorePage() {
     (async () => {
       try {
         const m = await modelApi.list()
-        setModels(m || [])
+        setModels((m || []).filter((item: any) => item.status === 1))
       } catch {}
       setLoading(false)
     })()
   }, [])
 
-  const getPointsTier = (inputPrice: number): { label: string; labelEn: string; points: number; color: string; bg: string } => {
-    if (inputPrice === 0) return { label: '免费', labelEn: 'FREE', points: 0, color: 'var(--accent-emerald)', bg: 'var(--accent-emerald)' + '15' }
-    if (inputPrice <= 0.001) return { label: '1 点/次', labelEn: '1 pt/call', points: 1, color: 'var(--accent-blue)', bg: 'var(--accent-blue)' + '15' }
-    return { label: '3 点/次', labelEn: '3 pts/call', points: 3, color: 'var(--accent-purple)', bg: 'var(--accent-purple)' + '15' }
-  }
-
-  const tiers = useMemo(() => {
-    const free: any[] = []
-    const medium: any[] = []
-    const premium: any[] = []
-    models.forEach(m => {
-      const ip = Number(m.inputPrice || 0)
-      const op = Number(m.outputPrice || 0)
-      if (ip === 0 && op === 0) free.push(m)
-      else if (ip <= 0.001) medium.push(m)
-      else premium.push(m)
-    })
-    return { free, medium, premium }
-  }, [models])
+  const colors = isDark
+    ? ['#8B5CF6', '#3B82F6', '#06B6D4', '#10B981', '#F59E0B', '#F43F5E']
+    : ['#7C3AED', '#2563EB', '#0891B2', '#059669', '#D97706', '#E11D48']
 
   if (loading) return (
     <div className="flex items-center justify-center h-full">
@@ -65,175 +56,98 @@ export default function ModelStorePage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-              {lang === 'zh' ? '模型大厅' : 'Model Store'}
+              {lang === 'zh' ? '模型商店' : 'Model Store'}
             </h1>
             <p className="text-sm mt-1" style={{ color: 'var(--text-dim)' }}>
-              {lang === 'zh' ? '浏览所有可用 AI 模型及其定价信息' : 'Browse all available AI models and pricing'}
+              {lang === 'zh' ? '浏览全球顶尖 AI 模型，了解定价并立即体验' : 'Browse top-tier AI models worldwide with pricing'}
             </p>
           </div>
-          <button onClick={() => navigate('/billing')} className="px-4 py-2 rounded-xl text-xs font-medium transition-all"
-            style={{ background: 'var(--accent-purple)', color: '#fff' }}>
-            {lang === 'zh' ? '查看计费策略 →' : 'Billing Policy →'}
-          </button>
         </div>
       </motion.div>
 
-      {/* Free Models - 免费对话 */}
-      {tiers.free.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-4">
-            <span className="w-2 h-2 rounded-full" style={{ background: 'var(--accent-emerald)' }} />
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-              {lang === 'zh' ? `免费模型 (${tiers.free.length})` : `Free Models (${tiers.free.length})`}
-            </h2>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-md flex items-center gap-1" style={{ background: 'var(--accent-emerald)' + '15', color: 'var(--accent-emerald)' }}>
-              <PointsIcon size={10} color="var(--accent-emerald)" /> {lang === 'zh' ? '免费对话' : 'Free'}
-            </span>
+      {/* 模型列表 */}
+      {models.length > 0 && (
+        <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+          {/* 表头 */}
+          <div className="grid grid-cols-12 gap-2 px-4 py-3 text-xs font-medium border-b" style={{ borderColor: 'var(--border-color)', color: 'var(--text-dim)' }}>
+            <div className="col-span-4">{lang === 'zh' ? '模型' : 'Model'}</div>
+            <div className="col-span-2 text-right">{lang === 'zh' ? '输入价格' : 'Input Price'}</div>
+            <div className="col-span-2 text-right">{lang === 'zh' ? '输出价格' : 'Output Price'}</div>
+            <div className="col-span-2 text-center">{lang === 'zh' ? '厂商' : 'Provider'}</div>
+            <div className="col-span-2 text-center">{lang === 'zh' ? '操作' : 'Action'}</div>
           </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {tiers.free.map((m, i) => (
-              <motion.div key={m.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                className="rounded-2xl p-5 border transition-all duration-300 card-lift" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                <div className="flex items-start justify-between mb-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: colors[i % colors.length] + '15' }}>
-                    <PointsIcon size={18} color={colors[i % colors.length]} />
+
+          {/* 模型行 */}
+          {models.map((m, i) => {
+            const inChat = CHAT_MODELS.has(m.modelName)
+            return (
+              <motion.div
+                key={m.id}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.03 }}
+                className="grid grid-cols-12 gap-2 px-4 py-3 items-center border-b last:border-b-0 hover:bg-white/[0.02] transition-colors"
+                style={{ borderColor: 'var(--border-color)' }}
+              >
+                {/* 模型名称 */}
+                <div className="col-span-4 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: colors[i % colors.length] + '15' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={colors[i % colors.length]} strokeWidth="2">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
                   </div>
-                  <span className="text-xs font-bold px-2 py-1 rounded-lg flex items-center gap-1" style={{ background: 'var(--accent-emerald)' + '15', color: 'var(--accent-emerald)' }}>
-                    <PointsIcon size={10} color="var(--accent-emerald)" /> {lang === 'zh' ? '免费' : 'FREE'}
+                  <div>
+                    <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{m.modelName}</div>
+                    <div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{m.description || ''}</div>
+                  </div>
+                </div>
+
+                {/* 输入价格 */}
+                <div className="col-span-2 text-right">
+                  <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
+                    ¥{Number(m.inputPrice || 0).toFixed(4)}
+                  </span>
+                  <span className="text-[10px] ml-1" style={{ color: 'var(--text-dim)' }}>/1K tokens</span>
+                </div>
+
+                {/* 输出价格 */}
+                <div className="col-span-2 text-right">
+                  <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
+                    ¥{Number(m.outputPrice || 0).toFixed(4)}
+                  </span>
+                  <span className="text-[10px] ml-1" style={{ color: 'var(--text-dim)' }}>/1K tokens</span>
+                </div>
+
+                {/* 厂商 */}
+                <div className="col-span-2 text-center">
+                  <span className="text-xs px-2 py-1 rounded-md" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>
+                    {m.provider}
                   </span>
                 </div>
-                <h4 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{m.modelName}</h4>
-                <p className="text-[10px] mb-3" style={{ color: 'var(--text-dim)' }}>{m.provider}</p>
-                <div className="flex items-center gap-4 text-[10px]" style={{ color: 'var(--text-dim)' }}>
-                  <span className="flex items-center gap-1"><PointsIcon size={10} /> {lang === 'zh' ? '0 点数/次' : '0 pts/call'}</span>
-                </div>
-                <div className="mt-3 pt-3 border-t flex items-center justify-between" style={{ borderColor: 'var(--border-color)' }}>
-                  <span className="text-[10px] flex items-center gap-1" style={{ color: 'var(--text-dim)' }}>
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: m.status === 1 ? 'var(--accent-emerald)' : 'var(--accent-rose)' }} />
-                    {m.status === 1 ? (lang === 'zh' ? '可用' : 'Active') : (lang === 'zh' ? '停用' : 'Inactive')}
-                  </span>
-                  <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '每日30次/50K Token' : '30 calls/50K tokens daily'}</span>
+
+                {/* 操作 */}
+                <div className="col-span-2 text-center">
+                  {inChat ? (
+                    <button
+                      onClick={() => navigate('/chat')}
+                      className="text-xs px-3 py-1.5 rounded-lg font-medium transition-all hover:opacity-90"
+                      style={{ background: 'var(--accent-purple)', color: '#fff' }}
+                    >
+                      {lang === 'zh' ? '去对话 →' : 'Try Chat →'}
+                    </button>
+                  ) : (
+                    <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
+                      {lang === 'zh' ? '即将上线' : 'Coming Soon'}
+                    </span>
+                  )}
                 </div>
               </motion.div>
-            ))}
-          </div>
+            )
+          })}
         </div>
       )}
 
-      {/* Medium Models - 1点/次 */}
-      {tiers.medium.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-4">
-            <span className="w-2 h-2 rounded-full" style={{ background: 'var(--accent-blue)' }} />
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-              {lang === 'zh' ? `中端模型 (${tiers.medium.length})` : `Medium Models (${tiers.medium.length})`}
-            </h2>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-md flex items-center gap-1" style={{ background: 'var(--accent-blue)' + '15', color: 'var(--accent-blue)' }}>
-              <PointsIcon size={10} color="var(--accent-blue)" /> 1 {lang === 'zh' ? '点/次' : 'pt/call'}
-            </span>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {tiers.medium.map((m, i) => (
-              <motion.div key={m.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                className="rounded-2xl p-5 border transition-all duration-300 card-lift" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                <div className="flex items-start justify-between mb-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--accent-blue)' + '15' }}>
-                    <PointsIcon size={18} color="var(--accent-blue)" />
-                  </div>
-                  <span className="text-xs font-bold px-2 py-1 rounded-lg flex items-center gap-1" style={{ background: 'var(--accent-blue)' + '15', color: 'var(--accent-blue)' }}>
-                    <PointsIcon size={10} color="var(--accent-blue)" /> 1 {lang === 'zh' ? '点' : 'pt'}
-                  </span>
-                </div>
-                <h4 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{m.modelName}</h4>
-                <p className="text-[10px] mb-3" style={{ color: 'var(--text-dim)' }}>{m.provider}</p>
-                <div className="flex flex-col gap-1 text-[10px] mb-3" style={{ color: 'var(--text-dim)' }}>
-                  <div className="flex items-center justify-between">
-                    <span>{lang === 'zh' ? '输入/1K Token' : 'Input/1K tokens'}</span>
-                    <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>¥{Number(m.inputPrice).toFixed(2)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>{lang === 'zh' ? '输出/1K Token' : 'Output/1K tokens'}</span>
-                    <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>¥{Number(m.outputPrice).toFixed(2)}</span>
-                  </div>
-                  <div className="flex items-center justify-between pt-1 border-t" style={{ borderColor: 'var(--border-color)' }}>
-                    <span className="flex items-center gap-1" style={{ color: 'var(--text-dim)' }}>
-                      <PointsIcon size={10} color="var(--accent-blue)" /> {lang === 'zh' ? '点数' : 'Points'}
-                    </span>
-                    <span className="font-mono font-semibold flex items-center gap-1" style={{ color: 'var(--accent-blue)' }}>
-                      <PointsIcon size={10} color="var(--accent-blue)" /> 1
-                    </span>
-                  </div>
-                </div>
-                <div className="mt-2 pt-3 border-t flex items-center justify-between" style={{ borderColor: 'var(--border-color)' }}>
-                  <span className="text-[10px] flex items-center gap-1" style={{ color: 'var(--text-dim)' }}>
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: m.status === 1 ? 'var(--accent-emerald)' : 'var(--accent-rose)' }} />
-                    {m.status === 1 ? (lang === 'zh' ? '可用' : 'Active') : (lang === 'zh' ? '停用' : 'Inactive')}
-                  </span>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Premium Models - 3点/次 */}
-      {tiers.premium.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-4">
-            <span className="w-2 h-2 rounded-full" style={{ background: 'var(--accent-purple)' }} />
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-              {lang === 'zh' ? `高端模型 (${tiers.premium.length})` : `Premium Models (${tiers.premium.length})`}
-            </h2>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-md flex items-center gap-1" style={{ background: 'var(--accent-purple)' + '15', color: 'var(--accent-purple)' }}>
-              <PointsIcon size={10} color="var(--accent-purple)" /> 3 {lang === 'zh' ? '点/次' : 'pts/call'}
-            </span>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {tiers.premium.map((m, i) => {
-              const tier = getPointsTier(Number(m.inputPrice))
-              return (
-              <motion.div key={m.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                className="rounded-2xl p-5 border transition-all duration-300 card-lift" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                <div className="flex items-start justify-between mb-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: tier.bg }}>
-                    <PointsIcon size={18} color={tier.color} />
-                  </div>
-                  <span className="text-xs font-bold px-2 py-1 rounded-lg flex items-center gap-1" style={{ background: tier.bg, color: tier.color }}>
-                    <PointsIcon size={10} color={tier.color} /> {tier.points} {lang === 'zh' ? '点' : 'pts'}
-                  </span>
-                </div>
-                <h4 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{m.modelName}</h4>
-                <p className="text-[10px] mb-3" style={{ color: 'var(--text-dim)' }}>{m.provider}</p>
-                <div className="flex flex-col gap-1 text-[10px] mb-3" style={{ color: 'var(--text-dim)' }}>
-                  <div className="flex items-center justify-between">
-                    <span>{lang === 'zh' ? '输入/1K Token' : 'Input/1K tokens'}</span>
-                    <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>¥{Number(m.inputPrice).toFixed(2)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>{lang === 'zh' ? '输出/1K Token' : 'Output/1K tokens'}</span>
-                    <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>¥{Number(m.outputPrice).toFixed(2)}</span>
-                  </div>
-                  <div className="flex items-center justify-between pt-1 border-t" style={{ borderColor: 'var(--border-color)' }}>
-                    <span className="flex items-center gap-1" style={{ color: 'var(--text-dim)' }}>
-                      <PointsIcon size={10} color="var(--accent-purple)" /> {lang === 'zh' ? '点数' : 'Points'}
-                    </span>
-                    <span className="font-mono font-semibold flex items-center gap-1" style={{ color: 'var(--accent-purple)' }}>
-                      <PointsIcon size={10} color="var(--accent-purple)" /> {tier.points}
-                    </span>
-                  </div>
-                </div>
-                <div className="mt-2 pt-3 border-t flex items-center justify-between" style={{ borderColor: 'var(--border-color)' }}>
-                  <span className="text-[10px] flex items-center gap-1" style={{ color: 'var(--text-dim)' }}>
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: m.status === 1 ? 'var(--accent-emerald)' : 'var(--accent-rose)' }} />
-                    {m.status === 1 ? (lang === 'zh' ? '可用' : 'Active') : (lang === 'zh' ? '停用' : 'Inactive')}
-                  </span>
-                </div>
-              </motion.div>
-            )})}
-          </div>
-        </div>
-      )}
-
+      {/* 空状态 */}
       {models.length === 0 && (
         <div className="rounded-2xl p-10 border text-center" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
           <div className="text-4xl mb-3">📦</div>
@@ -246,7 +160,7 @@ export default function ModelStorePage() {
         </div>
       )}
 
-      {/* Billing Info Banner */}
+      {/* 计费说明 */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
         className="rounded-2xl p-5 border flex flex-col sm:flex-row sm:items-center justify-between gap-3" style={{
           background: isDark ? 'rgba(139,92,246,0.06)' : 'rgba(124,58,237,0.04)',
@@ -258,17 +172,13 @@ export default function ModelStorePage() {
           </div>
           <div>
             <div className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-              {lang === 'zh' ? '查看完整计费策略' : 'View Full Billing Policy'}
+              {lang === 'zh' ? '按 Token 计费' : 'Token-Based Billing'}
             </div>
             <div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
-              {lang === 'zh' ? '了解按次数和按Token两种计费模式的详细规则' : 'Learn about per-call and per-token billing modes'}
+              {lang === 'zh' ? '根据输入和输出 token 数量分别计费' : 'Separate pricing for input and output tokens'}
             </div>
           </div>
         </div>
-        <button onClick={() => navigate('/billing')} className="px-4 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition-colors"
-          style={{ background: 'var(--accent-purple)' + '15', color: 'var(--accent-purple)', border: '1px solid var(--accent-purple)' + '30' }}>
-          {lang === 'zh' ? '计费策略 →' : 'Billing Policy →'}
-        </button>
       </motion.div>
     </div>
   )

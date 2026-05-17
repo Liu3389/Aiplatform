@@ -24,6 +24,7 @@ public class PlatformModelConfig implements Serializable {
     private String apiKey; // 平台持有的 API Key
     private Integer sortOrder; // 排序字段 (P3-20)
     private Integer status;
+    private Integer supportsVision; // 是否支持图片：0-不支持，1-支持
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

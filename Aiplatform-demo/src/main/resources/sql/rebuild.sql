@@ -10,38 +10,38 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- ============================================
--- 第一部分：清理旧数据（按依赖关系逆序删除）
+-- 第一部分：清理旧表（按依赖关系逆序删除，支持全新环境）
 -- ============================================
 
-DELETE FROM `user_notification`;
-DELETE FROM `system_notification`;
-DELETE FROM `admin_operation_log`;
-DELETE FROM `billing_record`;
-DELETE FROM `call_log`;
-DELETE FROM `points_bill`;
-DELETE FROM `chat_message`;
-DELETE FROM `chat_message_history`;
-DELETE FROM `conversation`;
-DELETE FROM `api_key`;
-DELETE FROM `coupon_usage_record`;
-DELETE FROM `coupon`;
-DELETE FROM `user_subscription`;
-DELETE FROM `user`;
-DELETE FROM `user_marketplace_key`;
-DELETE FROM `marketplace_usage_log`;
-DELETE FROM `marketplace_provider`;
-DELETE FROM `platform_model_config`;
-DELETE FROM `package_template`;
-DELETE FROM `daily_statistics`;
-DELETE FROM `statistics_counter`;
-DELETE FROM `platform_statistics`;
+DROP TABLE IF EXISTS `user_notification`;
+DROP TABLE IF EXISTS `system_notification`;
+DROP TABLE IF EXISTS `admin_operation_log`;
+DROP TABLE IF EXISTS `billing_record`;
+DROP TABLE IF EXISTS `call_log`;
+DROP TABLE IF EXISTS `points_bill`;
+DROP TABLE IF EXISTS `chat_message`;
+DROP TABLE IF EXISTS `chat_message_history`;
+DROP TABLE IF EXISTS `conversation`;
+DROP TABLE IF EXISTS `api_key`;
+DROP TABLE IF EXISTS `coupon_usage_record`;
+DROP TABLE IF EXISTS `coupon`;
+DROP TABLE IF EXISTS `user_subscription`;
+DROP TABLE IF EXISTS `user`;
+DROP TABLE IF EXISTS `user_marketplace_key`;
+DROP TABLE IF EXISTS `marketplace_usage_log`;
+DROP TABLE IF EXISTS `marketplace_provider`;
+DROP TABLE IF EXISTS `platform_model_config`;
+DROP TABLE IF EXISTS `package_template`;
+DROP TABLE IF EXISTS `daily_statistics`;
+DROP TABLE IF EXISTS `statistics_counter`;
+DROP TABLE IF EXISTS `platform_statistics`;
 
 -- ============================================
 -- 第二部分：核心建表
 -- ============================================
 
 -- 1. 用户表
-CREATE TABLE IF NOT EXISTS `user` (
+CREATE TABLE `user` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `username` varchar(64) NOT NULL COMMENT '用户名',
   `password` varchar(128) NOT NULL COMMENT '密码（BCrypt加密存储）',
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS `user` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
 -- 2. API Key 表
-CREATE TABLE IF NOT EXISTS `api_key` (
+CREATE TABLE `api_key` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `api_key` varchar(256) NOT NULL COMMENT 'API Key（AES加密存储）',
   `user_id` bigint NOT NULL COMMENT '用户ID',
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS `api_key` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='平台统一API Key表';
 
 -- 3. 平台对话模型配置表
-CREATE TABLE IF NOT EXISTS `platform_model_config` (
+CREATE TABLE `platform_model_config` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `display_name` varchar(64) NOT NULL COMMENT '展示名称（如 GPT-4o）',
   `actual_model` varchar(64) NOT NULL COMMENT '实际调用模型（如 deepseek-v4-pro）',
@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS `platform_model_config` (
   `api_key` varchar(128) DEFAULT NULL COMMENT '平台持有的 API Key',
   `sort_order` int DEFAULT 0 COMMENT '前端展示排序',
   `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：0-禁用，1-启用',
+  `supports_vision` tinyint NOT NULL DEFAULT 0 COMMENT '是否支持图片：0-不支持，1-支持',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
@@ -101,7 +102,7 @@ CREATE TABLE IF NOT EXISTS `platform_model_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='平台对话模型配置表';
 
 -- 4. 模型商店厂商配置表
-CREATE TABLE IF NOT EXISTS `marketplace_provider` (
+CREATE TABLE `marketplace_provider` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `provider_name` varchar(32) NOT NULL COMMENT '厂商名称',
   `base_url` varchar(256) NOT NULL COMMENT 'API基础地址',
@@ -115,7 +116,7 @@ CREATE TABLE IF NOT EXISTS `marketplace_provider` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型商店厂商配置表';
 
 -- 5. 用户模型商店 Key 记录表
-CREATE TABLE IF NOT EXISTS `user_marketplace_key` (
+CREATE TABLE `user_marketplace_key` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id` bigint NOT NULL COMMENT '用户ID',
   `provider_id` bigint NOT NULL COMMENT '关联厂商ID',
@@ -134,7 +135,7 @@ CREATE TABLE IF NOT EXISTS `user_marketplace_key` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户模型商店 Key 记录表';
 
 -- 6. 模型商店调用日志表
-CREATE TABLE IF NOT EXISTS `marketplace_usage_log` (
+CREATE TABLE `marketplace_usage_log` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_key_id` bigint NOT NULL COMMENT '关联用户 Key ID',
   `user_id` bigint NOT NULL COMMENT '用户ID',
@@ -150,7 +151,7 @@ CREATE TABLE IF NOT EXISTS `marketplace_usage_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='模型商店调用日志表';
 
 -- 7. 套餐模板表
-CREATE TABLE IF NOT EXISTS `package_template` (
+CREATE TABLE `package_template` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `package_code` VARCHAR(32) NOT NULL COMMENT '套餐代码（唯一标识）',
   `package_name` VARCHAR(64) NOT NULL COMMENT '套餐名称',
@@ -174,7 +175,7 @@ CREATE TABLE IF NOT EXISTS `package_template` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='套餐模板表';
 
 -- 8. 会话表
-CREATE TABLE IF NOT EXISTS `conversation` (
+CREATE TABLE `conversation` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id` bigint NOT NULL COMMENT '用户ID',
   `title` varchar(255) DEFAULT NULL COMMENT '会话标题',
@@ -190,7 +191,7 @@ CREATE TABLE IF NOT EXISTS `conversation` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会话表';
 
 -- 9. 聊天消息表（热数据）
-CREATE TABLE IF NOT EXISTS `chat_message` (
+CREATE TABLE `chat_message` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `conversation_id` bigint NOT NULL COMMENT '会话ID',
   `user_id` bigint NOT NULL COMMENT '用户ID',
@@ -208,7 +209,7 @@ CREATE TABLE IF NOT EXISTS `chat_message` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天消息表（热数据-最近30天）';
 
 -- 10. 聊天消息历史表（冷数据）
-CREATE TABLE IF NOT EXISTS `chat_message_history` (
+CREATE TABLE `chat_message_history` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `conversation_id` bigint NOT NULL COMMENT '会话ID',
   `user_id` bigint NOT NULL COMMENT '用户ID',
@@ -226,9 +227,9 @@ CREATE TABLE IF NOT EXISTS `chat_message_history` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天消息历史表（冷数据-30天前）';
 
 -- 11. 调用日志表
-CREATE TABLE IF NOT EXISTS `call_log` (
+CREATE TABLE `call_log` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `api_key` varchar(64) NOT NULL COMMENT '使用的API Key',
+  `api_key` varchar(64) DEFAULT NULL COMMENT '使用的API Key（平台对话模式可为空）',
   `user_id` bigint NOT NULL COMMENT '用户ID',
   `model` varchar(64) NOT NULL COMMENT '使用的模型名称',
   `input_tokens` int NOT NULL DEFAULT '0' COMMENT '输入Token数量',
@@ -246,7 +247,7 @@ CREATE TABLE IF NOT EXISTS `call_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='调用日志表';
 
 -- 12. 计费记录表
-CREATE TABLE IF NOT EXISTS `billing_record` (
+CREATE TABLE `billing_record` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id` bigint NOT NULL COMMENT '用户ID',
   `call_log_id` bigint NOT NULL COMMENT '关联的调用日志ID',
@@ -261,7 +262,7 @@ CREATE TABLE IF NOT EXISTS `billing_record` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='计费记录表';
 
 -- 13. 点数明细账单表
-CREATE TABLE IF NOT EXISTS `points_bill` (
+CREATE TABLE `points_bill` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id` BIGINT NOT NULL COMMENT '用户ID',
   `change_type` VARCHAR(20) NOT NULL COMMENT '变动类型：RECHARGE/DEDUCT/GRANT/EXPIRE',
@@ -283,7 +284,7 @@ CREATE TABLE IF NOT EXISTS `points_bill` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='点数明细账单表';
 
 -- 14. 用户订阅记录表
-CREATE TABLE IF NOT EXISTS `user_subscription` (
+CREATE TABLE `user_subscription` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id` BIGINT NOT NULL COMMENT '用户ID',
   `package_id` BIGINT NOT NULL COMMENT '套餐模板ID',
@@ -309,7 +310,7 @@ CREATE TABLE IF NOT EXISTS `user_subscription` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户订阅记录表';
 
 -- 15. 代金券表
-CREATE TABLE IF NOT EXISTS `coupon` (
+CREATE TABLE `coupon` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `user_id` bigint NOT NULL,
   `coupon_code` varchar(32) NOT NULL,
@@ -327,7 +328,7 @@ CREATE TABLE IF NOT EXISTS `coupon` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='代金券表';
 
 -- 16. 优惠券使用记录表
-CREATE TABLE IF NOT EXISTS `coupon_usage_record` (
+CREATE TABLE `coupon_usage_record` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id` BIGINT NOT NULL COMMENT '用户ID',
   `coupon_id` BIGINT NOT NULL COMMENT '优惠券ID',
@@ -347,7 +348,7 @@ CREATE TABLE IF NOT EXISTS `coupon_usage_record` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='优惠券使用记录表';
 
 -- 17. 管理员操作日志表
-CREATE TABLE IF NOT EXISTS `admin_operation_log` (
+CREATE TABLE `admin_operation_log` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `admin_id` bigint NOT NULL COMMENT '管理员ID',
   `admin_username` varchar(64) NOT NULL COMMENT '管理员用户名',
@@ -367,7 +368,7 @@ CREATE TABLE IF NOT EXISTS `admin_operation_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='管理员操作日志表';
 
 -- 18. 系统通知表
-CREATE TABLE IF NOT EXISTS `system_notification` (
+CREATE TABLE `system_notification` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `user_id` bigint NOT NULL,
   `title` varchar(128) NOT NULL,
@@ -381,7 +382,7 @@ CREATE TABLE IF NOT EXISTS `system_notification` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统通知表';
 
 -- 19. 用户通知表
-CREATE TABLE IF NOT EXISTS `user_notification` (
+CREATE TABLE `user_notification` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id` bigint NOT NULL COMMENT '用户ID',
   `title` varchar(128) NOT NULL COMMENT '通知标题',
@@ -397,7 +398,7 @@ CREATE TABLE IF NOT EXISTS `user_notification` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户通知表';
 
 -- 20. 每日统计表
-CREATE TABLE IF NOT EXISTS `daily_statistics` (
+CREATE TABLE `daily_statistics` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `stat_date` date NOT NULL COMMENT '统计日期',
   `new_users` int NOT NULL DEFAULT 0 COMMENT '新增用户数',
@@ -425,7 +426,7 @@ CREATE TABLE IF NOT EXISTS `daily_statistics` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='每日统计表';
 
 -- 21. 实时计数器表
-CREATE TABLE IF NOT EXISTS `statistics_counter` (
+CREATE TABLE `statistics_counter` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `counter_type` varchar(32) NOT NULL COMMENT '计数器类型',
   `counter_value` bigint NOT NULL DEFAULT 0 COMMENT '计数值',
@@ -435,7 +436,7 @@ CREATE TABLE IF NOT EXISTS `statistics_counter` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='实时计数器表';
 
 -- 22. 平台统计数据表
-CREATE TABLE IF NOT EXISTS `platform_statistics` (
+CREATE TABLE `platform_statistics` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `stat_date` DATE NOT NULL COMMENT '统计日期',
   `total_users` INT NOT NULL DEFAULT 0 COMMENT '总用户数',
@@ -462,17 +463,23 @@ CREATE TABLE IF NOT EXISTS `platform_statistics` (
 -- ============================================
 
 -- 平台对话模型配置
-INSERT INTO platform_model_config (display_name, actual_model, fixed_points, provider, base_url, api_key, status, sort_order) VALUES
-('DeepSeek-V4-Flash', 'deepseek-v4-flash', 1.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', '${DEEPSEEK_API_KEY:your-api-key-here}', 1, 1),
-('DeepSeek-V4-Pro', 'deepseek-v4-pro', 3.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', '${DEEPSEEK_API_KEY:your-api-key-here}', 1, 2),
-('GPT-4o (虚拟)', 'deepseek-v4-pro', 5.000, 'openai', 'https://api.openai.com/v1/chat/completions', 'mock-openai-key', 1, 3),
-('Claude-3.5-Sonnet (虚拟)', 'deepseek-v4-pro', 4.000, 'anthropic', 'https://api.anthropic.com/v1/messages', 'mock-anthropic-key', 1, 4);
+INSERT INTO platform_model_config (display_name, actual_model, fixed_points, provider, base_url, api_key, supports_vision, status, sort_order) VALUES
+('DeepSeek-V4-Flash', 'deepseek-v4-flash', 1.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 1),
+('DeepSeek-V4-Pro', 'deepseek-v4-pro', 3.000, 'deepseek', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 2),
+('GPT-4o (虚拟)', 'deepseek-v4-pro', 5.000, 'openai', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 3),
+('Claude-3.5-Sonnet (虚拟)', 'deepseek-v4-pro', 4.000, 'anthropic', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 4),
+('Gemini-2.0-Pro (虚拟)', 'deepseek-v4-pro', 4.000, 'google', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 5),
+('Qwen-Max (虚拟)', 'deepseek-v4-pro', 2.000, 'qwen', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 6),
+('Qwen-Plus (虚拟)', 'deepseek-v4-flash', 1.000, 'qwen', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 7),
+('Claude-3-Opus (虚拟)', 'deepseek-v4-pro', 5.000, 'anthropic', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 8),
+('GPT-4-Turbo (虚拟)', 'deepseek-v4-pro', 4.000, 'openai', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 9),
+('Gemini-2.0-Flash (虚拟)', 'deepseek-v4-flash', 1.000, 'google', 'https://api.deepseek.com/v1/chat/completions', 'REDACTED_PROVIDER_API_KEY', 0, 1, 10);
 
 -- 模型商店厂商配置
 INSERT INTO marketplace_provider (provider_name, base_url, platform_api_key, input_price, output_price, status) VALUES
 ('OpenAI', 'https://api.openai.com/v1', 'mock-openai-key', 0.150000, 0.600000, 1),
 ('Anthropic', 'https://api.anthropic.com/v1', 'mock-anthropic-key', 0.300000, 1.500000, 1),
-('DeepSeek', 'https://api.deepseek.com/v1', '${DEEPSEEK_API_KEY:your-api-key-here}', 0.100000, 0.200000, 1);
+('DeepSeek', 'https://api.deepseek.com/v1', 'REDACTED_PROVIDER_API_KEY', 0.100000, 0.200000, 1);
 
 -- 套餐模板
 INSERT INTO package_template (package_code, package_name, description, identity_label, points, price, duration_days, daily_call_limit, monthly_call_limit, max_tokens_per_call, priority_level, features, status, sort_order) VALUES
@@ -481,14 +488,14 @@ INSERT INTO package_template (package_code, package_name, description, identity_
 ('premium', '专业版', '适合专业开发者和小型团队', '尊享会员', 500, 99.9, 30, 200, 6000, 16384, 2, '{"desc":"每日200次调用"}', 1, 3),
 ('ultimate', '旗舰版', '适合企业和重度使用者', '至尊会员', 2000, 299.9, 30, 1000, 30000, 32768, 3, '{"desc":"每日1000次调用"}', 1, 4);
 
--- 管理员账户（密码: Admin@123456 / BCryptHash）
+-- 管理员账户（密码: Test@123456 / BCryptHash）
 INSERT INTO user (username, password, email, balance, points, status, role) VALUES
-('superadmin', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'admin@aiplatform.com', 0.000, 10000.000, 1, 'SUPER_ADMIN');
+('superadmin', '$2a$10$h2b3MoYCcBJEwgmGMH8Ome5fKxkUtlBTXNJbMpuv6M4/KabSdVtKK', 'admin@aiplatform.com', 0.000, 10000.000, 1, 'SUPER_ADMIN');
 
--- 测试用户
+-- 测试用户（密码: Test@123456）
 INSERT INTO user (username, password, email, balance, points, status, role, free_api_strategy, free_quota, daily_call_limit, monthly_call_limit) VALUES
-('testuser01', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'test01@test.com', 1000.000, 1000.000, 1, 'USER', 'QUOTA_BASED', 100, 100, 3000),
-('testuser02', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'test02@test.com', 100.000, 100.000, 1, 'USER', 'COUNT_LIMITED', 0, 50, 1500);
+('testuser01', '$2a$10$h2b3MoYCcBJEwgmGMH8Ome5fKxkUtlBTXNJbMpuv6M4/KabSdVtKK', 'test01@test.com', 1000.000, 1000.000, 1, 'USER', 'QUOTA_BASED', 100, 100, 3000),
+('testuser02', '$2a$10$h2b3MoYCcBJEwgmGMH8Ome5fKxkUtlBTXNJbMpuv6M4/KabSdVtKK', 'test02@test.com', 100.000, 100.000, 1, 'USER', 'COUNT_LIMITED', 0, 50, 1500);
 
 -- 实时计数器初始数据
 INSERT INTO statistics_counter (counter_type, counter_value) VALUES
@@ -499,7 +506,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 SELECT '============================================' AS '';
 SELECT '  数据库重建完成！' AS result;
-SELECT '  默认管理员: superadmin / Admin@123456' AS admin_info;
+SELECT '  默认管理员: superadmin / Test@123456' AS admin_info;
 SELECT '  默认测试用户: testuser01, testuser02' AS test_users;
 SELECT '  密码: Test@123456' AS password;
 SELECT '============================================' AS '';

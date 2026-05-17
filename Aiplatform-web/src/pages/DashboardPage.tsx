@@ -26,40 +26,34 @@ export default function DashboardPage() {
   const { theme } = useThemeStore()
   const { lang } = useI18nStore()
   const isDark = theme === 'dark'
-  const membership = MEMBERSHIP_QUOTAS[user?.membership || 'free']
+  const membership = MEMBERSHIP_QUOTAS[(user?.membership?.toLowerCase() || 'free') as keyof typeof MEMBERSHIP_QUOTAS] || MEMBERSHIP_QUOTAS.free
   const ct = getChartTheme(isDark)
 
   const [range, setRange] = useState<'7d' | '30d'>('7d')
-  const [pointsUsed, setPointsUsed] = useState(0)
   const [tokensUsed, setTokensUsed] = useState(0)
-  const [callsCount, setCallsCount] = useState(0)
   const [monthlyPoints, setMonthlyPoints] = useState(0)
-  const [dailyData, setDailyData] = useState<{ label: string; tokens: number; calls: number }[]>([])
+  const [dailyData, setDailyData] = useState<{ label: string; tokens: number }[]>([])
   const [loading, setLoading] = useState(true)
 
   const tokenChartRef = useRef<HTMLDivElement>(null)
-  const callChartRef = useRef<HTMLDivElement>(null)
-  const chartInstRef = useRef<{ token?: ECharts; call?: ECharts }>({})
+  const chartInstRef = useRef<ECharts | null>(null)
 
   useEffect(() => {
     setLoading(true)
     userApi.getFreeQuota().then(q => {
-      setPointsUsed(q?.usedCalls || 0)
       setTokensUsed(q?.usedTokens || 0)
-      setCallsCount(q?.usedCalls || 0)
       setMonthlyPoints(q?.monthlyPoints || 0)
     }).catch(() => {})
 
     const days = range === '7d' ? 7 : 30
     const now = new Date()
-    const mock: { label: string; tokens: number; calls: number }[] = []
+    const mock: { label: string; tokens: number }[] = []
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(now)
       d.setDate(d.getDate() - i)
       mock.push({
         label: `${d.getMonth() + 1}/${d.getDate()}`,
         tokens: Math.floor(Math.random() * 8000 + 1000),
-        calls: Math.floor(Math.random() * 20 + 1),
       })
     }
     setDailyData(mock)
@@ -70,7 +64,6 @@ export default function DashboardPage() {
     if (loading || dailyData.length === 0) return
     const labels = dailyData.map(d => d.label)
     const tokenVals = dailyData.map(d => d.tokens)
-    const callVals = dailyData.map(d => d.calls)
 
     const areaOption = (data: number[], name: string, colorIdx: number): EChartsOption => ({
       backgroundColor: 'transparent',
@@ -106,61 +99,20 @@ export default function DashboardPage() {
       }],
     })
 
-    const barOption = (data: number[], name: string, colorIdx: number): EChartsOption => ({
-      backgroundColor: 'transparent',
-      grid: { top: 10, right: 10, bottom: 25, left: 40 },
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: isDark ? 'rgba(17,24,39,0.95)' : 'rgba(255,255,255,0.95)',
-        borderColor: ct.splitLineColor,
-        textStyle: { color: ct.textColor, fontSize: 11 },
-      },
-      xAxis: {
-        type: 'category', data: labels,
-        axisLine: { lineStyle: { color: ct.axisLineColor } },
-        axisTick: { show: false },
-        axisLabel: { color: ct.textColor, fontSize: 9 },
-      },
-      yAxis: {
-        type: 'value',
-        splitLine: { lineStyle: { color: ct.splitLineColor } },
-        axisLabel: { color: ct.textColor, fontSize: 9 },
-      },
-      series: [{
-        name, type: 'bar', data,
-        itemStyle: {
-          borderRadius: [4, 4, 0, 0],
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: colors[colorIdx] },
-            { offset: 1, color: colors[colorIdx] + '50' },
-          ]),
-        },
-        barWidth: range === '7d' ? 20 : 8,
-      }],
-    })
-
     const elToken = tokenChartRef.current
-    const elCall = callChartRef.current
     if (elToken) {
-      if (chartInstRef.current.token) chartInstRef.current.token.dispose()
-      chartInstRef.current.token = echarts.init(elToken, isDark ? 'dark' : undefined)
-      chartInstRef.current.token.setOption(areaOption(tokenVals, 'Token', 1))
-    }
-    if (elCall) {
-      if (chartInstRef.current.call) chartInstRef.current.call.dispose()
-      chartInstRef.current.call = echarts.init(elCall, isDark ? 'dark' : undefined)
-      chartInstRef.current.call.setOption(barOption(callVals, lang === 'zh' ? '调用次数' : 'Calls', 0))
+      if (chartInstRef.current) chartInstRef.current.dispose()
+      chartInstRef.current = echarts.init(elToken, isDark ? 'dark' : undefined)
+      chartInstRef.current.setOption(areaOption(tokenVals, 'Token', 1))
     }
 
     const handleResize = () => {
-      chartInstRef.current.token?.resize()
-      chartInstRef.current.call?.resize()
+      chartInstRef.current?.resize()
     }
     window.addEventListener('resize', handleResize)
     return () => {
       window.removeEventListener('resize', handleResize)
-      chartInstRef.current.token?.dispose()
-      chartInstRef.current.call?.dispose()
+      chartInstRef.current?.dispose()
     }
   }, [dailyData, loading, isDark, range, lang])
 
@@ -168,9 +120,8 @@ export default function DashboardPage() {
     return <div className="flex items-center justify-center h-full"><div className="w-6 h-6 border-2 border-brand-purple/30 border-t-brand-purple rounded-full animate-spin" /></div>
   }
 
-  const maxCalls = membership.dailyCalls > 99999 ? '∞' : membership.dailyCalls
   const maxTokens = (membership.dailyTokens / 1000).toFixed(0) + 'K'
-  const pointPercent = monthlyPoints > 0 ? Math.min(100, (pointsUsed / monthlyPoints) * 100) : 0
+  const pointPercent = monthlyPoints > 0 ? Math.min(100, (tokensUsed / 100000) * 100) : 0
 
   return (
     <div className="p-3 sm:p-4 lg:p-8 max-w-5xl mx-auto overflow-y-auto h-full">
@@ -191,13 +142,12 @@ export default function DashboardPage() {
         </div>
       </motion.div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      {/* KPI Cards - Token + Points only */}
+      <div className="grid grid-cols-3 gap-3 mb-6">
         {[
-          { l: lang === 'zh' ? '已用点数' : 'Points Used', v: String(pointsUsed), s: lang === 'zh' ? '点' : 'pts', c: membership.color, icon: <PointsIcon size={14} color={membership.color} /> },
           { l: lang === 'zh' ? '今日Token' : 'Today Tokens', v: (tokensUsed / 1000).toFixed(1) + 'K', s: '', c: colors[1], icon: null },
-          { l: lang === 'zh' ? '今日调用' : 'Today Calls', v: String(callsCount), s: lang === 'zh' ? '次' : '', c: colors[0], icon: null },
-          { l: lang === 'zh' ? '额度上限' : 'Limit', v: String(maxCalls), s: lang === 'zh' ? '次/天' : '/day', c: colors[4], icon: null },
+          { l: lang === 'zh' ? 'Token上限' : 'Token Limit', v: maxTokens, s: lang === 'zh' ? '/天' : '/day', c: colors[0], icon: null },
+          { l: lang === 'zh' ? '点数包月' : 'Monthly Pts', v: String(monthlyPoints || 0), s: lang === 'zh' ? '点' : 'pts', c: membership.color, icon: <PointsIcon size={14} color={membership.color} /> },
         ].map((card, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
             className="rounded-2xl p-4 border" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
@@ -218,7 +168,7 @@ export default function DashboardPage() {
             <span className="text-xs font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
               <PointsIcon size={14} color={membership.color} /> {lang === 'zh' ? '月度点数' : 'Monthly Points'}
             </span>
-            <span className="text-xs font-bold" style={{ color: membership.color }}>{pointsUsed} / {monthlyPoints} {lang === 'zh' ? '点' : 'pts'}</span>
+            <span className="text-xs font-bold" style={{ color: membership.color }}>{tokensUsed / 100 > 0 ? (tokensUsed / 100).toFixed(0) : 0} / {monthlyPoints} {lang === 'zh' ? '点' : 'pts'}</span>
           </div>
           <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-surface)' }}>
             <motion.div className="h-full rounded-full" initial={{ width: 0 }} animate={{ width: `${pointPercent}%` }} transition={{ duration: 0.8, delay: 0.3 }}
@@ -227,15 +177,11 @@ export default function DashboardPage() {
         </motion.div>
       )}
 
-      {/* ECharts */}
-      <div className="grid sm:grid-cols-2 gap-4 mb-6">
+      {/* Token Chart */}
+      <div className="mb-6">
         <div className="rounded-2xl p-4 border" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
           <h3 className="text-xs font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? 'Token 消耗趋势' : 'Token Usage Trend'}</h3>
           <div ref={tokenChartRef} className="w-full" style={{ height: 220 }} />
-        </div>
-        <div className="rounded-2xl p-4 border" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-          <h3 className="text-xs font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? '调用次数趋势' : 'Call Count Trend'}</h3>
-          <div ref={callChartRef} className="w-full" style={{ height: 220 }} />
         </div>
       </div>
 
@@ -251,8 +197,8 @@ export default function DashboardPage() {
               <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? membership.label : membership.labelEn}</div>
               <div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
                 {monthlyPoints > 0
-                  ? (lang === 'zh' ? `每月 ${monthlyPoints} 点数 · 每日 ${maxCalls} 次 · ${maxTokens} Token` : `${monthlyPoints} pts/mo · ${maxCalls} calls/day`)
-                  : (lang === 'zh' ? `每日 ${maxCalls} 次 · ${maxTokens} Token/天` : `${maxCalls} calls/day`)
+                  ? (lang === 'zh' ? `每月 ${monthlyPoints} 点数 · ${maxTokens} Token/天` : `${monthlyPoints} pts/mo · ${maxTokens} tokens/day`)
+                  : (lang === 'zh' ? `${maxTokens} Token/天` : `${maxTokens} tokens/day`)
                 }
               </div>
             </div>

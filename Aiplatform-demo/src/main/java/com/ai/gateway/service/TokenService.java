@@ -28,16 +28,17 @@ public class TokenService {
     private static final long LOGIN_LOCK_MINUTES = 15;
 
     // 修复 P1-13: 从配置文件读取 AES 密钥，避免硬编码
-    @Value("${security.aes-key:}")
+    @Value("${api.encryption.key:}")
     private String aesKey;
 
     private final RedisTemplate<String, String> redisTemplate;
     private final UserService userService;
     private final SessionService sessionService;
+    private final com.ai.gateway.util.RedisScanUtil redisScanUtil;
 
     public void validateAesKey() {
         if (aesKey == null || aesKey.isEmpty() || "AiGateway2026Key".equals(aesKey)) {
-            throw new IllegalStateException("AES 密钥未配置，请设置 security.aes-key");
+            throw new IllegalStateException("AES 密钥未配置，请设置 api.encryption.key 或环境变量 API_ENCRYPTION_KEY");
         }
     }
 
@@ -87,8 +88,50 @@ public class TokenService {
 
     public void revokeToken(String token) {
         if (token == null) return;
+        
+        // 1. 获取userId
+        Long userId = getUserIdFromToken(token);
+        
+        // 2. 删除Token
         redisTemplate.delete(TOKEN_PREFIX + token);
-        log.info("Token已撤销");
+        log.info("Token已撤销: userId={}", userId);
+        
+        // 3. 清除用户会话（单设备登录机制）
+        if (userId != null) {
+            try {
+                // 销毁会话信息
+                String deviceId = sessionService.getCurrentDeviceId(userId);
+                if (deviceId != null) {
+                    sessionService.destroySession(userId, deviceId);
+                }
+                
+                // 清除对话列表缓存
+                String conversationsKey = "conversations:" + userId;
+                String conversationsVersionKey = "conversations:version:" + userId;
+                redisTemplate.delete(conversationsKey);
+                redisTemplate.delete(conversationsVersionKey);
+                log.info("对话列表缓存已清除: userId={}", userId);
+                
+                // 清除消息缓存（SCAN方式，避免KEYS阻塞）
+                String messageCachePattern = "chat:messages:" + userId + ":*";
+                long deletedCount = redisScanUtil.deleteByPattern(messageCachePattern);
+                log.info("消息缓存已清除: userId={}, deleted={}", userId, deletedCount);
+                
+                // 清除免费配额缓存
+                String freeLimitPattern = "free:limit:*:" + userId + ":*";
+                redisScanUtil.deleteByPattern(freeLimitPattern);
+                log.info("免费配额缓存已清除: userId={}", userId);
+                
+                // 清除会员等级缓存
+                String membershipKey = "membership:" + userId;
+                redisTemplate.delete(membershipKey);
+                log.info("会员等级缓存已清除: userId={}", userId);
+                
+            } catch (Exception e) {
+                log.error("清除用户缓存失败: userId={}", userId, e);
+                // 不抛出异常，确保Token能被正常撤销
+            }
+        }
     }
 
     public boolean validateToken(String token) {

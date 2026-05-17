@@ -39,6 +39,11 @@ public class OssService {
 
     @PostConstruct
     public void init() {
+        if (endpoint == null || endpoint.isEmpty() || accessKeyId == null || accessKeyId.isEmpty()) {
+            log.warn("阿里云 OSS 未配置，文件上传/下载功能不可用");
+            this.ossClient = null;
+            return;
+        }
         this.ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
         log.info("阿里云 OSS 客户端初始化成功");
     }

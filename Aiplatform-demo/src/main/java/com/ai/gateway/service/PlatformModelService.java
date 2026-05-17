@@ -24,7 +24,7 @@ public class PlatformModelService {
 
     private final PlatformModelConfigMapper platformModelConfigMapper;
     private final StringRedisTemplate redisTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     // 优化：增加 Caffeine 本地缓存，减少 Redis 网络开销
     private final Cache<String, PlatformModelConfig> localCache = Caffeine.newBuilder()
@@ -46,32 +46,36 @@ public class PlatformModelService {
     }
 
     /**
-     * 根据展示名称获取模型配置（二级缓存：Caffeine -> Redis -> DB）
+     * 根据模型标识获取配置（优先匹配展示名称，其次匹配实际模型名）
+     * 二级缓存：Caffeine -> Redis -> DB
      */
-    public PlatformModelConfig getByDisplayName(String displayName) {
+    public PlatformModelConfig getByDisplayName(String modelId) {
         // 1. 检查本地缓存
-        PlatformModelConfig localConfig = localCache.getIfPresent(displayName);
+        PlatformModelConfig localConfig = localCache.getIfPresent(modelId);
         if (localConfig != null) {
             return localConfig;
         }
 
         // 2. 检查 Redis 缓存
-        String cacheKey = MODEL_CACHE_KEY + displayName;
+        String cacheKey = MODEL_CACHE_KEY + modelId;
         try {
             String cachedJson = redisTemplate.opsForValue().get(cacheKey);
             if (cachedJson != null) {
                 PlatformModelConfig config = objectMapper.readValue(cachedJson, PlatformModelConfig.class);
-                localCache.put(displayName, config); // 回写本地缓存
+                localCache.put(modelId, config);
                 return config;
             }
         } catch (Exception e) {
             log.warn("解析模型配置缓存失败", e);
         }
 
-        // 3. 查询数据库
+        // 3. 查询数据库：优先匹配展示名称，其次匹配实际模型名
         LambdaQueryWrapper<PlatformModelConfig> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(PlatformModelConfig::getDisplayName, displayName)
-               .eq(PlatformModelConfig::getStatus, 1);
+        wrapper.eq(PlatformModelConfig::getStatus, 1)
+               .and(w -> w.eq(PlatformModelConfig::getDisplayName, modelId)
+                         .or()
+                         .eq(PlatformModelConfig::getActualModel, modelId))
+               .last("LIMIT 1");
         PlatformModelConfig config = platformModelConfigMapper.selectOne(wrapper);
 
         if (config != null) {
@@ -79,7 +83,7 @@ public class PlatformModelService {
                 String json = objectMapper.writeValueAsString(config);
                 long randomOffset = ThreadLocalRandom.current().nextInt(0, 6);
                 redisTemplate.opsForValue().set(cacheKey, json, 30 + randomOffset, TimeUnit.MINUTES);
-                localCache.put(displayName, config);
+                localCache.put(modelId, config);
             } catch (Exception e) {
                 log.error("缓存模型配置失败", e);
             }

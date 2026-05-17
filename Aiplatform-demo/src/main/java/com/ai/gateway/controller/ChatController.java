@@ -173,6 +173,7 @@ public class ChatController {
 
     /**
      * 导出对话中的代码块或内容为文件 (不收费)
+     * 支持格式: md, txt, html, css, js, java, py, cpp, json, xml, csv
      */
     @PostMapping("/export-content")
     public void exportContent(
@@ -190,12 +191,49 @@ public class ChatController {
             return;
         }
 
-        response.setContentType("application/octet-stream");
+        // 根据文件扩展名设置 Content-Type
+        String contentType = getContentTypeByFileName(fileName);
+        response.setContentType(contentType);
         response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + 
-                           java.net.URLEncoder.encode(fileName, StandardCharsets.UTF_8));
+                           URLEncoder.encode(fileName, StandardCharsets.UTF_8));
+        response.setCharacterEncoding("UTF-8");
         
         response.getOutputStream().write(content.getBytes(StandardCharsets.UTF_8));
         response.getOutputStream().flush();
+    }
+    
+    /**
+     * 根据文件名获取 Content-Type
+     */
+    private String getContentTypeByFileName(String fileName) {
+        if (fileName == null) {
+            return "application/octet-stream";
+        }
+        
+        String lowerName = fileName.toLowerCase();
+        if (lowerName.endsWith(".md") || lowerName.endsWith(".markdown")) {
+            return "text/markdown";
+        } else if (lowerName.endsWith(".html") || lowerName.endsWith(".htm")) {
+            return "text/html";
+        } else if (lowerName.endsWith(".css")) {
+            return "text/css";
+        } else if (lowerName.endsWith(".js")) {
+            return "application/javascript";
+        } else if (lowerName.endsWith(".json")) {
+            return "application/json";
+        } else if (lowerName.endsWith(".xml")) {
+            return "application/xml";
+        } else if (lowerName.endsWith(".csv")) {
+            return "text/csv";
+        } else if (lowerName.endsWith(".java")) {
+            return "text/x-java-source";
+        } else if (lowerName.endsWith(".py")) {
+            return "text/x-python";
+        } else if (lowerName.endsWith(".txt")) {
+            return "text/plain";
+        } else {
+            return "application/octet-stream";
+        }
     }
 
     /**

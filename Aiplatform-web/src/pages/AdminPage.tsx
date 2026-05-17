@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { adminApi, adminApiNew } from '@/services/api'
+import { adminApi, adminNotificationApi, adminCouponApi } from '@/services/api'
 import { useThemeStore } from '@/stores/themeStore'
 import * as echarts from 'echarts'
 import PointsIcon from '@/components/PointsIcon'
@@ -18,12 +18,13 @@ interface AdminInfo {
 interface AnalyticsData {
   totalUsers: number; activeUsers: number; totalApiKeys: number
   totalCalls: number; totalCost: number; todayCalls: number; todayCost: number
-  dailyUsage: { date: string; calls: number; tokens: number; cost: number }[]
-  modelUsage: { model: string; calls: number; tokens: number; cost: number; color: string }[]
-  hourlyTraffic: { hour: string; calls: number }[]
-  topUsers: { rank: number; username: string; userId: number; calls: number; cost: number }[]
-  revenueTrend: { month: string; revenue: number; costs: number }[]
-  userGrowth: { month: string; total: number; active: number; new: number }[]
+  users: { id: number; username: string; email: string | null; balance: number; role: string; status: string; apiKeyCount: number; totalCalls: number; totalCost: number; createTime: string }[]
+  dailyUsage: Record<string, unknown>[]
+  modelUsage: Record<string, unknown>[]
+  hourlyTraffic: Record<string, unknown>[]
+  topUsers: Record<string, unknown>[]
+  revenueTrend: Record<string, unknown>[]
+  userGrowth: Record<string, unknown>[]
 }
 
 const COLORS = ['#8B5CF6', '#3B82F6', '#06B6D4', '#10B981', '#F59E0B', '#EC4899', '#A78BFA', '#6366F1']
@@ -58,6 +59,7 @@ export default function AdminPage() {
   const [bcfTab, setBcTab] = useState<'notify'|'coupon'>('notify')
   const [bcf, setBcf] = useState({ title:'', content:'', target:'all', membership:'free', days:'7', amount:'10', threshold:'0', plan:'', expire:'' })
   const [bcfSending, setBcfSending] = useState(false); const [bcfResult, setBcfResult] = useState('')
+
 
   const dailyChartRef = useRef<HTMLDivElement>(null)
   const revenueChartRef = useRef<HTMLDivElement>(null)
@@ -99,8 +101,8 @@ export default function AdminPage() {
     setBcfSending(true)
     try {
       let r: any
-      if (bcfTab === 'notify') r = await adminApiNew.sendNotification({ title: bcf.title, content: bcf.content, target: bcf.target, membership: bcf.membership, days: Number(bcf.days) })
-      else r = await adminApiNew.sendCoupons({ amount: Number(bcf.amount), thresholdAmount: Number(bcf.threshold), applicablePlan: bcf.plan, expireTime: bcf.expire, target: bcf.target, membership: bcf.membership, days: Number(bcf.days) })
+      if (bcfTab === 'notify') r = await adminNotificationApi.send({ title: bcf.title, content: bcf.content, target: bcf.target, membership: bcf.membership, days: Number(bcf.days) })
+      else r = await adminCouponApi.send({ amount: Number(bcf.amount), thresholdAmount: Number(bcf.threshold), applicablePlan: bcf.plan, expireTime: bcf.expire, target: bcf.target, membership: bcf.membership, days: Number(bcf.days) })
       setBcfResult(bcfTab==='notify' ? `已发送给 ${r.sent} 位用户` : `已发送给 ${r.sent} 位用户，面额¥${r.amount}`)
     } catch (e) { setBcfResult('发送失败: ' + (e as Error).message) }
     setBcfSending(false)
@@ -469,6 +471,5 @@ export default function AdminPage() {
           </div>
         </div>
       )}
-    </div>
   )
 }

@@ -16,6 +16,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -125,7 +126,8 @@ public class FreeLimitService {
         try {
             User user = userService.getUserEntityById(userId);
             String membership = user != null && user.getMembership() != null ? user.getMembership() : "free";
-            redisTemplate.opsForValue().set(cacheKey, membership, MEMBERSHIP_TTL_HOURS, TimeUnit.HOURS);
+            long ttlWithJitter = MEMBERSHIP_TTL_HOURS * 3600 + ThreadLocalRandom.current().nextInt(300);
+            redisTemplate.opsForValue().set(cacheKey, membership, ttlWithJitter, TimeUnit.SECONDS);
             return membership;
         } catch (Exception e) {
             return "free";

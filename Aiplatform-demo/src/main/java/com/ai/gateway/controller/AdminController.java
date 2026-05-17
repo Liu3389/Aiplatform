@@ -823,6 +823,66 @@ public class AdminController {
         }
     }
 
+    /**
+     * 获取用户增长趋势数据
+     */
+    @RequireAdmin
+    @GetMapping("/statistics/user-growth")
+    public Result<?> getUserGrowthStats(
+            @RequestHeader("X-User-Token") String token,
+            @RequestParam(defaultValue = "6") int months) {
+        
+        java.util.List<java.util.Map<String, Object>> stats = adminService.getUserGrowth(months);
+        return Result.success(stats);
+    }
+
+    /**
+     * 获取收入趋势数据
+     */
+    @RequireAdmin
+    @GetMapping("/statistics/revenue")
+    public Result<?> getRevenueStats(
+            @RequestHeader("X-User-Token") String token,
+            @RequestParam(defaultValue = "6") int months) {
+        
+        java.util.List<java.util.Map<String, Object>> stats = adminService.getRevenueTrend(months);
+        return Result.success(stats);
+    }
+
+    /**
+     * 封禁/解封用户
+     */
+    @RequireAdmin
+    @PutMapping("/user/{userId}/ban")
+    public Result<?> banUser(
+            @RequestHeader("X-User-Token") String token,
+            @PathVariable Long userId,
+            @RequestBody(required = false) java.util.Map<String, String> body) {
+        
+        String reason = body != null ? body.get("reason") : "管理员操作";
+        
+        // 获取用户当前状态
+        com.ai.gateway.entity.User user = userService.getUserEntityById(userId);
+        if (user == null) {
+            return Result.error(404, "用户不存在");
+        }
+        
+        // 切换状态：1->0(封禁), 0->1(解封)
+        int newStatus = user.getStatus() == 1 ? 0 : 1;
+        String action = newStatus == 0 ? "BAN" : "UNBAN";
+        String message = newStatus == 0 ? "用户已封禁" : "用户已解封";
+        
+        // 使用 adminService 更新状态
+        adminService.batchUpdateStatus(java.util.Arrays.asList(userId), newStatus);
+        
+        Long adminId = getUserIdFromToken(token);
+        String adminUsername = getUsernameFromToken(token);
+        operationLogService.logSuccess(adminId, adminUsername, "USER_MANAGE", 
+                action, java.util.Arrays.asList(userId), java.util.Map.of("reason", reason != null ? reason : "N/A"));
+        
+        return Result.success(message);
+    }
+
     // ==================== 辅助方法 ====================
 
     private Long getUserIdFromToken(String token) {
