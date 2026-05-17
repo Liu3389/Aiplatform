@@ -139,10 +139,10 @@ export default function BillingPage() {
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto overflow-y-auto h-full space-y-6">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-xl sm:text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-          {lang === 'zh' ? '计费策略' : 'Billing & Pricing'}
+          {lang === 'zh' ? '参考文档' : 'Documentation'}
         </h1>
         <p className="text-sm mt-1" style={{ color: 'var(--text-dim)' }}>
-          {lang === 'zh' ? '透明、安全、可追溯的平台计费体系' : 'Transparent, secure, and auditable platform billing system'}
+          {lang === 'zh' ? '平台计费规则、API 使用指南与常见问题' : 'Platform billing rules, API usage guide, and FAQs'}
         </p>
       </motion.div>
 
@@ -177,6 +177,41 @@ export default function BillingPage() {
           </div>
         </button>
       </div>
+
+      {/* API 使用指南 */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+        className="rounded-2xl p-6 border"
+        style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: colors[0] + '20' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={colors[0]} strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <div>
+            <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {lang === 'zh' ? 'API 快速开始' : 'API Quick Start'}
+            </div>
+            <div className="text-xs" style={{ color: 'var(--text-dim)' }}>
+              {lang === 'zh' ? '三步接入凌点 AI 网关' : 'Get started with Lingdian AI Gateway in 3 steps'}
+            </div>
+          </div>
+        </div>
+        <div className="grid sm:grid-cols-3 gap-4">
+          {[
+            { step: '01', titleZh: '获取 API Key', titleEn: 'Get API Key', descZh: '在 API Keys 页面创建您的专属访问密钥', descEn: 'Create your access key on the API Keys page' },
+            { step: '02', titleZh: '配置请求头', titleEn: 'Configure Headers', descZh: '在 HTTP 请求中添加 Authorization 头', descEn: 'Add Authorization header to your HTTP requests' },
+            { step: '03', titleZh: '发起调用', titleEn: 'Make Requests', descZh: '使用 OpenAI 兼容格式调用 AI 模型', descEn: 'Call AI models using OpenAI-compatible format' },
+          ].map((item, i) => (
+            <div key={i} className="flex gap-3 p-4 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'}` }}>
+              <span className="text-lg font-bold text-gradient flex-shrink-0">{item.step}</span>
+              <div>
+                <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? item.titleZh : item.titleEn}</div>
+                <div className="text-[10px] leading-relaxed" style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? item.descZh : item.descEn}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </motion.div>
 
       {/* AI 对话计费业务线 */}
       {activeTab === 'points' && (

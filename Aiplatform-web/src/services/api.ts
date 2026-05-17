@@ -126,9 +126,10 @@ export const userApi = {
   recharge: (amount: number) => request<null>('/user/recharge?amount=' + amount, { method: 'POST' }),
   changePassword: (oldPassword: string, newPassword: string) => request<null>('/user/change-password', { method: 'POST', body: JSON.stringify({ oldPassword, newPassword }) }),
   syncConversations: (conversations: any[]) => request<{ version: number; count: number }>('/user/conversations/sync', { method: 'POST', body: JSON.stringify(conversations) }),
-  fetchConversations: () => request<{ conversations: any[]; version: number }>('/user/conversations/fetch'),
+  fetchConversations: () => request<{ conversations: any[]; redisConversations: any[]; version: number }>('/user/conversations/fetch'),
   getConversationVersion: () => request<{ version: number }>('/user/conversations/version'),
   clearCloudConversations: () => request<null>('/user/conversations/clear', { method: 'DELETE' }),
+  getConversationMessages: (conversationId: string, limit = 15) => request<{ messages: any[]; hasMore: boolean; nextCursor?: string }>('/conversations/' + conversationId + '/messages/latest?limit=' + limit),
   getRechargeRecords: (page = 1, size = 20) => request<any[]>('/user/recharge-records?page=' + page + '&size=' + size),
   getPointsBills: (page = 1, size = 20, changeType?: string) => {
     let url = '/user/points-bills?page=' + page + '&size=' + size
@@ -255,14 +256,7 @@ export const chatApi = {
       onError: (error: string) => void
     },
     signal?: AbortSignal
-  ): AbortController => {
-    const controller = new AbortController()
-    const combinedSignal = signal
-
-    if (combinedSignal) {
-      combinedSignal.addEventListener('abort', () => controller.abort())
-    }
-
+  ): Promise<void> => {
     const run = async () => {
       try {
         const headers: Record<string, string> = {
@@ -271,23 +265,30 @@ export const chatApi = {
         const token = localStorage.getItem('lingdian_token')
         if (token) headers['X-User-Token'] = token
 
+        console.log('[SSE] Starting stream request to:', BASE_URL + '/chat/stream')
         const response = await fetch(BASE_URL + '/chat/stream', {
           method: 'POST',
           headers,
           body: JSON.stringify({ ...data, stream: true }),
-          signal: controller.signal
+          signal
         })
 
         if (!response.ok) {
           const text = await response.text().catch(() => '')
           let msg = 'HTTP ' + response.status
           try { const j = JSON.parse(text); msg = j.message || msg } catch {}
+          console.error('[SSE] HTTP error:', msg)
           callbacks.onError(msg)
           return
         }
 
+        console.log('[SSE] Response received, starting to read stream...')
         const reader = response.body?.getReader()
-        if (!reader) { callbacks.onError('无法读取响应流'); return }
+        if (!reader) { 
+          console.error('[SSE] No response body reader available')
+          callbacks.onError('无法读取响应流')
+          return 
+        }
 
         const decoder = new TextDecoder()
         let buffer = ''
@@ -365,12 +366,15 @@ export const chatApi = {
           }
         }
       } catch (err) {
-        if ((err as Error).name === 'AbortError') return
+        if ((err as Error).name === 'AbortError') {
+          console.log('[SSE] Request aborted by user')
+          return
+        }
+        console.error('[SSE] Stream error:', err)
         callbacks.onError((err as Error).message || '连接错误')
       }
     }
-    run()
-    return controller
+    return run()
   }
 };
 
@@ -415,6 +419,10 @@ export const adminApi = {
     revenueTrend: Array<Record<string, unknown>>;
     userGrowth: Array<Record<string, unknown>>;
   }>(`/admin/analytics/full?days=${days}&months=${months}`),
+  getPlatformRevenue: () => request<{
+    totalRevenue: number; todayRevenue: number; monthRevenue: number;
+    subscriptionRevenue: number; rechargeRevenue: number;
+  }>('/admin/platform/revenue'),
 };
 
 export const pointsApi = {
@@ -669,22 +677,26 @@ export const aiDocApi = {
   /** 独立上传文件并解析 */
   upload: (file: File) => {
     const formData = new FormData()
-    formData.append('file', file)
+    formData.append('files', file)
     const token = localStorage.getItem('lingdian_token')
-    return fetch('/api/v1/ai-doc/upload', {
+    return fetch('/v1/file/upload', {
       method: 'POST',
       headers: { 'X-User-Token': token || '' },
       body: formData,
     }).then(async r => {
       const j = await r.json()
       if (j.code !== 200) throw new Error(j.message || '上传解析失败')
-      return j.data as { fileId: string; fileName: string; fileSize: number; status: string; ossUrl: string }
+      const files = j.data?.files || []
+      if (!Array.isArray(files) || files.length === 0) {
+        throw new Error('上传解析失败，未返回文件信息')
+      }
+      return files[0] as { fileId: string; fileName: string; fileSize: number; status: string; ossUrl: string }
     })
   },
   /** 查询文件解析状态 */
   getParseStatus: (fileId: string) => {
     const token = localStorage.getItem('lingdian_token')
-    return fetch('/api/v1/ai-doc/parse-status/' + fileId, {
+    return fetch('/v1/file/parse-status/' + fileId, {
       method: 'GET',
       headers: { 'X-User-Token': token || '' },
     }).then(async r => {
@@ -693,10 +705,37 @@ export const aiDocApi = {
       return j.data as { fileId: string; fileName: string; status: string; createdAt: number }
     })
   },
+  /** 轮询监听文件解析进度 */
+  watchParseProgress: (fileId: string, callbacks: {
+    onStatus?: (status: { fileId: string; status: string }) => void
+    onDone?: () => void
+    onError?: (error: Error) => void
+  }, signal?: AbortSignal) => {
+    const poll = async () => {
+      while (!signal?.aborted) {
+        try {
+          const status = await aiDocApi.getParseStatus(fileId)
+          callbacks.onStatus?.(status)
+          if (status.status === 'SUCCESS') {
+            callbacks.onDone?.()
+            return
+          } else if (status.status === 'FAILED') {
+            callbacks.onError?.(new Error('解析失败'))
+            return
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        } catch (e: any) {
+          callbacks.onError?.(e)
+          return
+        }
+      }
+    }
+    return poll()
+  },
   /** 删除已上传的文件 */
   deleteUpload: (fileId: string) => {
     const token = localStorage.getItem('lingdian_token')
-    return fetch('/api/v1/ai-doc/upload/' + fileId, {
+    return fetch('/v1/file/' + fileId, {
       method: 'DELETE',
       headers: { 'X-User-Token': token || '' },
     }).then(async r => {
@@ -705,76 +744,118 @@ export const aiDocApi = {
       return true
     })
   },
-  /** 基于已解析文件进行流式对话 (fileId + question) */
+  /** 基于已解析文件进行流式对话 (fileIds + question) */
   chatStreamWithFileId: (
-    fileId: string,
+    fileIds: string[],
     question: string,
     callbacks: {
       onContent?: (text: string) => void
       onDone?: (message: string) => void
       onError?: (error: string) => void
+      onStatus?: (stage: string, message?: string) => void
     },
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    model?: string,
+    conversationId?: string
   ) => {
     const token = localStorage.getItem('lingdian_token')
-    return fetch('/api/v1/ai-doc/chat/stream', {
+    console.log('[SSE with files] Starting stream request to:', '/chat/stream-with-files')
+    return fetch('/chat/stream-with-files', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-User-Token': token || '' },
-      body: JSON.stringify({ fileId, question }),
+      body: JSON.stringify({ fileIds, question, model, conversationId }),
       signal,
     }).then(async response => {
       if (!response.ok) {
         const errText = await response.text()
+        console.error('[SSE with files] HTTP error:', response.status, errText)
         throw new Error(errText || `请求失败 (${response.status})`)
       }
+      console.log('[SSE with files] Response received, reading stream...')
       const reader = response.body?.getReader()
-      if (!reader) throw new Error('不支持流式读取')
+      if (!reader) {
+        console.error('[SSE with files] No response body reader')
+        throw new Error('不支持流式读取')
+      }
       const decoder = new TextDecoder()
       let buffer = ''
       let eventName = ''
       let dataLine = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (value) buffer += decoder.decode(value, { stream: !done })
-
-        const lines = buffer.split(/\r?\n/)
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          const t = line.trim()
-          if (t === '') {
-            if (dataLine) {
-              try {
-                const data = JSON.parse(dataLine)
-                if (eventName === 'content') callbacks.onContent?.(data.text || '')
-                else if (eventName === 'done') callbacks.onDone?.(data.message || '对话完成')
-                else if (eventName === 'error') callbacks.onError?.(data.message || '未知错误')
-              } catch {}
-            }
-            eventName = ''
-            dataLine = ''
-            continue
-          }
-          if (t.startsWith(':')) continue
-          if (t.startsWith('event:')) eventName = t.slice(6).trim()
-          else if (t.startsWith('data:')) {
-            const dataPart = t.slice(5).trim()
-            if (dataLine) dataLine += '\n' + dataPart
-            else dataLine = dataPart
-          }
-        }
-
-        if (done) {
+      let chunkCount = 0
+      
+      const processSSELine = (line: string) => {
+        const t = line.trim()
+        
+        if (t === '') {
           if (dataLine) {
             try {
               const data = JSON.parse(dataLine)
-              if (eventName === 'content') callbacks.onContent?.(data.text || '')
-              else if (eventName === 'done') callbacks.onDone?.(data.message || '对话完成')
+              if (eventName === 'message') {
+                callbacks.onContent?.(data.content || '')
+                chunkCount++
+              } else if (eventName === 'done') {
+                callbacks.onDone?.(data.message || '对话完成')
+              } else if (eventName === 'error') {
+                callbacks.onError?.(data.message || '未知错误')
+              }
+            } catch (e) {
+              console.warn('[SSE with files] Parse error:', dataLine.slice(0, 200), e)
+            }
+            dataLine = ''
+          }
+          eventName = ''
+          return
+        }
+        if (t.startsWith(':')) return
+        if (t.startsWith('event:')) {
+          eventName = t.slice(6).trim()
+        } else if (t.startsWith('data:')) {
+          const dataPart = t.slice(5).trim()
+          if (dataLine) dataLine += '\n' + dataPart
+          else dataLine = dataPart
+        }
+      }
+      
+      while (true) {
+        const { done, value } = await reader.read()
+        if (value) {
+          const text = decoder.decode(value, { stream: !done })
+          buffer += text
+          const lines = buffer.split(/\r?\n/)
+          buffer = lines.pop() || ''
+          for (const line of lines) {
+            processSSELine(line)
+          }
+        }
+        if (done) {
+          if (buffer) {
+            const lines = buffer.split(/\r?\n/)
+            for (const line of lines) {
+              processSSELine(line)
+            }
+          }
+          if (dataLine) {
+            try {
+              const data = JSON.parse(dataLine)
+              if (eventName === 'message') {
+                callbacks.onContent?.(data.content || '')
+                chunkCount++
+              } else if (eventName === 'done') {
+                callbacks.onDone?.(data.message || '对话完成')
+              }
             } catch {}
           }
+          console.log(`[SSE with files] Stream ended. Total chunks: ${chunkCount}`)
           break
         }
       }
+    }).catch(err => {
+      if ((err as Error).name === 'AbortError') {
+        console.log('[SSE with files] Request aborted')
+      } else {
+        console.error('[SSE with files] Error:', err)
+      }
+      throw err
     })
   },
   /** 文件对话流式输出 SSE (旧接口，保留兼容) */

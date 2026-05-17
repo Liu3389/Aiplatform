@@ -53,9 +53,14 @@ public class ChatMessageHistory {
     private Integer tokens;
 
     /**
-     * 关联文件URL列表（JSON数组）
+     * 关联文件URL列表（JSON数组，兼容旧数据）
      */
     private String fileUrls;
+
+    /**
+     * 关联文件ID列表（JSON数组，关联file_parse_task表）
+     */
+    private String fileIds;
 
     /**
      * 元数据（JSON格式）

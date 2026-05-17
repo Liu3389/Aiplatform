@@ -2,8 +2,10 @@ package com.ai.gateway.service;
 
 import com.ai.gateway.entity.ChatMessage;
 import com.ai.gateway.entity.ChatMessageHistory;
+import com.ai.gateway.entity.FileParseTask;
 import com.ai.gateway.mapper.ChatMessageMapper;
 import com.ai.gateway.mapper.ChatMessageHistoryMapper;
+import com.ai.gateway.mapper.FileParseTaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -27,6 +29,7 @@ public class ChatMessageService {
     private final ChatMessageMapper chatMessageMapper;
     private final ChatMessageHistoryMapper chatMessageHistoryMapper;
     private final com.ai.gateway.mapper.ConversationMapper conversationMapper;
+    private final FileParseTaskMapper fileParseTaskMapper;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final com.ai.gateway.util.RedisScanUtil redisScanUtil;
@@ -38,12 +41,14 @@ public class ChatMessageService {
     public ChatMessageService(ChatMessageMapper chatMessageMapper,
                               ChatMessageHistoryMapper chatMessageHistoryMapper,
                               com.ai.gateway.mapper.ConversationMapper conversationMapper,
+                              FileParseTaskMapper fileParseTaskMapper,
                               StringRedisTemplate redisTemplate,
                               ObjectMapper objectMapper,
                               com.ai.gateway.util.RedisScanUtil redisScanUtil) {
         this.chatMessageMapper = chatMessageMapper;
         this.chatMessageHistoryMapper = chatMessageHistoryMapper;
         this.conversationMapper = conversationMapper;
+        this.fileParseTaskMapper = fileParseTaskMapper;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.redisScanUtil = redisScanUtil;
@@ -272,5 +277,50 @@ public class ChatMessageService {
             }
         }
         return new ArrayList<>(allUrls);
+    }
+
+    /**
+     * 获取会话关联的文件ID列表（去重）
+     */
+    public List<String> getFileIdsByConversationId(Long conversationId) {
+        // 从热数据表查询
+        LambdaQueryWrapper<ChatMessage> hotWrapper = new LambdaQueryWrapper<>();
+        hotWrapper.eq(ChatMessage::getConversationId, conversationId)
+                  .isNotNull(ChatMessage::getFileIds)
+                  .select(ChatMessage::getFileIds);
+        
+        // 从冷数据表查询
+        LambdaQueryWrapper<ChatMessageHistory> coldWrapper = new LambdaQueryWrapper<>();
+        coldWrapper.eq(ChatMessageHistory::getConversationId, conversationId)
+                   .isNotNull(ChatMessageHistory::getFileIds)
+                   .select(ChatMessageHistory::getFileIds);
+        
+        java.util.Set<String> allFileIds = new java.util.HashSet<>();
+        
+        // 合并热数据
+        for (ChatMessage msg : chatMessageMapper.selectList(hotWrapper)) {
+            if (msg.getFileIds() != null) {
+                try {
+                    List<String> fileIds = objectMapper.readValue(msg.getFileIds(), new TypeReference<List<String>>() {});
+                    allFileIds.addAll(fileIds);
+                } catch (Exception e) {
+                    log.warn("解析 file_ids 失败: conversationId={}", conversationId, e);
+                }
+            }
+        }
+        
+        // 合并冷数据
+        for (ChatMessageHistory msg : chatMessageHistoryMapper.selectList(coldWrapper)) {
+            if (msg.getFileIds() != null) {
+                try {
+                    List<String> fileIds = objectMapper.readValue(msg.getFileIds(), new TypeReference<List<String>>() {});
+                    allFileIds.addAll(fileIds);
+                } catch (Exception e) {
+                    log.warn("解析冷数据 file_ids 失败: conversationId={}", conversationId, e);
+                }
+            }
+        }
+        
+        return new ArrayList<>(allFileIds);
     }
 }

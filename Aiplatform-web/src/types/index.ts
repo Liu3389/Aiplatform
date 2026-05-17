@@ -116,6 +116,14 @@ export interface FrontendMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   tokens?: string
+  files?: Array<{  // 新增：文件信息
+    fileId: string
+    fileName: string
+    fileSize: number
+    fileType: string
+    ossUrl?: string  // OSS下载地址
+    uploadTime?: number  // 上传时间戳
+  }>
 }
 
 /** 模型可用列表响应（/api/platform-model/available） */

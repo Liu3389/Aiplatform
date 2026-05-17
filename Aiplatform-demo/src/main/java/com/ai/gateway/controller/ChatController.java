@@ -2,9 +2,7 @@ package com.ai.gateway.controller;
 
 import com.ai.gateway.common.Result;
 import com.ai.gateway.dto.ChatRequest;
-import com.ai.gateway.service.AiDocService;
-import com.ai.gateway.service.BillingService;
-import com.ai.gateway.service.ChatFileService;
+import com.ai.gateway.service.FileParseService;
 import com.ai.gateway.service.OpenAiChatService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,16 +10,14 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -36,140 +32,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ChatController {
 
-    private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
-    private static final String[] ALLOWED_EXTENSIONS = {".txt", ".md", ".java", ".py", ".cpp", ".xlsx", ".docx", ".html", ".css", ".js", ".xml", ".json"};
-    private static final int MAX_REQUIREMENT_LENGTH = 5000;
-    private static final int MAX_SYNC_DATA_SIZE = 5 * 1024 * 1024;
     private static final int MAX_EXPORT_CONTENT_SIZE = 1024 * 1024;
 
     private final OpenAiChatService openAiChatService;
-    private final ChatFileService chatFileService;
-    private final AiDocService aiDocService;
+    private final FileParseService fileParseService;
     private final com.ai.gateway.service.ChatMessageService chatMessageService;
     private final ObjectMapper objectMapper = new ObjectMapper();
-
-    private boolean isAllowedExtension(String filename) {
-        if (filename == null) return false;
-        String suffix = filename.substring(filename.lastIndexOf(".")).toLowerCase();
-        for (String ext : ALLOWED_EXTENSIONS) {
-            if (ext.equals(suffix)) return true;
-        }
-        return false;
-    }
-
-    /**
-     * 对话中接收用户文件并调用 AI (返回 Markdown)
-     */
-    @PostMapping("/with-file")
-    public Result<Map<String, Object>> chatWithFile(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam("question") String question,
-            HttpServletRequest httpRequest) {
-        Long userId = (Long) httpRequest.getAttribute("userId");
-        
-        try {
-            if (file.isEmpty() || file.getSize() > MAX_FILE_SIZE) {
-                return Result.error("文件为空或超过10MB限制");
-            }
-            String originalName = file.getOriginalFilename();
-            if (originalName == null || !isAllowedExtension(originalName)) {
-                return Result.error("不支持的文件格式，仅支持: " + String.join(", ", ALLOWED_EXTENSIONS));
-            }
-            if (question == null || question.trim().isEmpty()) {
-                return Result.error("问题不能为空");
-            }
-            // 1. 上传文件到 OSS
-            String fileUrl = chatFileService.handleUserUpload(file, userId);
-            
-            // 2. 解析文件内容
-            String content = aiDocService.parseFileToText(file.getInputStream(), originalName);
-            
-            // 3. 构造 Prompt 并调用 AI (走 OpenAiChatService 确保计费)
-            String prompt = "参考文档：\n" + content + "\n\n用户问题：" + question;
-            ChatRequest request = new ChatRequest();
-            request.setModel("deepseek-v4-flash");
-            
-            ChatRequest.ChatMessage msg = new ChatRequest.ChatMessage();
-            msg.setRole("user");
-            msg.setContent(prompt);
-            request.setMessages(List.of(msg));
-            
-            // 修复 P2-16: 移除不再使用的 apiKey 和 requestId 参数
-            String aiAnswer = openAiChatService.chat(userId, request);
-            
-            return Result.success(Map.of(
-                "answer", aiAnswer,
-                "uploadedFileUrl", fileUrl
-            ));
-        } catch (Exception e) {
-            log.error("带文件对话失败", e);
-            throw new RuntimeException("处理失败: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 根据用户需求让 AI 生成指定格式文件 (修复 P0-3)
-     */
-    @PostMapping("/generate-file")
-    public Result<Map<String, Object>> generateFile(
-            @RequestBody Map<String, String> request,
-            HttpServletRequest httpRequest) {
-        Long userId = (Long) httpRequest.getAttribute("userId");
-        String requirement = request.get("requirement");
-        String format = request.get("format");
-
-        if (requirement == null || requirement.trim().isEmpty()) {
-            return Result.error("需求内容不能为空");
-        }
-        if (requirement.length() > MAX_REQUIREMENT_LENGTH) {
-            return Result.error("需求内容过长，请控制在 " + MAX_REQUIREMENT_LENGTH + " 字符以内");
-        }
-        if (format == null || format.trim().isEmpty()) {
-            return Result.error("文件格式不能为空");
-        }
-
-        // 1. 构造 Prompt 调用 AI (确保走 OpenAiChatService 以触发计费 P0-4)
-        ChatRequest chatReq = new ChatRequest();
-        chatReq.setModel("deepseek-v4-flash");
-        ChatRequest.ChatMessage msg = new ChatRequest.ChatMessage();
-        msg.setRole("user");
-        msg.setContent("请根据以下需求生成 " + format + " 格式的内容：" + requirement);
-        chatReq.setMessages(List.of(msg));
-
-        // 修复 P2-16: 移除不再使用的 apiKey 和 requestId 参数
-        try {
-            String aiContent = openAiChatService.chat(userId, chatReq);
-            
-            // 2. 存入 OSS
-            String generatedUrl = chatFileService.handleAiGeneratedFile(
-                aiContent.getBytes(StandardCharsets.UTF_8), "generated." + format, userId
-            );
-
-            return Result.success(Map.of("downloadUrl", generatedUrl, "content", aiContent));
-        } catch (Exception e) {
-            throw new RuntimeException("AI 生成失败: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 同步对话数据至阿里云 (ZIP 打包)
-     */
-    @PostMapping("/sync")
-    public Result<Map<String, Object>> syncConversation(
-            @RequestBody Map<String, Object> conversationData,
-            HttpServletRequest httpRequest) {
-        Long userId = (Long) httpRequest.getAttribute("userId");
-        try {
-            String dataJson = objectMapper.writeValueAsString(conversationData);
-            if (dataJson.length() > MAX_SYNC_DATA_SIZE) {
-                return Result.error("同步数据过大，请控制在 " + (MAX_SYNC_DATA_SIZE / 1024 / 1024) + "MB 以内");
-            }
-            String zipUrl = chatFileService.syncConversationToOss(dataJson, null, userId);
-            return Result.success(Map.of("syncUrl", zipUrl));
-        } catch (Exception e) {
-            throw new RuntimeException("同步失败: " + e.getMessage());
-        }
-    }
 
     /**
      * 导出对话中的代码块或内容为文件 (不收费)
@@ -247,17 +115,6 @@ public class ChatController {
     }
 
     /**
-     * 加载对话时同步从阿里云加载关联文件
-     */
-    @GetMapping("/load")
-    public Result<List<String>> loadConversationFiles(
-            @RequestParam Long conversationId) {
-        // 修复 P0-5: 通过 Service 层查询
-        List<String> urls = chatMessageService.getFileUrlsByConversationId(conversationId);
-        return Result.success(urls != null ? urls : new ArrayList<>());
-    }
-
-    /**
      * 非流式对话接口
      * 
      * @param request 聊天请求
@@ -297,5 +154,142 @@ public class ChatController {
 
         // 调用流式对话服务
         return openAiChatService.streamChat(userId, request);
+    }
+
+    /**
+     * 带文件的流式对话接口（新标准流程）
+     * 
+     * 流程：
+     * 1. 前端传入fileIds + question + model
+     * 2. 后端读取已解析的文件内容
+     * 3. 拼接prompt：问题 + 文件1内容 + 文件2内容 + ...
+     * 4. 扣费并调用AI
+     * 5. 流式返回AI回答
+     * 
+     * SSE事件：
+     * - status: {"stage": "reading_files", "message": "正在读取文件内容..."}
+     * - status: {"stage": "processing", "message": "正在与AI对话..."}
+     * - message: {"content": "逐字推送的内容"}
+     * - done: {"finished": true, "inputTokens": x, "outputTokens": y, "cost": z}
+     * - error: {"message": "错误信息"}
+     */
+    @PostMapping(value = "/stream-with-files", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamChatWithFiles(
+            @RequestBody Map<String, Object> request,
+            HttpServletRequest httpRequest) {
+        
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) {
+            throw new IllegalArgumentException("用户未登录");
+        }
+
+        String question = (String) request.get("question");
+        String model = (String) request.getOrDefault("model", "deepseek-v4-flash");
+        List<String> fileIds = (List<String>) request.get("fileIds");
+        Long conversationId = request.get("conversationId") != null ? 
+            ((Number) request.get("conversationId")).longValue() : null;
+
+        if (question == null || question.trim().isEmpty()) {
+            throw new IllegalArgumentException("问题不能为空");
+        }
+
+        // 创建SSE emitter，超时时间120秒
+        SseEmitter emitter = new SseEmitter(120000L);
+
+        // 异步处理
+        new Thread(() -> {
+            try {
+                StringBuilder promptBuilder = new StringBuilder();
+                promptBuilder.append("你是一个智能文档助手。\n\n用户问题：").append(question);
+
+                // 如果有文件，读取并拼接内容
+                if (fileIds != null && !fileIds.isEmpty()) {
+                    emitter.send(SseEmitter.event()
+                        .name("status")
+                        .data(objectMapper.writeValueAsString(Map.of(
+                            "stage", "reading_files",
+                            "message", "正在读取文件内容..."
+                        ))));
+
+                    for (String fileId : fileIds) {
+                        try {
+                            // 1. 检查文件是否已解析（复用机制）
+                            String content = fileParseService.getParsedContent(fileId, userId);
+                            
+                            promptBuilder.append("\n\n--- 参考文档 ---\n").append(content);
+                            
+                            // 2. 标记文件为已使用
+                            if (conversationId != null) {
+                                fileParseService.markFileAsUsed(fileId, conversationId);
+                            }
+                            
+                            log.info("成功读取文件: fileId={}, reused=true", fileId);
+                        } catch (Exception e) {
+                            log.warn("读取文件失败: fileId={}", fileId, e);
+                        }
+                    }
+                }
+
+                // 发送处理中状态
+                emitter.send(SseEmitter.event()
+                    .name("status")
+                    .data(objectMapper.writeValueAsString(Map.of(
+                        "stage", "processing",
+                        "message", "正在与AI对话..."
+                    ))));
+
+                // 构造ChatRequest
+                ChatRequest chatRequest = new ChatRequest();
+                chatRequest.setModel(model);
+                
+                ChatRequest.ChatMessage msg = new ChatRequest.ChatMessage();
+                msg.setRole("user");
+                msg.setContent(promptBuilder.toString());
+                chatRequest.setMessages(List.of(msg));
+
+                // 调用OpenAiChatService的流式对话
+                SseEmitter aiEmitter = openAiChatService.streamChat(userId, chatRequest);
+
+                // 转发AI的SSE事件
+                aiEmitter.onCompletion(() -> {
+                    log.info("带文件对话完成: userId={}", userId);
+                    emitter.complete();
+                });
+
+                aiEmitter.onError((ex) -> {
+                    log.error("带文件对话出错: userId={}", userId, ex);
+                    try {
+                        emitter.send(SseEmitter.event()
+                            .name("error")
+                            .data(objectMapper.writeValueAsString(Map.of(
+                                "message", ex.getMessage()
+                            ))));
+                    } catch (IOException e) {
+                        log.error("发送错误事件失败", e);
+                    }
+                    emitter.completeWithError(ex);
+                });
+
+                aiEmitter.onTimeout(() -> {
+                    log.warn("带文件对话超时: userId={}", userId);
+                    emitter.complete();
+                });
+
+            } catch (Exception e) {
+                log.error("带文件对话失败: userId={}", userId, e);
+                try {
+                    emitter.send(SseEmitter.event()
+                        .name("error")
+                        .data(objectMapper.writeValueAsString(Map.of(
+                            "message", e.getMessage()
+                        ))));
+                } catch (IOException ioException) {
+                    log.error("发送错误事件失败", ioException);
+                }
+                emitter.completeWithError(e);
+            }
+        }).start();
+
+        return emitter;
     }
 }

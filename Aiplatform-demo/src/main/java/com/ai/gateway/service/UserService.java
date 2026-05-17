@@ -804,7 +804,33 @@ public class UserService {
                 return new ArrayList<>();
             }
             
-            // 2. 转换为前端需要的格式
+            // 2. 获取每个会话的最后一条消息作为预览
+            Map<Long, String> previewMap = new HashMap<>();
+            for (com.ai.gateway.entity.Conversation conv : conversations) {
+                try {
+                    // 查询最后一条消息
+                    com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.ai.gateway.entity.ChatMessage> msgWrapper = 
+                        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+                    msgWrapper.eq(com.ai.gateway.entity.ChatMessage::getConversationId, conv.getId())
+                              .eq(com.ai.gateway.entity.ChatMessage::getUserId, userId)
+                              .orderByDesc(com.ai.gateway.entity.ChatMessage::getId);
+                    
+                    com.baomidou.mybatisplus.extension.plugins.pagination.Page<com.ai.gateway.entity.ChatMessage> page = 
+                        new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 1);
+                    java.util.List<com.ai.gateway.entity.ChatMessage> lastMsgList = chatMessageMapper.selectList(page, msgWrapper);
+                    
+                    if (!lastMsgList.isEmpty()) {
+                        String content = lastMsgList.get(0).getContent();
+                        // 截取前50个字符作为预览
+                        String preview = content.length() > 50 ? content.substring(0, 50) + "..." : content;
+                        previewMap.put(conv.getId(), preview);
+                    }
+                } catch (Exception e) {
+                    log.warn("获取会话预览失败: conversationId={}", conv.getId(), e);
+                }
+            }
+            
+            // 3. 转换为前端需要的格式
             List<Map<String, Object>> convList = conversations.stream()
                 .map(conv -> {
                     Map<String, Object> map = new HashMap<>();
@@ -814,15 +840,16 @@ public class UserService {
                     map.put("messageCount", conv.getMessageCount());
                     map.put("lastMessageTime", conv.getLastMessageTime());
                     map.put("createTime", conv.getCreateTime());
+                    map.put("previewContent", previewMap.getOrDefault(conv.getId(), "暂无消息"));
                     return map;
                 })
                 .collect(Collectors.toList());
             
-            // 3. 写入Redis缓存（90天过期）
+            // 4. 写入Redis缓存（90天过期）
             String jsonData = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(convList);
             redisTemplate.opsForValue().set(CONVERSATIONS_KEY + userId, jsonData, 90, TimeUnit.DAYS);
             
-            // 4. 更新版本号
+            // 5. 更新版本号
             long version = System.currentTimeMillis();
             redisTemplate.opsForValue().set(CONVERSATIONS_VERSION_KEY + userId, String.valueOf(version), 90, TimeUnit.DAYS);
             

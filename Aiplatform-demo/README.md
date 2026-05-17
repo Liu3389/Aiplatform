@@ -43,11 +43,12 @@
 | AI 文档助手 | ✅ 运行中 | 上传文件与 AI 交互 |
 | 管理员后台 | ✅ 运行中 | 用户管理、统计、套餐管理 |
 | 订阅系统 | ✅ 运行中 | 新版 `/user/subscriptions/*` |
+| 会话与文件管理 | ✅ 运行中 | 会话列表预览、历史消息分页、文件详情查询 |
 | 旧订阅接口 | ⚠️ 已废弃 | 请迁移到新版接口 |
 
 ### 1.3 关键数字
 
-- **118** 个 API 接口（73 用户接口 + 45 管理员接口）
+- **122** 个 API 接口（77 用户接口 + 45 管理员接口）
 - **24** 张数据库表
 - **5** 个 Redis Lua 脚本（计费、限流、结算等原子操作）
 - **14** 个 Controller
@@ -655,7 +656,7 @@ src/main/java/com/ai/gateway/
 | 用户中心 | `/api/user/*` | **27** | X-User-Token | 余额、点数、充值、个人信息、2FA、设备管理、优惠券 |
 | 平台模型 | `/api/platform-model/*` | **1** | 无 | 获取可用模型列表 |
 | AI 对话 | `/api/chat/*` | **7** | X-User-Token | 流式/非流式对话、文件对话、文件生成、导出（支持md/txt/html/java/py等格式） |
-| 会话管理 | `/api/user/conversations/*` | **7** | X-User-Token | 同步、获取（懒加载）、版本、清除、游标分页（冷热数据分离） |
+| 会话管理 | `/api/user/conversations/*` | **11** | X-User-Token | 同步、获取（懒加载）、版本、清除、游标分页（冷热数据分离）、**文件详情分页查询** |
 | AI 文档 | `/api/v1/ai-doc/*` | **2** | X-User-Token | 文档对话、结果导出 |
 | API Key | `/api/api-key/*` | **6** | X-User-Token | 生成、列表、启用/禁用、限流、删除 |
 | 订阅管理 | `/api/user/subscriptions/*` | **5** | X-User-Token | 套餐浏览、购买、当前订阅、历史、取消 |
@@ -664,7 +665,7 @@ src/main/java/com/ai/gateway/
 | 管理员 | `/api/admin/*` | **45** | X-User-Token + ADMIN | 用户管理、统计、批量操作、日志、通知、套餐管理 |
 | 模型商店 | `/api/marketplace/*` | **2** | X-User-Token | ⏸️ 搁置中 |
 
-> **总计: 118 个接口** (用户端 73 个 + 管理员端 45 个)
+> **总计: 122 个接口** (用户端 77 个 + 管理员端 45 个)
 
 ### 10.2 统一响应格式
 
@@ -921,10 +922,19 @@ A: 调用 `GET /api/user/points-bills?page=1&size=20` 可以查看点数账单�
 ### Q8: 旧版订阅接口还能用吗？
 A: 旧版接口（`/api/user/subscription/*`）已标记 `@Deprecated`，仍然可用但建议迁移到新版接口（`/api/user/subscriptions/*`）。
 
+### Q9: 如何查看会话关联的文件？
+A: 调用 `POST /api/user/conversations/files/page` 接口，传入 conversationId、page、size 参数，可分页查询会话关联的文件详情（包含文件名、类型、大小、解析状态、文本摘要等）。
+
+### Q10: 会话列表中的 previewContent 是什么？
+A: previewContent 是会话最后一条消息的前50个字符，用于在会话列表中快速预览对话内容。
+
+### Q11: 历史消息默认加载多少条？
+A: 默认加载最新15条消息，可通过 limit 参数自定义（最大50条）。上滑触顶时自动加载下一页。
+
 ---
 
-**最后更新**: 2026年5月16日  
-**项目版本**: v3.1  
-**接口总数**: 118 个  
+**最后更新**: 2026年5月17日  
+**项目版本**: v3.2  
+**接口总数**: 122 个  
 **数据库表**: 24 张  
 **Redis Lua 脚本**: 5 个

@@ -5,7 +5,6 @@ import { motion } from 'framer-motion'
 import { useI18nStore } from '@/stores/i18nStore'
 import { useThemeStore } from '@/stores/themeStore'
 
-// 聊天页面可用的模型列表（与 platform_model_config 表中的模型对应）
 const CHAT_MODELS = new Set([
   'deepseek-v4-flash',
   'deepseek-v3',
@@ -20,19 +19,35 @@ const CHAT_MODELS = new Set([
   'mini-max-m1',
 ])
 
+const DEMO_MODELS = [
+  { id: 1, modelName: 'DeepSeek V4 Flash', description: 'DeepSeek 最新轻量级模型', provider: 'DeepSeek', inputPrice: 0.1, outputPrice: 0.3, status: 1 },
+  { id: 2, modelName: 'DeepSeek V3', description: 'DeepSeek 旗舰级对话模型', provider: 'DeepSeek', inputPrice: 0.5, outputPrice: 1.5, status: 1 },
+  { id: 3, modelName: 'GPT-4o', description: 'OpenAI 多模态大模型', provider: 'OpenAI', inputPrice: 2.5, outputPrice: 10.0, status: 1 },
+  { id: 4, modelName: 'GPT-4 Turbo', description: 'OpenAI 高性能推理模型', provider: 'OpenAI', inputPrice: 5.0, outputPrice: 15.0, status: 1 },
+  { id: 5, modelName: 'Claude 3.5 Sonnet', description: 'Anthropic 高级对话模型', provider: 'Anthropic', inputPrice: 3.0, outputPrice: 12.0, status: 1 },
+  { id: 6, modelName: 'Gemini 2.0 Flash', description: 'Google 多模态快速模型', provider: 'Google', inputPrice: 1.0, outputPrice: 4.0, status: 1 },
+  { id: 7, modelName: 'Grok 3', description: 'xAI 实时信息模型', provider: 'xAI', inputPrice: 2.0, outputPrice: 8.0, status: 1 },
+  { id: 8, modelName: 'Qwen Max', description: '阿里通义千问旗舰模型', provider: 'Alibaba', inputPrice: 1.5, outputPrice: 5.0, status: 1 },
+  { id: 9, modelName: 'GLM-4', description: '智谱清言最新模型', provider: 'Zhipu', inputPrice: 1.0, outputPrice: 4.0, status: 1 },
+  { id: 10, modelName: 'Doubao Seed 1.6', description: '字节跳动豆包大模型', provider: 'ByteDance', inputPrice: 0.8, outputPrice: 3.0, status: 1 },
+  { id: 11, modelName: 'MiniMax M1', description: 'MiniMax 高性能对话模型', provider: 'MiniMax', inputPrice: 1.2, outputPrice: 4.5, status: 1 },
+]
+
 export default function ModelStorePage() {
   const { lang } = useI18nStore()
   const { theme } = useThemeStore()
   const navigate = useNavigate()
   const isDark = theme === 'dark'
-  const [models, setModels] = useState<any[]>([])
+  const [models, setModels] = useState<any[]>(DEMO_MODELS)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     (async () => {
       try {
         const m = await modelApi.list()
-        setModels((m || []).filter((item: any) => item.status === 1))
+        if (m && m.length > 0) {
+          setModels(m.filter((item: any) => item.status === 1))
+        }
       } catch {}
       setLoading(false)
     })()

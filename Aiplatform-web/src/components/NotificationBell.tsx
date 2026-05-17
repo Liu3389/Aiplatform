@@ -86,13 +86,13 @@ export default function NotificationBell() {
       <AnimatePresence>
         {open && (
           <>
-            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+            <div className="fixed inset-0 z-[59]" onClick={() => setOpen(false)} />
             <motion.div
               initial={{ opacity: 0, y: -8, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.96 }}
               transition={{ duration: 0.15 }}
-              className="absolute right-0 top-12 z-50 w-80 max-h-[420px] rounded-2xl border shadow-2xl flex flex-col"
+              className="absolute right-0 top-full mt-2 z-[60] w-80 max-h-[420px] rounded-2xl border shadow-2xl flex flex-col"
               style={{
                 background: dark ? '#141A2E' : '#fff',
                 borderColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',

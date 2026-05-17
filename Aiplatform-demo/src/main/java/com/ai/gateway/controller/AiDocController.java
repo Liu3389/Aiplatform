@@ -34,12 +34,10 @@ public class AiDocController {
     /**
      * 1. 独立上传文件并解析（两步流程：先上传解析，后对话）
      * 
-     * 流程：
-     * 1. 用户上传文件，后端上传到 OSS 并解析为纯文本
-     * 2. 解析结果缓存到 Redis，返回 fileId 和解析状态
-     * 3. 前端轮询 /parse-status/{fileId} 等待解析完成
-     * 4. 解析完成后，前端发送问题 + fileId 到 /chat/stream
+     * @deprecated 已废弃，请使用 /v1/file/upload 批量上传接口
+     * @see com.ai.gateway.controller.FileUploadController#uploadFiles
      */
+    @Deprecated
     @PostMapping("/upload")
     public Result<Map<String, Object>> uploadFile(
             @RequestParam("file") MultipartFile file,
@@ -83,7 +81,10 @@ public class AiDocController {
 
     /**
      * 2. 查询文件解析状态
+     * 
+     * @deprecated 已废弃，请使用 /v1/file/parse-status/{fileId}
      */
+    @Deprecated
     @GetMapping("/parse-status/{fileId}")
     public Result<Map<String, Object>> getParseStatus(
             @PathVariable String fileId,
@@ -105,7 +106,10 @@ public class AiDocController {
 
     /**
      * 2.5. 删除已缓存的解析文件（用户取消或清理）
+     * 
+     * @deprecated 已废弃，请使用 DELETE /v1/file/{fileId}
      */
+    @Deprecated
     @DeleteMapping("/upload/{fileId}")
     public Result<Void> deleteUploadedFile(
             @PathVariable String fileId,
@@ -149,7 +153,10 @@ public class AiDocController {
 
     /**
      * 4. 上传文件并解析，与 AI 进行交互（非流式 - 旧接口保留兼容）
+     * 
+     * @deprecated 已废弃，请使用新标准流程：先 /v1/file/upload 上传，再 /chat/stream-with-files 对话
      */
+    @Deprecated
     @PostMapping("/chat")
     public Result<String> chatWithFile(
             @RequestParam("file") MultipartFile file,
@@ -176,17 +183,10 @@ public class AiDocController {
     /**
      * 5. 基于已解析文件进行流式 AI 对话（新两步流程）
      * 
-     * 流程：
-     * 1. 前端传入 fileId + question
-     * 2. 后端从 Redis 获取已解析的文件内容
-     * 3. 调用 OpenAiChatService.streamChat 进行真正的流式对话
-     * 
-     * SSE 事件：
-     * - status: {"stage": "ready", "message": "正在与AI对话..."}
-     * - message: {"content": "逐字推送的内容"}  ← 真正的流式
-     * - done: {"finished": true, "inputTokens": x, "outputTokens": y, "cost": z}
-     * - error: {"message": "错误信息"}
+     * @deprecated 已废弃，请使用 /chat/stream-with-files 接口
+     * @see com.ai.gateway.controller.ChatController#streamChatWithFiles
      */
+    @Deprecated
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatWithFileStream(
             @RequestBody Map<String, String> request,
@@ -214,11 +214,11 @@ public class AiDocController {
         // 构造 ChatRequest
         String prompt = "你是一个智能文档助手。\n\n用户问题：" + question + "\n\n参考文档内容：\n" + content + "\n\n请根据文档内容回答用户问题。";
         
-        com.ai.gateway.dto.ChatRequest chatRequest = new com.ai.gateway.dto.ChatRequest();
+        ChatRequest chatRequest = new ChatRequest();
         chatRequest.setModel("deepseek-v4-flash");
         chatRequest.setMode("paid");  // 默认付费模式
         
-        com.ai.gateway.dto.ChatRequest.ChatMessage msg = new com.ai.gateway.dto.ChatRequest.ChatMessage();
+        ChatRequest.ChatMessage msg = new ChatRequest.ChatMessage();
         msg.setRole("user");
         msg.setContent(prompt);
         chatRequest.setMessages(List.of(msg));

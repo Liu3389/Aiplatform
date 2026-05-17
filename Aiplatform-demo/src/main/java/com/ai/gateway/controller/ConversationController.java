@@ -2,11 +2,14 @@ package com.ai.gateway.controller;
 
 import com.ai.gateway.common.Result;
 import com.ai.gateway.dto.ChatMessagePageRequest;
+import com.ai.gateway.dto.ConversationFilePageRequest;
 import com.ai.gateway.entity.ChatMessage;
 import com.ai.gateway.service.ChatMessageService;
+import com.ai.gateway.service.FileParseTaskService;
 import com.ai.gateway.service.TokenService;
 import com.ai.gateway.service.UserService;
 import com.ai.gateway.vo.ChatMessagePageVO;
+import com.ai.gateway.vo.ConversationFilePageVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -30,6 +33,7 @@ public class ConversationController {
     private final UserService userService;
     private final TokenService tokenService;
     private final ChatMessageService chatMessageService;
+    private final FileParseTaskService fileParseTaskService;
 
     private Long resolveUserId(String token) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -85,18 +89,18 @@ public class ConversationController {
 
     /**
      * 获取会话的最新N条消息（首页加载）
-     * 默认只加载最新10条，按时间倒序展示
+     * 默认只加载最新15条，按时间倒序展示
      * 
      * @param token 用户Token
      * @param conversationId 会话ID
-     * @param limit 条数（默认10，可动态调节）
+     * @param limit 条数（默认15，可动态调节）
      * @return 消息列表
      */
     @GetMapping("/{conversationId}/messages/latest")
     public Result<ChatMessagePageVO> getLatestMessages(
             @RequestHeader("X-User-Token") String token,
             @PathVariable Long conversationId,
-            @RequestParam(defaultValue = "10") Integer limit) {
+            @RequestParam(defaultValue = "15") Integer limit) {
         
         Long userId = resolveUserId(token);
         
@@ -138,7 +142,7 @@ public class ConversationController {
         // 限制最大条数
         Integer limit = request.getLimit();
         if (limit == null || limit <= 0) {
-            limit = 10;
+            limit = 15;
         }
         if (limit > 50) {
             limit = 50;
@@ -178,6 +182,36 @@ public class ConversationController {
         log.info("清除用户缓存: userId={}", userId);
         
         return Result.success("缓存已清除", null);
+    }
+
+    // ==================== 新增：文件详情查询接口 ====================
+
+    /**
+     * 分页查询会话关联的文件详情
+     * 支持大批量历史文件数量分页，避免一次性查询数据量过大
+     * 
+     * @param token 用户Token
+     * @param request 分页请求（conversationId、page、size）
+     * @return 文件分页结果
+     */
+    @PostMapping("/files/page")
+    public Result<ConversationFilePageVO> getFilesByConversationId(
+            @RequestHeader("X-User-Token") String token,
+            @RequestBody ConversationFilePageRequest request) {
+        
+        Long userId = resolveUserId(token);
+        
+        // 参数校验
+        if (request.getConversationId() == null) {
+            return Result.error("会话ID不能为空");
+        }
+        
+        ConversationFilePageVO vo = fileParseTaskService.getFileDetailsByConversationId(userId, request);
+        
+        log.info("查询会话文件: userId={}, conversationId={}, page={}, size={}, total={}", 
+                userId, request.getConversationId(), request.getPage(), request.getSize(), vo.getTotal());
+        
+        return Result.success(vo);
     }
 
     // ==================== 辅助方法 ====================

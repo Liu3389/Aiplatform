@@ -389,12 +389,14 @@ public class OpenAiChatService {
                 saveCallLog(apiKey, userId, request.getModel(), inputTokens, outputTokens,
                            cost, System.currentTimeMillis() - startTime, true, null);
 
-                Map<String, Object> doneData = new HashMap<>();
-                doneData.put("finished", true);
-                doneData.put("inputTokens", inputTokens);
-                doneData.put("outputTokens", outputTokens);
-                doneData.put("cost", cost);
-                emitter.send(SseEmitter.event().name("done").data(doneData));
+                // 使用objectMapper确保JSON格式严格一致
+                String doneJson = objectMapper.writeValueAsString(Map.of(
+                    "finished", true,
+                    "inputTokens", inputTokens,
+                    "outputTokens", outputTokens,
+                    "cost", cost
+                ));
+                emitter.send(SseEmitter.event().name("done").data(doneJson));
                 isCompleted.set(true); // 标记正常完成
                 emitter.complete();
 

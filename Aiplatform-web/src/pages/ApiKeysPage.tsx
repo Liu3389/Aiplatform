@@ -361,7 +361,7 @@ export default function ApiKeysPage() {
       open={pendingDeleteId !== null}
       title={lang === 'zh' ? '删除 API Key' : 'Delete API Key'}
       message={lang === 'zh' ? '删除后该 API Key 将无法使用，相关自定义模型对话将受到影响。确定删除吗？' : 'This API key will be permanently removed and custom model chats using it will be affected.'}
-      confirmLabel={lang === 'zh' ? '删除' : 'Delete'}
+      confirmText={lang === 'zh' ? '删除' : 'Delete'}
       onConfirm={doDeleteConfirmed}
       onCancel={() => setPendingDeleteId(null)}
     />

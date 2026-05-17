@@ -33,7 +33,7 @@ export default function OAuthCallbackPage() {
         localStorage.removeItem('oauth_provider')
         localStorage.removeItem('oauth_state')
         setStatus('登录成功，正在跳转...')
-        setTimeout(() => navigate('/', { replace: true }), 500)
+        setTimeout(() => navigate('/chat', { replace: true }), 500)
       } catch (err) {
         setError('第三方登录失败: ' + ((err as Error).message || '请重试'))
         setTimeout(() => navigate('/login'), 3000)

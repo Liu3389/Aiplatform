@@ -54,7 +54,7 @@ export default function ChatPanel() {
     setIsStreaming(true)
 
     let fullContent = ''
-    abortRef.current = chatApi.stream(
+    chatApi.stream(
       { model: 'deepseek-v4-flash', messages: newMessages, temperature: 0.7 },
       {
         onMessage: (chunk: string) => {

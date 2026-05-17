@@ -27,6 +27,14 @@ interface AnalyticsData {
   userGrowth: Record<string, unknown>[]
 }
 
+interface PlatformRevenue {
+  totalRevenue: number; todayRevenue: number; monthRevenue: number;
+  totalRechargeAmount: number; todayRechargeAmount: number;
+  totalPackageSales: number; monthPackageSales: number;
+  subscriptionRevenue: number; activeSubscriptionCount: number;
+  totalSubscriptionCount: number; packageSalesBreakdown: Record<string, number>;
+}
+
 const COLORS = ['#8B5CF6', '#3B82F6', '#06B6D4', '#10B981', '#F59E0B', '#EC4899', '#A78BFA', '#6366F1']
 
 function chartDark(isDark: boolean) {
@@ -55,6 +63,7 @@ export default function AdminPage() {
   const [page, setPage] = useState(1); const [totalUsers, setTotalUsers] = useState(0)
   const [pageSize, setPageSizeState] = useState(20)
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
+  const [platformRevenue, setPlatformRevenue] = useState<PlatformRevenue | null>(null)
   const [timeRange, setTimeRange] = useState({ days: 7, months: 6 })
   const [bcfTab, setBcTab] = useState<'notify'|'coupon'>('notify')
   const [bcf, setBcf] = useState({ title:'', content:'', target:'all', membership:'free', days:'7', amount:'10', threshold:'0', plan:'', expire:'' })
@@ -90,7 +99,14 @@ export default function AdminPage() {
     } catch {}
   }, [timeRange])
 
-  useEffect(() => { setLoading(true); Promise.all([loadUsers(), loadAnalytics()]).finally(() => setLoading(false)) }, [loadUsers, loadAnalytics])
+  const loadPlatformRevenue = useCallback(async () => {
+    try {
+      const r = await adminApi.getPlatformRevenue().catch(() => null)
+      if (r) setPlatformRevenue(r as unknown as PlatformRevenue)
+    } catch {}
+  }, [])
+
+  useEffect(() => { setLoading(true); Promise.all([loadUsers(), loadAnalytics(), loadPlatformRevenue()]).finally(() => setLoading(false)) }, [loadUsers, loadAnalytics, loadPlatformRevenue])
   useEffect(() => { setPage(1) }, [filter])
 
   const toggleStatus = async (u: AdminUser) => {
@@ -202,15 +218,16 @@ export default function AdminPage() {
   ]
 
   const a = analytics
+  const r = platformRevenue
   const kpiCards = a ? [
     { l:'总用户', v:a.totalUsers, c:COLORS[0] },
     { l:'活跃用户', v:a.activeUsers, c:COLORS[3] },
     { l:'总API Keys', v:a.totalApiKeys, c:COLORS[2] },
     { l:'总调用', v:a.totalCalls.toLocaleString(), c:COLORS[1] },
-    { l:'总营收 ¥', v:(a.totalCost||0).toFixed(2), c:COLORS[4] },
-    { l:'今日调用', v:a.todayCalls.toLocaleString(), c:COLORS[5] },
-    { l:'今日营收 ¥', v:(a.todayCost||0).toFixed(2), c:COLORS[6] },
-    { l:'API Key数', v:a.totalApiKeys, c:COLORS[7] },
+    { l:'总营收 ¥', v:r ? (r.totalRevenue||0).toFixed(2) : '0.00', c:COLORS[4] },
+    { l:'今日营收 ¥', v:r ? (r.todayRevenue||0).toFixed(2) : '0.00', c:COLORS[5] },
+    { l:'本月营收 ¥', v:r ? (r.monthRevenue||0).toFixed(2) : '0.00', c:COLORS[6] },
+    { l:'订阅收入 ¥', v:r ? (r.subscriptionRevenue||0).toFixed(2) : '0.00', c:COLORS[7] },
   ] : []
 
   return (

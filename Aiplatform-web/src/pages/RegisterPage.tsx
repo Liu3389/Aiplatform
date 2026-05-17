@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '@/services/api'
 import { useAppStore } from '@/stores/appStore'
+import { useThemeStore } from '@/stores/themeStore'
 import { motion } from 'framer-motion'
 
 export default function RegisterPage() {
@@ -11,9 +12,17 @@ export default function RegisterPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { setToken, setUserId, fetchUserInfo } = useAppStore()
+  const { theme } = useThemeStore()
   const navigate = useNavigate()
+  const isDark = theme === 'dark'
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const textPrimary = isDark ? '#F1F5F9' : '#0F172A'
+  const textDim = isDark ? '#94A3B8' : '#64748B'
+  const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'
+  const inputBg = isDark ? 'rgba(20,28,48,0.6)' : 'rgba(0,0,0,0.03)'
+  const panelBg = isDark ? 'rgba(16,24,42,0.6)' : 'rgba(255,255,255,0.8)'
+
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault()
     if (!username || !password) { setError('请填写用户名和密码'); return }
     if (password.length < 6) { setError('密码至少6个字符'); return }
@@ -24,87 +33,121 @@ export default function RegisterPage() {
       setToken(loginData.token)
       setUserId(loginData.userInfo.id)
       await fetchUserInfo()
-      navigate('/', { replace: true })
+      navigate('/chat', { replace: true })
     } catch (err) { setError((err as Error).message || '注册失败') }
     finally { setLoading(false) }
   }
 
   return (
-    <div className="min-h-screen flex bg-[#0B1020] noise-bg relative overflow-hidden">
-      <div className="absolute inset-0 bg-aurora" />
-      <div className="absolute bottom-1/3 left-1/3 w-96 h-96 bg-brand-purple/10 rounded-full blur-3xl animate-float" style={{animationDelay:'-4s'}}/>
-      <div className="absolute top-1/3 right-1/3 w-96 h-96 bg-brand-cyan/8 rounded-full blur-3xl animate-float" style={{animationDelay:'-1.5s'}}/>
+    <div className="min-h-screen flex relative overflow-hidden" style={{ background: isDark ? '#080B16' : '#F8FAFC' }}>
+      {/* Ambient background */}
+      <div className="absolute inset-0 bg-aurora opacity-60" />
+      <div className="absolute top-40 -right-20 w-[400px] h-[400px] rounded-full opacity-[0.06]"
+        style={{ background: 'radial-gradient(circle, #3B82F6, transparent 70%)' }} />
+      <div className="absolute bottom-40 -left-20 w-[400px] h-[400px] rounded-full opacity-[0.04]"
+        style={{ background: 'radial-gradient(circle, #06B6D4, transparent 70%)' }} />
 
-      <div className="hidden lg:flex w-[480px] relative z-10 flex-col justify-between p-12">
+      {/* Brand panel */}
+      <div className="hidden lg:flex w-[480px] relative z-10 flex-col justify-between p-14">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-purple to-brand-blue flex items-center justify-center shadow-lg shadow-brand-purple/25">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center shadow-xl"
+            style={{ background: 'linear-gradient(135deg, #8B5CF6, #6366F1)', boxShadow: '0 8px 32px rgba(139,92,246,0.3)' }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
           </div>
           <div>
-            <div className="text-lg font-bold text-white">AI Gateway</div>
-            <div className="text-xs text-neutral-500">模型调度网关</div>
+            <div className="text-lg font-bold tracking-tight" style={{ color: textPrimary }}>凌点 AI Gateway</div>
+            <div className="text-[11px] tracking-wide" style={{ color: textDim }}>新一代模型调度网关平台</div>
           </div>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-8">
           <div>
-            <h2 className="text-3xl font-bold text-white mb-1">创建账户</h2>
-            <p className="text-neutral-400 text-sm">开始使用 AI Gateway 平台</p>
+            <h1 className="text-4xl font-bold mb-2 tracking-tight" style={{ color: textPrimary, fontFamily: 'var(--font-display)' }}>
+              创建账户
+            </h1>
+            <p className="text-sm leading-relaxed" style={{ color: textDim }}>
+              注册即享免费额度，开始 AI 模型调度之旅
+            </p>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-5">
             {[
-              { title:'快速接入', desc:'注册即获 API Key，立即调用主流模型' },
-              { title:'免费额度', desc:'新用户赠送免费调用额度' },
-              { title:'流式体验', desc:'支持 SSE 流式输出，Pretext 高性能渲染' },
-            ].map((f,i)=>(
-              <div key={i} className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-lg bg-brand-blue/10 border border-brand-blue/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              { title: '快速接入', desc: '注册即获 API Key，立即调用主流 AI 模型' },
+              { title: '免费额度', desc: '新用户赠送免费调用额度，按 Token 精确计费' },
+              { title: '流式体验', desc: 'SSE 流式输出 + Pretext 高性能渲染引擎' },
+            ].map((f, i) => (
+              <div key={i} className="flex items-start gap-3.5" style={{ animation: `fade-in-up 0.4s ${0.1 * i}s ease-out both` }}>
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                  style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.12)' }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                 </div>
                 <div>
-                  <div className="text-sm font-medium text-white">{f.title}</div>
-                  <div className="text-xs text-neutral-500">{f.desc}</div>
+                  <div className="text-sm font-semibold mb-0.5" style={{ color: textPrimary }}>{f.title}</div>
+                  <div className="text-[12px] leading-relaxed" style={{ color: textDim }}>{f.desc}</div>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <p className="text-[11px] text-neutral-600">© 2026 AI Gateway Platform</p>
+        <p className="text-[11px]" style={{ color: 'var(--text-dim)', opacity: 0.5 }}>© 2026 Lingdian AI Gateway</p>
       </div>
 
-      <div className="flex-1 flex items-center justify-center relative z-10 p-8">
-        <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} className="w-full max-w-md">
-          <div className="glass-panel-lg p-8 space-y-5">
-            <h2 className="text-xl font-semibold text-white">注册账户</h2>
+      {/* Register form */}
+      <div className="flex-1 flex items-center justify-center relative z-10 p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.34, 1.56, 0.64, 1] }}
+          className="w-full max-w-sm sm:max-w-md"
+        >
+          <div className="rounded-3xl p-8 space-y-6 backdrop-blur-xl" style={{
+            background: panelBg,
+            border: `1px solid ${borderColor}`,
+            boxShadow: '0 24px 64px rgba(0,0,0,0.12)',
+          }}>
+            <h2 className="text-2xl font-bold tracking-tight" style={{ color: textPrimary }}>注册账户</h2>
 
             {error && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-accent-rose/10 border border-accent-rose/20 text-accent-rose text-xs">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <div className="flex items-center gap-2.5 p-3.5 rounded-xl text-[12px]"
+                style={{ background: 'rgba(244,63,94,0.06)', border: '1px solid rgba(244,63,94,0.15)', color: '#F43F5E' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 {error}
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4.5">
               <div>
-                <label className="block text-xs font-medium text-neutral-300 mb-1.5">用户名 *</label>
-                <input type="text" value={username} onChange={e=>setUsername(e.target.value)} placeholder="请输入用户名" className="input-glow w-full px-4 py-3 text-sm" />
+                <label className="block text-[12px] font-medium mb-2" style={{ color: textDim }}>用户名 *</label>
+                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="请输入用户名"
+                  className="w-full px-4 py-3.5 rounded-xl text-sm outline-none transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(139,92,246,0.08)]"
+                  style={{ background: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-neutral-300 mb-1.5">邮箱（选填）</label>
-                <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="请输入邮箱" className="input-glow w-full px-4 py-3 text-sm" />
+                <label className="block text-[12px] font-medium mb-2" style={{ color: textDim }}>邮箱（选填）</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="请输入邮箱"
+                  className="w-full px-4 py-3.5 rounded-xl text-sm outline-none transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(139,92,246,0.08)]"
+                  style={{ background: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-neutral-300 mb-1.5">密码 *（至少6个字符）</label>
-                <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="请输入密码" className="input-glow w-full px-4 py-3 text-sm" />
+                <label className="block text-[12px] font-medium mb-2" style={{ color: textDim }}>密码 *（至少6个字符）</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="请输入密码"
+                  className="w-full px-4 py-3.5 rounded-xl text-sm outline-none transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(139,92,246,0.08)]"
+                  style={{ background: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }} />
               </div>
-              <button type="submit" disabled={loading} className="btn-neon w-full py-3 disabled:opacity-50 text-sm">
-                {loading ? '注册中...' : '注册'}
+              <button type="submit" disabled={loading}
+                className="w-full py-3.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 hover:opacity-90 active:scale-[0.98]"
+                style={{ background: 'linear-gradient(135deg, #3B82F6, #6366F1)', boxShadow: '0 4px 20px rgba(59,130,246,0.3)' }}>
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    注册中...
+                  </span>
+                ) : '注册'}
               </button>
             </form>
 
-            <p className="text-center text-xs text-neutral-500">
-              已有账户？ <Link to="/login" className="text-brand-purple hover:text-brand-blue transition-colors font-medium">立即登录</Link>
+            <p className="text-center text-[12px]" style={{ color: textDim }}>
+              已有账户？ <Link to="/login" className="font-semibold transition-colors hover:opacity-80" style={{ color: '#8B5CF6' }}>立即登录</Link>
             </p>
           </div>
         </motion.div>

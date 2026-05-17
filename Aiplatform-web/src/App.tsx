@@ -5,8 +5,9 @@ import AppLayout from '@/components/layout/AppLayout'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
+import WelcomePage from '@/pages/WelcomePage'
+import PWAInstallPrompt from '@/components/PWAInstallPrompt'
 
-const HomePage = lazy(() => import('@/pages/HomePage'))
 const ChatPage = lazy(() => import('@/pages/chat/ChatPage'))
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
 const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage'))
@@ -77,8 +78,12 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route path="/" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-          <Route index element={<LazyRoute><HomePage /></LazyRoute>} />
+        <Route path="/" element={<Navigate to="/welcome" replace />} />
+        <Route path="/welcome" element={<WelcomePage />} />
+        <Route path="/oauth/callback" element={<LazyRoute><OAuthCallbackPage /></LazyRoute>} />
+        <Route path="/home" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/home" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+          <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="chat" element={<LazyRoute><ChatPage /></LazyRoute>} />
           <Route path="dashboard" element={<LazyRoute><DashboardPage /></LazyRoute>} />
           <Route path="api-keys" element={<LazyRoute><ApiKeysPage /></LazyRoute>} />
@@ -89,9 +94,20 @@ export default function App() {
           <Route path="recharge" element={<LazyRoute><RechargePage /></LazyRoute>} />
           <Route path="admin" element={<AdminRoute><LazyRoute><AdminPage /></LazyRoute></AdminRoute>} />
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-        <Route path="/oauth/callback" element={<LazyRoute><OAuthCallbackPage /></LazyRoute>} />
+        <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+          <Route path="/chat" element={<LazyRoute><ChatPage /></LazyRoute>} />
+          <Route path="/dashboard" element={<LazyRoute><DashboardPage /></LazyRoute>} />
+          <Route path="/api-keys" element={<LazyRoute><ApiKeysPage /></LazyRoute>} />
+          <Route path="/user" element={<LazyRoute><UserCenterPage /></LazyRoute>} />
+          <Route path="/wordcloud" element={<LazyRoute><PretextWordCloudPage /></LazyRoute>} />
+          <Route path="/store" element={<LazyRoute><ModelStorePage /></LazyRoute>} />
+          <Route path="/billing" element={<LazyRoute><BillingPage /></LazyRoute>} />
+          <Route path="/recharge" element={<LazyRoute><RechargePage /></LazyRoute>} />
+          <Route path="/admin" element={<LazyRoute><AdminPage /></LazyRoute>} />
+        </Route>
+        <Route path="*" element={<Navigate to="/welcome" replace />} />
       </Routes>
+      <PWAInstallPrompt />
     </BrowserRouter>
   )
 }

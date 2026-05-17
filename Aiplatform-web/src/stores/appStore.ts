@@ -43,15 +43,38 @@ export const useAppStore = create<AppState>((set, get) => ({
   setUser: (user) => set({ user }),
 
   logout: () => {
+    // 清除认证信息
     localStorage.removeItem('lingdian_token')
     localStorage.removeItem('lingdian_uid')
     sessionStorage.removeItem('ld_active_apikey')
     sessionStorage.removeItem('lingdian_chat_version')
+    
+    // 清除用户相关的聊天数据
     const uid = get().user?.id
     if (uid) {
       localStorage.removeItem('lingdian_chat_conversations_' + uid)
       localStorage.removeItem('lingdian_chat_current_' + uid)
     }
+    
+    // 清除所有按token隔离的本地缓存
+    const keysToRemove = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && (
+        key.startsWith('ld_conversations_') || 
+        key.startsWith('ld_current_conv_') ||
+        key.startsWith('lingdian_chat_')
+      )) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key))
+    
+    // 清除其他用户相关缓存
+    localStorage.removeItem('ld_sidebar_collapsed')
+    localStorage.removeItem('ld_chat_model')
+    localStorage.removeItem('ld_conv_server_version')
+    
     set({ token: null, user: null })
   },
 

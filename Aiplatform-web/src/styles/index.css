@@ -5,10 +5,15 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
-  font-family: 'Inter', 'Geist', system-ui, sans-serif;
+  font-family: 'Inter', 'SF Pro Text', 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
   overflow: hidden;
   transition: background 0.3s ease, color 0.3s ease;
+  letter-spacing: 0.01em;
 }
 #root { height: 100vh; overflow: hidden; }
 
@@ -171,16 +176,102 @@ body {
   }
 
   .stat-number {
-    font-family: 'Inter','Geist',sans-serif; font-weight: 700;
-    font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+    font-family: 'Inter', 'SF Pro Display', 'Geist', sans-serif; font-weight: 700;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.03em;
     background: linear-gradient(180deg,var(--text-primary) 0%,var(--text-muted) 100%);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+
+  .font-display {
+    font-family: 'Inter', 'SF Pro Display', 'Geist', -apple-system, system-ui, sans-serif;
+    letter-spacing: -0.02em;
+  }
+
+  .font-body {
+    font-family: 'Inter', 'SF Pro Text', 'Geist', -apple-system, system-ui, sans-serif;
+    letter-spacing: 0.01em;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
   }
 }
 
 @layer utilities {
   .text-shadow-glow { text-shadow: 0 0 20px rgba(139,92,246,0.5); }
   .bg-gradient-brand { background: linear-gradient(135deg,#8B5CF6,#3B82F6); }
+
+  /* 关键修复：代码高亮样式 - 支持明暗模式 */
+  .chat-code-highlight .hljs { background: transparent; color: var(--text-primary); }
+  
+  /* 注释和引用 */
+  .chat-code-highlight .hljs-comment,
+  .chat-code-highlight .hljs-quote { 
+    color: var(--text-dim); 
+    font-style: italic; 
+  }
+  
+  /* 关键字、选择器、标题等 - 紫色系 */
+  .chat-code-highlight .hljs-keyword,
+  .chat-code-highlight .hljs-selector-tag,
+  .chat-code-highlight .hljs-literal,
+  .chat-code-highlight .hljs-title,
+  .chat-code-highlight .hljs-section,
+  .chat-code-highlight .hljs-selector-id,
+  .chat-code-highlight .hljs-type {
+    color: #C084FC;
+  }
+  
+  /* 字符串、符号 - 绿色系 */
+  .chat-code-highlight .hljs-string,
+  .chat-code-highlight .hljs-bullet,
+  .chat-code-highlight .hljs-symbol,
+  .chat-code-highlight .hljs-addition,
+  .chat-code-highlight .hljs-meta-string {
+    color: #34D399;
+  }
+  
+  /* 数字、正则 - 蓝色系 */
+  .chat-code-highlight .hljs-number,
+  .chat-code-highlight .hljs-regexp,
+  .chat-code-highlight .hljs-deletion {
+    color: #38BDF8;
+  }
+  
+  /* 内置函数、参数 - 粉色系 */
+  .chat-code-highlight .hljs-built_in,
+  .chat-code-highlight .hljs-params,
+  .chat-code-highlight .hljs-function {
+    color: #F472B6;
+  }
+  
+  /* 类名、属性 - 黄色系 */
+  .chat-code-highlight .hljs-selector-class,
+  .chat-code-highlight .hljs-attribute,
+  .chat-code-highlight .hljs-title.class_ {
+    color: #FDE68A;
+  }
+  
+  /* 变量、模板变量 */
+  .chat-code-highlight .hljs-variable,
+  .chat-code-highlight .hljs-template-variable {
+    color: #FCA5A5;
+  }
+  
+  /* 强调和加粗 */
+  .chat-code-highlight .hljs-emphasis { font-style: italic; }
+  .chat-code-highlight .hljs-strong { font-weight: 700; }
+  
+  /* 代码字体 */
+  .chat-code-highlight .hljs { 
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; 
+  }
+
+  @keyframes float-dot {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
 }
 
 .pretext-canvas { display: block; image-rendering: auto; }
@@ -229,6 +320,55 @@ body {
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .border-light { border-color: var(--border-light); }
+
+/* Markdown Renderer Styles */
+.chat-markdown {
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.chat-markdown pre {
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-markdown code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Monaco, Menlo, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+  .chat-markdown {
+    font-size: 13px;
+  }
+  .chat-markdown code {
+    font-size: 12px;
+  }
+  .chat-markdown pre {
+    font-size: 12px;
+  }
+}
+
+/* Code block scrollbar styling */
+.chat-markdown pre::-webkit-scrollbar {
+  height: 6px;
+}
+
+.chat-markdown pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-markdown pre::-webkit-scrollbar-thumb {
+  background: rgba(139,92,246,0.3);
+  border-radius: 3px;
+}
+
+.chat-markdown pre::-webkit-scrollbar-thumb:hover {
+  background: rgba(139,92,246,0.5);
+}
 
 .text-accent-purple { color: var(--accent-purple); }
 .text-accent-blue { color: var(--accent-blue); }

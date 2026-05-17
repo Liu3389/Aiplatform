@@ -125,9 +125,17 @@ export default function RechargePage() {
     setPackagesLoading(true)
     try {
       const data = await subscriptionApi.getPackages()
-      setPackages((data || []).filter((p: any) => p.status === 1 && p.packageCode !== 'free'))
+      console.log('[RechargePage] 加载到的套餐列表:', data)
+      const filtered = (data || []).filter((p: any) => p.status === 1 && p.packageCode !== 'free')
+      console.log('[RechargePage] 过滤后的套餐:', filtered.map(p => ({ code: p.packageCode, name: p.packageName })))
+      setPackages(filtered)
     } catch (e) {
-      console.error('Failed to load packages:', e)
+      console.error('[RechargePage] 加载套餐失败:', e)
+      useToastStore.getState().showToast({
+        title: lang === 'zh' ? '加载失败' : 'Load Failed',
+        message: lang === 'zh' ? '无法加载套餐信息，请刷新页面重试' : 'Failed to load packages, please refresh',
+        type: 'error',
+      })
     } finally {
       setPackagesLoading(false)
     }
@@ -150,18 +158,32 @@ export default function RechargePage() {
     if (!pkg) return
     setPurchasing(true)
     try {
-      await subscriptionApi.purchase(pkg.packageCode, selectedCycle)
+      console.log('[RechargePage] 开始购买套餐:', { packageCode: pkg.packageCode, cycle: selectedCycle })
+      const result = await subscriptionApi.purchase(pkg.packageCode, selectedCycle)
+      console.log('[RechargePage] 购买成功:', result)
       setConfirmTier(null)
-      useToastStore.getState().showToast({
-        title: lang === 'zh' ? '开通成功' : 'Activation Success',
-        message: lang === 'zh' ? `您已成为 ${pkg.identityLabel}！` : `You are now ${pkg.identityLabel}!`,
-        type: 'success',
-      })
+      
+      // 根据返回结果判断是首次开通、续费还是升级
+      let title: string
+      let message: string
+      if (result.isUpgrade) {
+        title = lang === 'zh' ? '升级成功' : 'Upgrade Success'
+        message = lang === 'zh' ? `已升级为 ${pkg.identityLabel}！` : `Upgraded to ${pkg.identityLabel}!`
+      } else if (result.isRenewal) {
+        title = lang === 'zh' ? '续费成功' : 'Renewal Success'
+        message = lang === 'zh' ? `${pkg.identityLabel} 已续费！` : `${pkg.identityLabel} renewed!`
+      } else {
+        title = lang === 'zh' ? '开通成功' : 'Activation Success'
+        message = lang === 'zh' ? `您已成为 ${pkg.identityLabel}！` : `You are now ${pkg.identityLabel}!`
+      }
+      
+      useToastStore.getState().showToast({ title, message, type: 'success' })
       await fetchUserInfo()
     } catch (e: any) {
+      console.error('[RechargePage] 购买失败:', e)
       useToastStore.getState().showToast({
         title: lang === 'zh' ? '开通失败' : 'Activation Failed',
-        message: (e as Error).message || (lang === 'zh' ? '余额不足或购买失败' : 'Insufficient balance or purchase failed'),
+        message: e.message || (lang === 'zh' ? '余额不足或购买失败' : 'Insufficient balance or purchase failed'),
         type: 'error',
       })
     }
@@ -209,7 +231,7 @@ export default function RechargePage() {
   const getTierByKey = (key: string) => TIERS.find(t => t.key === key) || TIERS[0]
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto overflow-y-auto h-full space-y-8">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto overflow-y-auto h-full space-y-6">
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-xl sm:text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -220,79 +242,11 @@ export default function RechargePage() {
         </p>
       </motion.div>
 
-      {/* Pricing rules explanation */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-        className="rounded-2xl border overflow-hidden"
-        style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
-      >
-        <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)', background: isDark ? 'rgba(139,92,246,0.05)' : 'rgba(139,92,246,0.03)' }}>
-          <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-            {lang === 'zh' ? '📌 平台计费规则' : '📌 Platform Billing Rules'}
-          </h3>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-dim)' }}>
-            {lang === 'zh' ? '透明、安全、可追溯的平台计费体系' : 'Transparent, secure, and traceable platform billing system'}
-          </p>
-        </div>
-        
-        <div className="p-4 space-y-4">
-          {/* Subscription rules */}
-          <div>
-            <h4 className="text-xs font-semibold mb-2" style={{ color: '#8B5CF6' }}>
-              {lang === 'zh' ? '🔹 订阅规则' : '🔹 Subscription Rules'}
-            </h4>
-            <div className="grid sm:grid-cols-3 gap-3 text-xs">
-              <div className="p-3 rounded-lg" style={{ background: 'var(--bg-surface)' }}>
-                <div className="font-medium mb-1" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? '计费规则' : 'Billing'}</div>
-                <div style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '按月原价，按季度 9 折优惠，按年度 7 折优惠' : 'Monthly: full price, Quarterly: 10% off, Yearly: 30% off'}</div>
-              </div>
-              <div className="p-3 rounded-lg" style={{ background: 'var(--bg-surface)' }}>
-                <div className="font-medium mb-1" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? '生效规则' : 'Activation'}</div>
-                <div style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '套餐开通立即生效，到期后自动降级为免费普通用户' : 'Immediate activation, auto downgrade to free user on expiry'}</div>
-              </div>
-              <div className="p-3 rounded-lg" style={{ background: 'var(--bg-surface)' }}>
-                <div className="font-medium mb-1" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? '拓展功能' : 'Flexibility'}</div>
-                <div style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '支持会员升级、续费、时长叠加购买' : 'Support upgrade, renewal, duration stacking'}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Common features */}
-          <div>
-            <h4 className="text-xs font-semibold mb-2" style={{ color: '#8B5CF6' }}>
-              {lang === 'zh' ? '🔹 通用权益' : '🔹 Common Benefits'}
-            </h4>
-            <div className="grid sm:grid-cols-3 gap-3 text-xs">
-              <div className="p-3 rounded-lg" style={{ background: 'var(--bg-surface)' }}>
-                <div className="font-medium mb-1" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? '连续对话' : 'Continuous Chat'}</div>
-                <div style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '全部支持连续对话功能' : 'All tiers support continuous conversation'}</div>
-              </div>
-              <div className="p-3 rounded-lg" style={{ background: 'var(--bg-surface)' }}>
-                <div className="font-medium mb-1" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? '云端存储' : 'Cloud Storage'}</div>
-                <div style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '对话云端存储功能免费' : 'Conversation cloud storage is free'}</div>
-              </div>
-              <div className="p-3 rounded-lg" style={{ background: 'var(--bg-surface)' }}>
-                <div className="font-medium mb-1" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? '文件大小' : 'File Size'}</div>
-                <div style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '所有上传文件大小单个不大于 10MB' : 'Each uploaded file max 10MB'}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Point deduction */}
-          <div>
-            <h4 className="text-xs font-semibold mb-2" style={{ color: '#8B5CF6' }}>
-              {lang === 'zh' ? '🔹 扣费标准' : '🔹 Point Deduction'}
-            </h4>
-            <div className="p-3 rounded-lg text-xs" style={{ background: 'var(--bg-surface)' }}>
-              <span style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? '所有会员等级执行平台基础标准点数扣费比例，点数扣费比例相同' : 'All membership tiers follow the same platform standard point deduction ratio'}</span>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Current membership status */}
+      {/* Current membership status - 放在最上面 */}
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 0.05 }}
         className="rounded-2xl p-4 border"
         style={{
           background: `${getTierByKey(currentMembership).color}10`,
@@ -324,7 +278,7 @@ export default function RechargePage() {
       </motion.div>
 
       {/* Tier comparison table */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
           {lang === 'zh' ? '📊 套餐权益对比' : '📊 Tier Comparison'}
         </h3>
@@ -335,9 +289,14 @@ export default function RechargePage() {
                 <tr style={{ borderBottom: `1px solid var(--border-color)`, background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
                   <th className="text-left py-3 px-4" style={{ color: 'var(--text-dim)', minWidth: 120 }}>{lang === 'zh' ? '权益' : 'Benefits'}</th>
                   {TIERS.map(tier => (
-                    <th key={tier.key} className="text-center py-3 px-3" style={{ color: tier.color, minWidth: 100 }}>
+                    <th key={tier.key} className="text-center py-3 px-3 relative" style={{ color: tier.color, minWidth: 100 }}>
                       <span className="text-base">{tier.icon}</span>
                       <div className="font-medium mt-1">{lang === 'zh' ? tier.nameZh.replace(/会员|用户/g, '') : tier.nameEn.replace(/ Member| User/g, '')}</div>
+                      {tier.key === currentMembership && (
+                        <div className="mt-1 px-2 py-0.5 text-xs rounded-full font-medium" style={{ background: tier.color, color: '#fff' }}>
+                          {lang === 'zh' ? '当前' : 'Current'}
+                        </div>
+                      )}
                     </th>
                   ))}
                 </tr>
@@ -443,6 +402,41 @@ export default function RechargePage() {
         </div>
       </motion.div>
 
+      {/* Point deduction rules */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
+        className="rounded-2xl border overflow-hidden"
+        style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
+      >
+        <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)', background: isDark ? 'rgba(245,158,11,0.05)' : 'rgba(245,158,11,0.03)' }}>
+          <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"/>
+            </svg>
+            {lang === 'zh' ? '点数消耗规则' : 'Point Deduction Rules'}
+          </h3>
+        </div>
+        
+        <div className="p-4">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+            {[
+              { model: '基础模型 (DeepSeek Flash)', points: '1 点/次', desc: lang === 'zh' ? '简单问答、文本生成' : 'Simple Q&A, text generation' },
+              { model: '标准模型 (DeepSeek V3)', points: '3 点/次', desc: lang === 'zh' ? '复杂推理、代码生成' : 'Complex reasoning, code gen' },
+              { model: '高级模型 (Claude/GPT-4)', points: '5 点/次', desc: lang === 'zh' ? '深度分析、长文本处理' : 'Deep analysis, long text' },
+              { model: '旗舰模型 (o1/Claude Pro)', points: '10 点/次', desc: lang === 'zh' ? '极限推理、专业任务' : 'Extreme reasoning, pro tasks' },
+            ].map((rule, i) => (
+              <div key={i} className="p-3 rounded-xl" style={{ background: 'var(--bg-surface)' }}>
+                <div className="font-medium mb-1" style={{ color: 'var(--text-primary)' }}>{rule.model}</div>
+                <div className="font-bold mb-0.5" style={{ color: '#F59E0B' }}>{rule.points}</div>
+                <div style={{ color: 'var(--text-dim)' }}>{rule.desc}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 p-3 rounded-lg text-xs" style={{ background: isDark ? 'rgba(139,92,246,0.05)' : 'rgba(139,92,246,0.03)', color: 'var(--text-dim)' }}>
+            {lang === 'zh' ? '💡 提示：点数仅用于 AI 对话消耗，与账户余额严格分离。余额仅用于 API Key 调用消费。' : '💡 Note: Points are only for AI chat consumption, strictly separated from balance. Balance is only for API Key usage.'}
+          </div>
+        </div>
+      </motion.div>
+
       {/* Membership upgrade cards */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
@@ -461,7 +455,7 @@ export default function RechargePage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.1 }}
-              className="rounded-2xl p-5 border-2 relative overflow-hidden transition-all hover:shadow-lg"
+              className="rounded-2xl p-5 border-2 relative overflow-hidden transition-all hover:shadow-lg flex flex-col"
               style={{
                 background: 'var(--bg-card)',
                 borderColor: isCurrent ? color : 'var(--border-color)',
@@ -473,7 +467,7 @@ export default function RechargePage() {
                   {lang === 'zh' ? '当前' : 'Current'}
                 </div>
               )}
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-3">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base" style={{ background: `${color}20`, color }}>
                   {tier.icon}
                 </div>
@@ -493,15 +487,16 @@ export default function RechargePage() {
                 </div>
               </div>
 
-              {/* Bonus */}
-              {tier.bonusPoints > 0 && (
-                <div className="text-xs mb-3 px-2 py-1 rounded-md inline-block" style={{ background: `${color}10`, color }}>
-                  {lang === 'zh' ? `开通赠送 ${tier.bonusPoints} 永久点数` : `Bonus ${tier.bonusPoints} permanent pts`}
-                </div>
-              )}
+              {/* Points badge */}
+              <div className="flex items-center gap-1.5 mb-3 px-2 py-1.5 rounded-lg inline-block self-start" style={{ background: `${color}10` }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill={color} stroke="none">
+                  <path d="M12 2L14.86 9.14L22 12L14.86 14.86L12 22L9.14 14.86L2 12L9.14 9.14L12 2Z"/>
+                </svg>
+                <span className="text-xs font-medium" style={{ color }}>{lang === 'zh' ? `${tier.dailyPoints} 点/天` : `${tier.dailyPoints} pts/day`}</span>
+              </div>
 
               {/* Features */}
-              <ul className="space-y-1.5 mb-4">
+              <ul className="space-y-1.5 mb-4 flex-1">
                 <li className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-dim)' }}>
                   <span style={{ color }}>✓</span>
                   {lang === 'zh' ? `每日 ${tier.dailyPoints} 永久点数（${tier.dailyPointsNoteZh}）` : `${tier.dailyPoints} permanent pts/day (${tier.dailyPointsNoteEn})`}
@@ -514,22 +509,44 @@ export default function RechargePage() {
                 ))}
               </ul>
 
-              {isCurrent ? (
-                <button disabled className="w-full py-2 rounded-xl text-xs font-medium opacity-50" style={{ background: color, color: '#fff' }}>
-                  {lang === 'zh' ? '当前方案' : 'Current Plan'}
-                </button>
-              ) : (
-                <button
-                  onClick={() => handleOpenConfirm(tier)}
-                  disabled={purchasing || !getPkgByTierKey(tier.key)}
-                  className="w-full py-2 rounded-xl text-xs font-medium text-white transition-all hover:opacity-90 disabled:opacity-50"
-                  style={{ background: color }}
-                >
-                  {purchasing ? (lang === 'zh' ? '处理中...' : 'Processing...') :
-                    packagesLoading ? (lang === 'zh' ? '加载中...' : 'Loading...') :
-                    (lang === 'zh' ? '立即开通' : 'Activate Now')}
-                </button>
+              {/* Bonus */}
+              {tier.bonusPoints > 0 && (
+                <div className="text-xs mb-4 px-2 py-1 rounded-md inline-block self-start" style={{ background: `${color}10`, color }}>
+                  {lang === 'zh' ? `🎁 开通赠送 ${tier.bonusPoints} 永久点数` : `🎁 Bonus ${tier.bonusPoints} permanent pts`}
+                </div>
               )}
+
+              {/* Button - aligned at bottom */}
+              <div className="mt-auto">
+                {isCurrent ? (
+                  <button disabled className="w-full py-2.5 rounded-xl text-xs font-medium opacity-50" style={{ background: color, color: '#fff' }}>
+                    {lang === 'zh' ? '当前方案' : 'Current Plan'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      const pkg = getPkgByTierKey(tier.key)
+                      if (!pkg) {
+                        console.warn('[RechargePage] 套餐不存在:', tier.key)
+                        useToastStore.getState().showToast({
+                          title: lang === 'zh' ? '套餐不可用' : 'Package Unavailable',
+                          message: lang === 'zh' ? '该套餐暂未配置，请联系管理员' : 'This package is not configured',
+                          type: 'warning',
+                        })
+                        return
+                      }
+                      handleOpenConfirm(tier)
+                    }}
+                    disabled={purchasing || packagesLoading}
+                    className="w-full py-2.5 rounded-xl text-xs font-medium text-white transition-all hover:opacity-90 disabled:opacity-50"
+                    style={{ background: color }}
+                  >
+                    {purchasing ? (lang === 'zh' ? '处理中...' : 'Processing...') :
+                      packagesLoading ? (lang === 'zh' ? '加载中...' : 'Loading...') :
+                      (lang === 'zh' ? '立即开通' : 'Activate Now')}
+                  </button>
+                )}
+              </div>
             </motion.div>
           )
         })}
