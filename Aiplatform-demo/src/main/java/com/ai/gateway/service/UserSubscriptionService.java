@@ -1,6 +1,7 @@
 package com.ai.gateway.service;
 
 import com.ai.gateway.entity.PackageTemplate;
+import com.ai.gateway.entity.PlatformStatistics;
 import com.ai.gateway.entity.User;
 import com.ai.gateway.entity.UserSubscription;
 import com.ai.gateway.mapper.UserMapper;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -31,6 +33,7 @@ public class UserSubscriptionService {
     private final PointsService pointsService;
     private final CouponService couponService;
     private final UserMapper userMapper;
+    private final com.ai.gateway.mapper.PlatformStatisticsMapper platformStatisticsMapper;
 
     /**
      * 获取用户当前生效的订阅
@@ -84,6 +87,26 @@ public class UserSubscriptionService {
             throw new RuntimeException("套餐不存在或已下架: " + packageCode);
         }
 
+        // 检查当前订阅状态
+        UserSubscription currentSubscription = getCurrentSubscription(userId);
+        boolean isRenewal = false;
+        boolean isUpgrade = false;
+
+        if (currentSubscription != null) {
+            // 如果购买的是同一套餐，提示续费
+            if (currentSubscription.getPackageCode().equals(packageCode)) {
+                isRenewal = true;
+                log.info("用户续费同一套餐: userId={}, package={}", userId, packageCode);
+            } else {
+                // 比较套餐等级，判断是否升级
+                int currentLevel = getPackageLevel(currentSubscription.getPackageCode());
+                int newLevel = getPackageLevel(packageCode);
+                isUpgrade = newLevel > currentLevel;
+                log.info("用户{}套餐: userId={}, from={}, to={}",
+                        isUpgrade ? "升级" : "降级", userId, currentSubscription.getPackageCode(), packageCode);
+            }
+        }
+
         // 默认订阅周期为月度
         if (cycle == null || cycle.isEmpty()) {
             cycle = "MONTHLY";
@@ -102,7 +125,7 @@ public class UserSubscriptionService {
                 originalPrice = pkg.getPriceMonthly();
                 break;
         }
-        
+
         if (originalPrice == null || originalPrice.compareTo(BigDecimal.ZERO) < 0) {
             throw new RuntimeException("套餐价格配置错误");
         }
@@ -183,8 +206,8 @@ public class UserSubscriptionService {
             pointsService.addPermanentPoints(userId, pkg.getPointsGranted(), "SUBSCRIPTION_GRANT", description, businessId);
         }
 
-        // 6. 更新用户会员标识（如果需要）
-        updateUserMembership(userId, pkg.getIdentityLabel(), expireTime);
+        // 6. 更新用户会员标识（使用 packageCode 作为标准化标识）
+        updateUserMembership(userId, pkg.getPackageCode(), expireTime);
 
         // 7. 构建返回结果
         result.put("success", true);
@@ -203,9 +226,13 @@ public class UserSubscriptionService {
         result.put("maxOutputTokens", pkg.getMaxOutputTokens());
         result.put("modelAccessLevel", pkg.getModelAccessLevel());
         result.put("priorityLevel", pkg.getPriorityLevel());
+        result.put("isRenewal", isRenewal);
+        result.put("isUpgrade", isUpgrade);
 
-        log.info("用户购买套餐成功: userId={}, package={}, price={}, discount={}", 
-                userId, packageCode, actualPrice, discount);
+        log.info("用户购买套餐成功: userId={}, package={}, price={}, discount={}, isRenewal={}, isUpgrade={}",
+                userId, packageCode, actualPrice, discount, isRenewal, isUpgrade);
+
+        recordRevenue(actualPrice);
 
         return result;
     }
@@ -282,6 +309,64 @@ public class UserSubscriptionService {
         
         if (!expiredSubscriptions.isEmpty()) {
             log.info("检查并更新过期订阅完成: count={}", expiredSubscriptions.size());
+        }
+    }
+
+    /**
+     * 获取套餐等级（用于比较升级/降级）
+     */
+    private int getPackageLevel(String packageCode) {
+        switch (packageCode) {
+            case "free":
+                return 0;
+            case "silver":
+                return 1;
+            case "gold":
+                return 2;
+            case "diamond":
+                return 3;
+            default:
+                return 0;
+        }
+    }
+
+    /**
+     * 记录套餐购买营收到 platform_statistics 表
+     */
+    private void recordRevenue(BigDecimal amount) {
+        try {
+            LocalDate today = LocalDate.now();
+
+            LambdaQueryWrapper<PlatformStatistics> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(PlatformStatistics::getStatDate, today);
+            PlatformStatistics todayStats = platformStatisticsMapper.selectOne(wrapper);
+
+            if (todayStats != null) {
+                BigDecimal currentRevenue = todayStats.getTotalRevenue() != null ? todayStats.getTotalRevenue() : BigDecimal.ZERO;
+                BigDecimal currentRecharge = todayStats.getRechargeAmount() != null ? todayStats.getRechargeAmount() : BigDecimal.ZERO;
+                todayStats.setTotalRevenue(currentRevenue.add(amount));
+                todayStats.setRechargeAmount(currentRecharge.add(amount));
+                platformStatisticsMapper.updateById(todayStats);
+            } else {
+                PlatformStatistics newStats = new PlatformStatistics();
+                newStats.setStatDate(today);
+                newStats.setTotalRevenue(amount);
+                newStats.setRechargeAmount(amount);
+                newStats.setTotalUsers(0);
+                newStats.setNewUsers(0);
+                newStats.setActiveUsers(0);
+                newStats.setRetainedUsers(0);
+                newStats.setTotalCalls(0L);
+                newStats.setTotalTokens(0L);
+                newStats.setTotalPointsConsumed(BigDecimal.ZERO);
+                newStats.setPackageSales(1);
+                newStats.setAvgOrderValue(amount);
+                platformStatisticsMapper.insert(newStats);
+            }
+
+            log.info("套餐购买营收记录已更新: date={}, amount={}", today, amount);
+        } catch (Exception e) {
+            log.error("记录套餐购买营收数据失败: amount={}, error={}", amount, e.getMessage(), e);
         }
     }
 }

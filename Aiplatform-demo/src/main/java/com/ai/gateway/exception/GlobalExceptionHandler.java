@@ -2,8 +2,14 @@ package com.ai.gateway.exception;
 
 import com.ai.gateway.common.Result;
 import com.ai.gateway.common.ResultCode;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.TypeMismatchException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
@@ -13,11 +19,10 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.beans.TypeMismatchException;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
-import jakarta.validation.ConstraintViolation;
-import jakarta.validation.ConstraintViolationException;
+import java.io.IOException;
 import java.util.Set;
 
 /**
@@ -35,6 +40,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public Result<Void> handleBusinessException(BusinessException e) {
         log.warn("业务异常: {}", e.getMessage());
+
+        // 检查是否是SSE请求
+        if (isSseRequest()) {
+            writeSseError(e.getMessage());
+            return null;
+        }
+        
         return Result.error(e.getCode(), e.getMessage());
     }
 
@@ -46,6 +58,13 @@ public class GlobalExceptionHandler {
         FieldError fieldError = e.getBindingResult().getFieldError();
         String message = fieldError != null ? fieldError.getDefaultMessage() : "参数校验失败";
         log.error("参数校验异常: {}", message);
+
+        // 检查是否是SSE请求
+        if (isSseRequest()) {
+            writeSseError(message);
+            return null;
+        }
+        
         return Result.error(ResultCode.PARAM_ERROR.getCode(), message);
     }
 
@@ -57,6 +76,13 @@ public class GlobalExceptionHandler {
         FieldError fieldError = e.getBindingResult().getFieldError();
         String message = fieldError != null ? fieldError.getDefaultMessage() : "参数绑定失败";
         log.error("参数绑定异常: {}", message);
+
+        // 检查是否是SSE请求
+        if (isSseRequest()) {
+            writeSseError(message);
+            return null;
+        }
+        
         return Result.error(ResultCode.PARAM_ERROR.getCode(), message);
     }
 
@@ -68,6 +94,13 @@ public class GlobalExceptionHandler {
         Set<ConstraintViolation<?>> violations = e.getConstraintViolations();
         String message = violations.isEmpty() ? "参数校验失败" : violations.iterator().next().getMessage();
         log.error("约束违反异常: {}", message);
+
+        // 检查是否是SSE请求
+        if (isSseRequest()) {
+            writeSseError(message);
+            return null;
+        }
+        
         return Result.error(ResultCode.PARAM_ERROR.getCode(), message);
     }
 
@@ -78,6 +111,13 @@ public class GlobalExceptionHandler {
     public Result<Void> handleException(Exception e) {
         String traceId = java.util.UUID.randomUUID().toString().substring(0, 8);
         log.error("系统异常 [TraceId: {}]: {}", traceId, e.getMessage(), e);
+
+        // 检查是否是SSE请求
+        if (isSseRequest()) {
+            writeSseError("系统内部错误，请稍后重试 (ID: " + traceId + ")");
+            return null;
+        }
+        
         return Result.error(ResultCode.ERROR.getCode(), "系统内部错误，请稍后重试 (ID: " + traceId + ")");
     }
 
@@ -85,6 +125,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public Result<Void> handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
         log.warn("请求体格式错误: {}", e.getMessage());
+
+        // 检查是否是SSE请求
+        if (isSseRequest()) {
+            writeSseError("请求体格式错误，请检查JSON格式");
+            return null;
+        }
+        
         return Result.error(400, "请求体格式错误，请检查JSON格式");
     }
 
@@ -92,6 +139,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public Result<Void> handleMissingServletRequestParameterException(MissingServletRequestParameterException e) {
         log.warn("缺少必填参数: {}", e.getParameterName());
+
+        // 检查是否是SSE请求
+        if (isSseRequest()) {
+            writeSseError("缺少必填参数: " + e.getParameterName());
+            return null;
+        }
+        
         return Result.error(400, "缺少必填参数: " + e.getParameterName());
     }
 
@@ -99,6 +153,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(TypeMismatchException.class)
     public Result<Void> handleTypeMismatchException(TypeMismatchException e) {
         log.warn("参数类型错误: {}", e.getMessage());
+
+        // 检查是否是SSE请求
+        if (isSseRequest()) {
+            writeSseError("参数类型错误");
+            return null;
+        }
+        
         return Result.error(400, "参数类型错误");
     }
 
@@ -106,6 +167,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public Result<Void> handleDataIntegrityViolationException(DataIntegrityViolationException e) {
         log.warn("数据冲突或违反唯一约束: {}", e.getMessage());
+
+        // 检查是否是SSE请求
+        if (isSseRequest()) {
+            writeSseError("数据冲突或违反唯一约束");
+            return null;
+        }
+        
         return Result.error(400, "数据冲突或违反唯一约束");
     }
 
@@ -113,6 +181,56 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public Result<Void> handleHttpRequestMethodNotSupportedException(HttpRequestMethodNotSupportedException e) {
         log.warn("不支持的请求方法: {}", e.getMethod());
+
+        // 检查是否是SSE请求
+        if (isSseRequest()) {
+            writeSseError("不支持的请求方法");
+            return null;
+        }
+        
         return Result.error(405, "不支持的请求方法");
+    }
+
+    /**
+     * 检查当前请求是否是SSE请求
+     */
+    private boolean isSseRequest() {
+        try {
+            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attributes != null) {
+                HttpServletResponse response = attributes.getResponse();
+                if (response != null) {
+                    String contentType = response.getContentType();
+                    return contentType != null && contentType.contains(MediaType.TEXT_EVENT_STREAM_VALUE);
+                }
+            }
+        } catch (Exception e) {
+            // 忽略异常
+        }
+        return false;
+    }
+
+    /**
+     * 向SSE连接写入错误信息
+     */
+    private void writeSseError(String message) {
+        try {
+            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attributes != null) {
+                HttpServletResponse response = attributes.getResponse();
+                if (response != null && !response.isCommitted()) {
+                    response.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE);
+                    response.setCharacterEncoding("UTF-8");
+
+                    // 写入SSE格式的错误事件
+                    String errorEvent = "event: error\n" +
+                            "data: {\"message\":\"" + message.replace("\"", "\\\"") + "\"}\n\n";
+                    response.getWriter().write(errorEvent);
+                    response.getWriter().flush();
+                }
+            }
+        } catch (IOException e) {
+            log.error("写入SSE错误信息失败", e);
+        }
     }
 }

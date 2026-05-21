@@ -2,9 +2,8 @@ package com.ai.gateway.service;
 
 import com.ai.gateway.entity.ChatMessage;
 import com.ai.gateway.entity.ChatMessageHistory;
-import com.ai.gateway.entity.FileParseTask;
-import com.ai.gateway.mapper.ChatMessageMapper;
 import com.ai.gateway.mapper.ChatMessageHistoryMapper;
+import com.ai.gateway.mapper.ChatMessageMapper;
 import com.ai.gateway.mapper.FileParseTaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -286,41 +285,43 @@ public class ChatMessageService {
         // 从热数据表查询
         LambdaQueryWrapper<ChatMessage> hotWrapper = new LambdaQueryWrapper<>();
         hotWrapper.eq(ChatMessage::getConversationId, conversationId)
-                  .isNotNull(ChatMessage::getFileIds)
-                  .select(ChatMessage::getFileIds);
-        
+                .isNotNull(ChatMessage::getFileIds)
+                .select(ChatMessage::getFileIds);
+
         // 从冷数据表查询
         LambdaQueryWrapper<ChatMessageHistory> coldWrapper = new LambdaQueryWrapper<>();
         coldWrapper.eq(ChatMessageHistory::getConversationId, conversationId)
-                   .isNotNull(ChatMessageHistory::getFileIds)
-                   .select(ChatMessageHistory::getFileIds);
-        
+                .isNotNull(ChatMessageHistory::getFileIds)
+                .select(ChatMessageHistory::getFileIds);
+
         java.util.Set<String> allFileIds = new java.util.HashSet<>();
-        
+
         // 合并热数据
         for (ChatMessage msg : chatMessageMapper.selectList(hotWrapper)) {
             if (msg.getFileIds() != null) {
                 try {
-                    List<String> fileIds = objectMapper.readValue(msg.getFileIds(), new TypeReference<List<String>>() {});
+                    List<String> fileIds = objectMapper.readValue(msg.getFileIds(), new TypeReference<List<String>>() {
+                    });
                     allFileIds.addAll(fileIds);
                 } catch (Exception e) {
                     log.warn("解析 file_ids 失败: conversationId={}", conversationId, e);
                 }
             }
         }
-        
+
         // 合并冷数据
         for (ChatMessageHistory msg : chatMessageHistoryMapper.selectList(coldWrapper)) {
             if (msg.getFileIds() != null) {
                 try {
-                    List<String> fileIds = objectMapper.readValue(msg.getFileIds(), new TypeReference<List<String>>() {});
+                    List<String> fileIds = objectMapper.readValue(msg.getFileIds(), new TypeReference<List<String>>() {
+                    });
                     allFileIds.addAll(fileIds);
                 } catch (Exception e) {
                     log.warn("解析冷数据 file_ids 失败: conversationId={}", conversationId, e);
                 }
             }
         }
-        
+
         return new ArrayList<>(allFileIds);
     }
 }

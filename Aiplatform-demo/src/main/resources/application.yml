@@ -23,11 +23,17 @@ spring:
       validation-timeout: 3000
       leak-detection-threshold: 60000
 
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
   data:
     redis:
       host: localhost
       port: 6380
-      password: redis123
+      password:
       database: 0
       timeout: 3000ms
       lettuce:

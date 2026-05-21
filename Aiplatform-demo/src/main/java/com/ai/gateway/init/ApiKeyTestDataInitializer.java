@@ -2,13 +2,14 @@ package com.ai.gateway.init;
 
 import com.ai.gateway.entity.ApiKey;
 import com.ai.gateway.mapper.ApiKeyMapper;
+import com.ai.gateway.service.StatisticsCounterService;
 import com.ai.gateway.service.TokenService;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
@@ -21,6 +22,7 @@ public class ApiKeyTestDataInitializer {
 
     private final ApiKeyMapper apiKeyMapper;
     private final TokenService tokenService;
+    private final StatisticsCounterService counterService;
 
     @Value("${app.init-test-data:false}")
     private boolean initTestData;
@@ -31,7 +33,8 @@ public class ApiKeyTestDataInitializer {
             return;
         }
 
-        Long count = apiKeyMapper.selectCount(null);
+        // 修复 P1-1: 使用缓存计数器替代全表COUNT(*)查询
+        Long count = counterService.getCounterValue("APIKEY_TOTAL");
         if (count != null && count > 0) {
             log.info("api_key 表已有 {} 条数据，跳过初始化", count);
             return;

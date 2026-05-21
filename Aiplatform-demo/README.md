@@ -36,15 +36,15 @@
 
 ### 1.2 当前运行状态
 
-| 模块 | 状态 | 说明 |
-|------|------|------|
-| AI 对话平台 | ✅ 运行中 | 点数制，全模型映射至 DeepSeek |
-| 模型商店 | ⏸️ 搁置 | API Key 资源有限，暂不开放 |
-| AI 文档助手 | ✅ 运行中 | 上传文件与 AI 交互 |
-| 管理员后台 | ✅ 运行中 | 用户管理、统计、套餐管理 |
-| 订阅系统 | ✅ 运行中 | 新版 `/user/subscriptions/*` |
-| 会话与文件管理 | ✅ 运行中 | 会话列表预览、历史消息分页、文件详情查询 |
-| 旧订阅接口 | ⚠️ 已废弃 | 请迁移到新版接口 |
+| 模块      | 状态     | 说明                         |
+|---------|--------|----------------------------|
+| AI 对话平台 | ✅ 运行中  | 点数制，全模型映射至 DeepSeek        |
+| 模型商店    | ⏸️ 搁置  | API Key 资源有限，暂不开放          |
+| AI 文档助手 | ✅ 运行中  | 上传文件与 AI 交互                |
+| 管理员后台   | ✅ 运行中  | 用户管理、统计、套餐管理               |
+| 订阅系统    | ✅ 运行中  | 新版 `/user/subscriptions/*` |
+| 会话与文件管理 | ✅ 运行中  | 会话列表预览、历史消息分页、文件详情查询       |
+| 旧订阅接口   | ⚠️ 已废弃 | 请迁移到新版接口                   |
 
 ### 1.3 关键数字
 
@@ -325,32 +325,32 @@
 
 ### 5.1 表清单（24张）
 
-| 表名 | 说明 | 关键字段 |
-|------|------|----------|
-| `user` | 用户表 | id, username, password, balance, points, role, status |
-| `api_key` | API Key 表 | id, user_id, key_value(加密), name, rate_limit, status |
-| `platform_model_config` | 平台模型配置 | id, display_name, actual_model, fixed_points, access_level, status |
-| `chat_message` | 聊天消息（热） | id, conversation_id, user_id, role, content, model, tokens |
-| `chat_message_history` | 聊天消息（冷） | id, conversation_id, user_id, role, content, original_create_time, archive_time |
-| `conversation` | 会话表 | id, user_id, title, model, message_count |
-| `call_log` | 调用日志 | id, user_id, model, tokens_used, cost, status, response_time |
-| `billing_record` | 计费记录 | id, user_id, amount, type, description |
-| `points_bill` | 点数账单 | id, user_id, points_change, change_type, balance_before, balance_after, is_temporary |
-| `user_subscription` | 用户订阅 | id, user_id, package_code, start_time, expire_time, status |
-| `package_template` | 套餐模板 | id, package_code, package_name, points_granted, daily_points, price_monthly, price_quarterly, price_yearly, model_access_level |
-| `coupon` | 优惠券 | id, code, name, amount, total_count, used_count, expire_time |
-| `coupon_usage_record` | 优惠券使用记录 | id, coupon_id, user_id, use_time |
-| `system_notification` | 系统通知 | id, title, content, type, target_type, publish_time |
-| `user_notification` | 用户通知关联 | id, user_id, notification_id, is_read, read_time |
-| `admin_operation_log` | 管理员操作日志 | id, admin_id, operation, target_type, target_id, detail |
-| `daily_statistics` | 每日统计 | id, stat_date, new_users, active_users, total_calls, revenue |
-| `statistics_counter` | 统计计数器 | id, counter_type, counter_key, count, stat_date |
-| `platform_statistics` | 平台统计 | id, total_users, total_calls, total_revenue, last_update |
-| `marketplace_provider` | 模型商店供应商 | id, name, description, status |
-| `user_marketplace_key` | 用户商店 Key | id, user_id, provider_id, key_value, status |
-| `marketplace_usage_log` | 商店使用日志 | id, key_id, tokens_used, cost |
-| `conversation_version` | 会话版本 | id, conversation_id, version, content_hash |
-| `user_points_daily` | 每日点数记录 | id, user_id, date, points_granted, points_used |
+| 表名                      | 说明        | 关键字段                                                                                                                           |
+|-------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------------|
+| `user`                  | 用户表       | id, username, password, balance, points, role, status                                                                          |
+| `api_key`               | API Key 表 | id, user_id, key_value(加密), name, rate_limit, status                                                                           |
+| `platform_model_config` | 平台模型配置    | id, display_name, actual_model, fixed_points, access_level, status                                                             |
+| `chat_message`          | 聊天消息（热）   | id, conversation_id, user_id, role, content, model, tokens                                                                     |
+| `chat_message_history`  | 聊天消息（冷）   | id, conversation_id, user_id, role, content, original_create_time, archive_time                                                |
+| `conversation`          | 会话表       | id, user_id, title, model, message_count                                                                                       |
+| `call_log`              | 调用日志      | id, user_id, model, tokens_used, cost, status, response_time                                                                   |
+| `billing_record`        | 计费记录      | id, user_id, amount, type, description                                                                                         |
+| `points_bill`           | 点数账单      | id, user_id, points_change, change_type, balance_before, balance_after, is_temporary                                           |
+| `user_subscription`     | 用户订阅      | id, user_id, package_code, start_time, expire_time, status                                                                     |
+| `package_template`      | 套餐模板      | id, package_code, package_name, points_granted, daily_points, price_monthly, price_quarterly, price_yearly, model_access_level |
+| `coupon`                | 优惠券       | id, code, name, amount, total_count, used_count, expire_time                                                                   |
+| `coupon_usage_record`   | 优惠券使用记录   | id, coupon_id, user_id, use_time                                                                                               |
+| `system_notification`   | 系统通知      | id, title, content, type, target_type, publish_time                                                                            |
+| `user_notification`     | 用户通知关联    | id, user_id, notification_id, is_read, read_time                                                                               |
+| `admin_operation_log`   | 管理员操作日志   | id, admin_id, operation, target_type, target_id, detail                                                                        |
+| `daily_statistics`      | 每日统计      | id, stat_date, new_users, active_users, total_calls, revenue                                                                   |
+| `statistics_counter`    | 统计计数器     | id, counter_type, counter_key, count, stat_date                                                                                |
+| `platform_statistics`   | 平台统计      | id, total_users, total_calls, total_revenue, last_update                                                                       |
+| `marketplace_provider`  | 模型商店供应商   | id, name, description, status                                                                                                  |
+| `user_marketplace_key`  | 用户商店 Key  | id, user_id, provider_id, key_value, status                                                                                    |
+| `marketplace_usage_log` | 商店使用日志    | id, key_id, tokens_used, cost                                                                                                  |
+| `conversation_version`  | 会话版本      | id, conversation_id, version, content_hash                                                                                     |
+| `user_points_daily`     | 每日点数记录    | id, user_id, date, points_granted, points_used                                                                                 |
 
 ### 5.2 核心表关系
 
@@ -650,20 +650,20 @@ src/main/java/com/ai/gateway/
 
 ### 10.1 接口分类
 
-| 分组 | 路径前缀 | 接口数 | 认证 | 说明 |
-|------|---------|--------|------|------|
-| 用户认证 | `/api/auth/*` | **10** | 无/Token | 注册、登录、刷新Token、退出、OAuth |
-| 用户中心 | `/api/user/*` | **27** | X-User-Token | 余额、点数、充值、个人信息、2FA、设备管理、优惠券 |
-| 平台模型 | `/api/platform-model/*` | **1** | 无 | 获取可用模型列表 |
-| AI 对话 | `/api/chat/*` | **7** | X-User-Token | 流式/非流式对话、文件对话、文件生成、导出（支持md/txt/html/java/py等格式） |
-| 会话管理 | `/api/user/conversations/*` | **11** | X-User-Token | 同步、获取（懒加载）、版本、清除、游标分页（冷热数据分离）、**文件详情分页查询** |
-| AI 文档 | `/api/v1/ai-doc/*` | **2** | X-User-Token | 文档对话、结果导出 |
-| API Key | `/api/api-key/*` | **6** | X-User-Token | 生成、列表、启用/禁用、限流、删除 |
-| 订阅管理 | `/api/user/subscriptions/*` | **5** | X-User-Token | 套餐浏览、购买、当前订阅、历史、取消 |
-| 用户通知 | `/api/user/notifications/*` | **4** | X-User-Token | 未读数、通知列表、标记已读 |
-| 用户优惠券 | `/api/user/coupons/*` 等 | **4** | X-User-Token | 我的优惠券、使用记录、兑换 |
-| 管理员 | `/api/admin/*` | **45** | X-User-Token + ADMIN | 用户管理、统计、批量操作、日志、通知、套餐管理 |
-| 模型商店 | `/api/marketplace/*` | **2** | X-User-Token | ⏸️ 搁置中 |
+| 分组      | 路径前缀                        | 接口数    | 认证                   | 说明                                              |
+|---------|-----------------------------|--------|----------------------|-------------------------------------------------|
+| 用户认证    | `/api/auth/*`               | **10** | 无/Token              | 注册、登录、刷新Token、退出、OAuth                          |
+| 用户中心    | `/api/user/*`               | **27** | X-User-Token         | 余额、点数、充值、个人信息、2FA、设备管理、优惠券                      |
+| 平台模型    | `/api/platform-model/*`     | **1**  | 无                    | 获取可用模型列表                                        |
+| AI 对话   | `/api/chat/*`               | **7**  | X-User-Token         | 流式/非流式对话、文件对话、文件生成、导出（支持md/txt/html/java/py等格式） |
+| 会话管理    | `/api/user/conversations/*` | **11** | X-User-Token         | 同步、获取（懒加载）、版本、清除、游标分页（冷热数据分离）、**文件详情分页查询**      |
+| AI 文档   | `/api/v1/ai-doc/*`          | **2**  | X-User-Token         | 文档对话、结果导出                                       |
+| API Key | `/api/api-key/*`            | **6**  | X-User-Token         | 生成、列表、启用/禁用、限流、删除                               |
+| 订阅管理    | `/api/user/subscriptions/*` | **5**  | X-User-Token         | 套餐浏览、购买、当前订阅、历史、取消                              |
+| 用户通知    | `/api/user/notifications/*` | **4**  | X-User-Token         | 未读数、通知列表、标记已读                                   |
+| 用户优惠券   | `/api/user/coupons/*` 等     | **4**  | X-User-Token         | 我的优惠券、使用记录、兑换                                   |
+| 管理员     | `/api/admin/*`              | **45** | X-User-Token + ADMIN | 用户管理、统计、批量操作、日志、通知、套餐管理                         |
+| 模型商店    | `/api/marketplace/*`        | **2**  | X-User-Token         | ⏸️ 搁置中                                          |
 
 > **总计: 122 个接口** (用户端 77 个 + 管理员端 45 个)
 
@@ -759,12 +759,20 @@ curl -X POST http://localhost:8080/api/chat/completions \
 ### 11.4 Docker 部署
 
 ```bash
-# 使用 Docker Compose 一键启动
+# 在项目根目录执行（Dockerfile 已含编译步骤，无需本地 JDK/Maven）
 cd docker
-docker-compose up -d
+docker compose up -d --build
+
+# 如果 Docker Hub 被墙，先拉取镜像
+docker pull docker.m.daocloud.io/library/mysql:8.0 && docker tag docker.m.daocloud.io/library/mysql:8.0 mysql:8.0
+docker pull docker.m.daocloud.io/library/redis:7-alpine && docker tag docker.m.daocloud.io/library/redis:7-alpine redis:7-alpine
+docker compose up -d --build
 
 # 查看日志
-docker-compose logs -f app
+docker compose logs -f app
+
+# 停止
+docker compose down
 ```
 
 ---
@@ -923,12 +931,16 @@ A: 调用 `GET /api/user/points-bills?page=1&size=20` 可以查看点数账单�
 A: 旧版接口（`/api/user/subscription/*`）已标记 `@Deprecated`，仍然可用但建议迁移到新版接口（`/api/user/subscriptions/*`）。
 
 ### Q9: 如何查看会话关联的文件？
-A: 调用 `POST /api/user/conversations/files/page` 接口，传入 conversationId、page、size 参数，可分页查询会话关联的文件详情（包含文件名、类型、大小、解析状态、文本摘要等）。
+
+A: 调用 `POST /api/user/conversations/files/page` 接口，传入 conversationId、page、size
+参数，可分页查询会话关联的文件详情（包含文件名、类型、大小、解析状态、文本摘要等）。
 
 ### Q10: 会话列表中的 previewContent 是什么？
+
 A: previewContent 是会话最后一条消息的前50个字符，用于在会话列表中快速预览对话内容。
 
 ### Q11: 历史消息默认加载多少条？
+
 A: 默认加载最新15条消息，可通过 limit 参数自定义（最大50条）。上滑触顶时自动加载下一页。
 
 ---

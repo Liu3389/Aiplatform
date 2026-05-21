@@ -3,11 +3,12 @@
 ## 📋 现状分析
 
 ### 当前问题
+
 1. **接口混乱**：存在多个文件上传和对话接口，职责不清晰
-   - `/api/chat/with-file` - ChatController中的传统方式
-   - `/v1/ai-doc/upload` - AiDocController的两步流程
-   - `/v1/ai-doc/chat` - 非流式旧接口
-   - `/v1/ai-doc/chat/stream` - 流式新接口
+    - `/api/chat/with-file` - ChatController中的传统方式
+    - `/v1/ai-doc/upload` - AiDocController的两步流程
+    - `/v1/ai-doc/chat` - 非流式旧接口
+    - `/v1/ai-doc/chat/stream` - 流式新接口
 
 2. **缺少异步解析**：目前文件解析是同步的，大文件会阻塞请求
 
@@ -78,6 +79,7 @@ CREATE TABLE `file_parse_task` (
 **路径**: `POST /v1/file/upload`
 
 **请求**:
+
 ```http
 Content-Type: multipart/form-data
 X-User-Token: {token}
@@ -86,6 +88,7 @@ files: [File, File, ...]  // 最多8个文件
 ```
 
 **响应**:
+
 ```json
 {
   "code": 200,
@@ -108,6 +111,7 @@ files: [File, File, ...]  // 最多8个文件
 ```
 
 **逻辑**:
+
 1. 校验文件数量（≤8个）
 2. 逐个校验文件大小（≤10MB）和格式
 3. 上传到OSS，生成fileId
@@ -122,12 +126,14 @@ files: [File, File, ...]  // 最多8个文件
 **路径**: `GET /v1/file/parse-status/{fileId}`
 
 **请求**:
+
 ```http
 GET /v1/file/parse-status/abc123def456...
 X-User-Token: {token}
 ```
 
 **响应（解析中）**:
+
 ```json
 {
   "code": 200,
@@ -143,6 +149,7 @@ X-User-Token: {token}
 ```
 
 **响应（解析成功）**:
+
 ```json
 {
   "code": 200,
@@ -158,6 +165,7 @@ X-User-Token: {token}
 ```
 
 **响应（解析失败）**:
+
 ```json
 {
   "code": 200,
@@ -179,6 +187,7 @@ X-User-Token: {token}
 **路径**: `POST /v1/chat/stream-with-files`
 
 **请求**:
+
 ```http
 POST /v1/chat/stream-with-files
 Content-Type: application/json
@@ -215,6 +224,7 @@ data: {"finished": true, "inputTokens": 1523, "outputTokens": 456, "cost": 3.500
 ```
 
 **逻辑**:
+
 1. 根据fileIds查询已解析的文本内容
 2. 校验所有文件状态必须为SUCCESS
 3. 拼接prompt：`问题 + 文件1内容 + 文件2内容 + ...`
@@ -417,41 +427,46 @@ const sendQuestion = async () => {
 
 ## 📊 改造优势
 
-| 特性 | 改造前 | 改造后 |
-|------|--------|--------|
-| **文件上传** | 单文件，同步解析 | 批量（最多8个），异步解析 |
-| **用户体验** | 大文件等待时间长 | 立即返回fileId，后台解析 |
-| **状态管理** | 无明确状态 | PENDING→PARSING→SUCCESS/FAILED |
-| **可追溯性** | 无记录 | 数据库完整记录 |
-| **灵活性** | 解析和对话耦合 | 解耦，可单独取消/重试 |
-| **性能** | 阻塞主线程 | 异步线程池处理 |
+| 特性       | 改造前      | 改造后                            |
+|----------|----------|--------------------------------|
+| **文件上传** | 单文件，同步解析 | 批量（最多8个），异步解析                  |
+| **用户体验** | 大文件等待时间长 | 立即返回fileId，后台解析                |
+| **状态管理** | 无明确状态    | PENDING→PARSING→SUCCESS/FAILED |
+| **可追溯性** | 无记录      | 数据库完整记录                        |
+| **灵活性**  | 解析和对话耦合  | 解耦，可单独取消/重试                    |
+| **性能**   | 阻塞主线程    | 异步线程池处理                        |
 
 ---
 
 ## 🚀 实施步骤
 
 ### Phase 1: 数据库和基础服务（✅ 已完成）
+
 1. ✅ 创建`file_parse_task`表 - rebuild.sql已更新
 2. ✅ 实现`FileParseTaskMapper` - 已创建
 3. ✅ 配置异步线程池 - AsyncConfig已添加fileParseExecutor
 
 ### Phase 2: 核心服务层（✅ 已完成）
+
 1. ✅ 实现`FileParseService` - 已创建
 2. ✅ 实现文件解析逻辑（复用AiDocService的parseFileToText）
 3. ✅ 实现Redis缓存策略
 
 ### Phase 3: Controller接口（✅ 已完成）
+
 1. ✅ 实现`POST /v1/file/upload` - FileUploadController已创建
 2. ✅ 实现`GET /v1/file/parse-status/{fileId}`
 3. ✅ 实现`DELETE /v1/file/{fileId}`
 4. ✅ 实现`POST /chat/stream-with-files` - ChatController已添加
 
 ### Phase 4: 清理旧接口（⏳ 待完成）
+
 1. ⏳ 标记`/api/chat/with-file`为@Deprecated
 2. ⏳ 标记`/v1/ai-doc/upload`为@Deprecated
 3. ⏳ 保留`/v1/ai-doc/chat/stream`作为兼容接口
 
 ### Phase 5: 前端对接（⏳ 待完成）
+
 1. ⏳ 实现批量上传组件
 2. ⏳ 实现状态轮询逻辑
 3. ⏳ 集成流式对话
@@ -472,16 +487,16 @@ const sendQuestion = async () => {
    ```
 
 2. **文件清理策略**：
-   - 定时任务清理7天前的未使用文件
-   - OSS设置生命周期规则自动删除
+    - 定时任务清理7天前的未使用文件
+    - OSS设置生命周期规则自动删除
 
 3. **并发控制**：
-   - 单用户同时解析文件数限制（最多5个）
-   - 全局解析队列限流
+    - 单用户同时解析文件数限制（最多5个）
+    - 全局解析队列限流
 
 4. **错误重试**：
-   - 解析失败允许用户重新触发
-   - 最多重试3次
+    - 解析失败允许用户重新触发
+    - 最多重试3次
 
 ---
 

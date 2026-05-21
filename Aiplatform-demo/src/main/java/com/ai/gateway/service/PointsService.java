@@ -1,12 +1,12 @@
 package com.ai.gateway.service;
 
-import com.ai.gateway.entity.PointsBill;
 import com.ai.gateway.entity.PlatformModelConfig;
+import com.ai.gateway.entity.PointsBill;
 import com.ai.gateway.entity.User;
 import com.ai.gateway.mapper.PointsBillMapper;
 import com.ai.gateway.mapper.UserMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import lombok.RequiredArgsConstructor;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -15,7 +15,6 @@ import org.springframework.scripting.support.ResourceScriptSource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -209,8 +208,8 @@ public class PointsService {
             BigDecimal difference = preDeductAmount.subtract(actual);
 
             recordBill(userId, "SETTLE", actual.negate(), balanceAfter.subtract(difference), balanceAfter,
-           requestId, "对话结算: " + modelName + " (预扣:" + preDeductAmount + ", 实际:" + actual + ")",
-           modelName, null, null);
+                    requestId, "对话结算: " + modelName + " (预扣:" + preDeductAmount + ", 实际:" + actual + ")",
+                    modelName, null, null);
 
             updateUserPointsInDB(userId, balanceAfter);
 
@@ -293,8 +292,8 @@ public class PointsService {
                     String currentPointsStr = result.get(1).toString();
                     BigDecimal balanceAfter = new BigDecimal(currentPointsStr);
                     BigDecimal balanceBefore = balanceAfter.add(deductPoints);
-                    recordBill(userId, "DEDUCT", deductPoints.negate(), balanceBefore, balanceAfter, 
-           businessId, "对话消耗: " + modelName, modelName, null, null);
+                    recordBill(userId, "DEDUCT", deductPoints.negate(), balanceBefore, balanceAfter,
+                            businessId, "对话消耗: " + modelName, modelName, null, null);
                     
                     // 同步数据库
                     updateUserPointsInDB(userId, balanceAfter);
@@ -322,7 +321,7 @@ public class PointsService {
      * @return 新余额
      */
     @Transactional(rollbackFor = Exception.class)
-    public BigDecimal addPoints(Long userId, BigDecimal points, String changeType, 
+    public BigDecimal addPoints(Long userId, BigDecimal points, String changeType,
                                 String businessId, String description, LocalDateTime expireTime,
                                 Integer isTemporary) {
         BigDecimal addPoints = points.setScale(3, RoundingMode.HALF_DOWN);
@@ -330,9 +329,9 @@ public class PointsService {
         String key = USER_POINTS_PREFIX + userId;
         
         BigDecimal currentPoints = syncUserPointsFromDB(userId);
-        
-        recordBill(userId, changeType, addPoints, currentPoints, currentPoints.add(addPoints), 
-                   businessId, description, null, expireTime, isTemporary);
+
+        recordBill(userId, changeType, addPoints, currentPoints, currentPoints.add(addPoints),
+                businessId, description, null, expireTime, isTemporary);
         
         String currentStr = redisTemplate.opsForValue().get(key);
         BigDecimal current = currentStr != null ? new BigDecimal(currentStr) : BigDecimal.ZERO;
@@ -396,7 +395,7 @@ public class PointsService {
     private void recordBill(Long userId, String changeType, BigDecimal pointsChange,
                            BigDecimal balanceBefore, BigDecimal balanceAfter,
                            String businessId, String description, String modelName,
-                           LocalDateTime expireTime, Integer isTemporary) {
+                            LocalDateTime expireTime, Integer isTemporary) {
         PointsBill bill = new PointsBill();
         bill.setUserId(userId);
         bill.setChangeType(changeType);
@@ -465,7 +464,7 @@ public class PointsService {
         
         BigDecimal newBalance = addPoints(userId, dailyFreePoints, "GRANT", 
                                           "daily_" + LocalDateTime.now().toLocalDate(),
-                                          description, expireTime, 1);
+                description, expireTime, 1);
         
         // 标记今日已发放（24小时过期）
         redisTemplate.opsForValue().set(grantKey, "1", 25, java.util.concurrent.TimeUnit.HOURS);
@@ -534,27 +533,29 @@ public class PointsService {
 
     /**
      * 增加限时点数（每日发放，当日有效）
-     * @param userId 用户ID
-     * @param points 点数
-     * @param changeType 变动类型：DAILY_GRANT-每日发放
+     *
+     * @param userId      用户ID
+     * @param points      点数
+     * @param changeType  变动类型：DAILY_GRANT-每日发放
      * @param description 描述
-     * @param expireTime 过期时间
+     * @param expireTime  过期时间
      */
     @Transactional(rollbackFor = Exception.class)
     public void addTemporaryPoints(Long userId, BigDecimal points, String changeType,
                                    String description, LocalDateTime expireTime) {
-        addPoints(userId, points, changeType, 
-                  "temp_" + System.currentTimeMillis(), 
-                  description, expireTime, 1);
+        addPoints(userId, points, changeType,
+                "temp_" + System.currentTimeMillis(),
+                description, expireTime, 1);
     }
 
     /**
      * 增加永久点数（套餐赠送、充值等）
-     * @param userId 用户ID
-     * @param points 点数
-     * @param changeType 变动类型：SUBSCRIPTION_GRANT-套餐赠送, RECHARGE-充值
+     *
+     * @param userId      用户ID
+     * @param points      点数
+     * @param changeType  变动类型：SUBSCRIPTION_GRANT-套餐赠送, RECHARGE-充值
      * @param description 描述
-     * @param businessId 业务ID
+     * @param businessId  业务ID
      */
     @Transactional(rollbackFor = Exception.class)
     public void addPermanentPoints(Long userId, BigDecimal points, String changeType,
@@ -564,42 +565,95 @@ public class PointsService {
 
     /**
      * 获取用户点数详情（限时/永久拆分）
+     *
      * @param userId 用户ID
      * @return 点数详情Map
      */
     public Map<String, Object> getUserPointsInfo(Long userId) {
         Map<String, Object> result = new HashMap<>();
-        
+
         BigDecimal totalPoints = getUserPoints(userId);
         result.put("totalPoints", totalPoints);
-        
+
         LocalDateTime now = LocalDateTime.now();
-        
+
         LambdaQueryWrapper<PointsBill> tempWrapper = new LambdaQueryWrapper<>();
         tempWrapper.eq(PointsBill::getUserId, userId)
-                   .eq(PointsBill::getIsTemporary, 1)
-                   .gt(PointsBill::getPointsChange, 0)
-                   .and(w -> w.isNull(PointsBill::getExpireTime).or().gt(PointsBill::getExpireTime, now));
-        
+                .eq(PointsBill::getIsTemporary, 1)
+                .gt(PointsBill::getPointsChange, 0)
+                .and(w -> w.isNull(PointsBill::getExpireTime).or().gt(PointsBill::getExpireTime, now));
+
         List<PointsBill> tempBills = pointsBillMapper.selectList(tempWrapper);
         BigDecimal temporaryPoints = tempBills.stream()
                 .map(PointsBill::getPointsChange)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         result.put("temporaryPoints", temporaryPoints);
-        
+
         BigDecimal permanentPoints = totalPoints.subtract(temporaryPoints);
         if (permanentPoints.compareTo(BigDecimal.ZERO) < 0) {
             permanentPoints = BigDecimal.ZERO;
         }
         result.put("permanentPoints", permanentPoints);
-        
+
         LocalDateTime earliestExpire = tempBills.stream()
                 .map(PointsBill::getExpireTime)
                 .filter(t -> t != null && t.isAfter(now))
                 .min(LocalDateTime::compareTo)
                 .orElse(null);
         result.put("temporaryExpireTime", earliestExpire);
-        
+
+        return result;
+    }
+
+    /**
+     * 获取用户点数消费汇总（今天/本月/总计）
+     *
+     * @param userId 用户ID
+     * @return 消费汇总Map
+     */
+    public Map<String, Object> getConsumptionSummary(Long userId) {
+        Map<String, Object> result = new HashMap<>();
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime todayStart = now.toLocalDate().atStartOfDay();
+        LocalDateTime monthStart = now.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0);
+
+        // 今日消费
+        LambdaQueryWrapper<PointsBill> todayWrapper = new LambdaQueryWrapper<>();
+        todayWrapper.eq(PointsBill::getUserId, userId)
+                .eq(PointsBill::getChangeType, "DEDUCT")
+                .ge(PointsBill::getCreateTime, todayStart);
+        List<PointsBill> todayBills = pointsBillMapper.selectList(todayWrapper);
+        BigDecimal todayConsumed = todayBills.stream()
+                .map(b -> b.getPointsChange().abs())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 本月消费
+        LambdaQueryWrapper<PointsBill> monthWrapper = new LambdaQueryWrapper<>();
+        monthWrapper.eq(PointsBill::getUserId, userId)
+                .eq(PointsBill::getChangeType, "DEDUCT")
+                .ge(PointsBill::getCreateTime, monthStart);
+        List<PointsBill> monthBills = pointsBillMapper.selectList(monthWrapper);
+        BigDecimal monthConsumed = monthBills.stream()
+                .map(b -> b.getPointsChange().abs())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 累计消费（所有Deduct记录）
+        LambdaQueryWrapper<PointsBill> totalWrapper = new LambdaQueryWrapper<>();
+        totalWrapper.eq(PointsBill::getUserId, userId)
+                .eq(PointsBill::getChangeType, "DEDUCT");
+        List<PointsBill> totalBills = pointsBillMapper.selectList(totalWrapper);
+        BigDecimal totalConsumed = totalBills.stream()
+                .map(b -> b.getPointsChange().abs())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 剩余点数
+        BigDecimal remainingPoints = getUserPoints(userId);
+
+        result.put("todayConsumed", todayConsumed.setScale(2, RoundingMode.HALF_UP));
+        result.put("monthConsumed", monthConsumed.setScale(2, RoundingMode.HALF_UP));
+        result.put("totalConsumed", totalConsumed.setScale(2, RoundingMode.HALF_UP));
+        result.put("remainingPoints", remainingPoints.setScale(2, RoundingMode.HALF_UP));
+
         return result;
     }
 }

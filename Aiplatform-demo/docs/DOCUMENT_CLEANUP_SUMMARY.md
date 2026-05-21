@@ -16,6 +16,7 @@
 ### 📚 保留的核心文档（6个）
 
 #### guides/ 目录（6个）
+
 1. ✅ **QUICK_START.md** - 快速启动指南（已更新，包含AI对话功能说明）
 2. ✅ **DEPLOYMENT.md** - 部署指南
 3. ✅ **CACHE_MANAGEMENT_GUIDE.md** - 缓存管理指南
@@ -24,9 +25,11 @@
 6. ✅ ~~STATISTICS_SYSTEM_GUIDE.md~~ - 统计系统指南（保留在database目录）
 
 #### api/ 目录（1个）
+
 7. ✅ **ADMIN_API_DOCUMENTATION.md** - 管理员API文档
 
 #### database/ 目录（2个）
+
 8. ✅ **DATABASE_SCRIPTS.md** - 数据库脚本说明（已更新为3个SQL文件）
 9. ✅ **STATISTICS_SYSTEM_GUIDE.md** - 统计系统指南
 
@@ -35,7 +38,9 @@
 ### 🔄 更新的文档
 
 #### 1. QUICK_START.md
+
 **更新内容**：
+
 - ✅ 添加自动化脚本初始化说明（init_full.sh等）
 - ✅ 更新AI对话接口示例（平台模式，使用X-User-Token）
 - ✅ 添加文件上传、导出功能示例
@@ -43,7 +48,9 @@
 - ✅ 简化数据库初始化步骤
 
 #### 2. DATABASE_SCRIPTS.md
+
 **更新内容**：
+
 - ✅ 简化为3个核心SQL文件说明（rebuild.sql, testdata_large.sql, clean.sql）
 - ✅ 删除旧脚本说明（init_data.sql, init_test_data.sql, migration_v3.1.sql）
 - ✅ 添加快速使用示例
@@ -54,12 +61,14 @@
 ### ✅ JSON文件检查
 
 #### API_TEST.postman_collection.json
+
 - ✅ 结构正确
 - ✅ 包含73个用户端API接口
 - ✅ 认证方式：X-User-Token
 - ✅ 包含完整的请求示例和响应说明
 
 #### ADMIN_API.postman_collection.json
+
 - ✅ 结构正确
 - ✅ 包含45个管理员API接口
 - ✅ 认证方式：X-User-Token

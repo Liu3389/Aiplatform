@@ -633,9 +633,14 @@ if [ -n "$USER_TOKEN" ]; then
         "X-User-Token|${USER_TOKEN}|Content-Type|application/json" \
         '{"conversationId":1,"limit":10}' "200"
     
+    # 修复 P1-3: 测试参数校验
     test_api "对话-游标分页(缺少conversationId)" "POST" "${BASE_URL}/user/conversations/messages/page" \
         "X-User-Token|${USER_TOKEN}|Content-Type|application/json" \
         '{"limit":10}' "200"
+    
+    test_api "对话-游标分页(limit超限)" "POST" "${BASE_URL}/user/conversations/messages/page" \
+        "X-User-Token|${USER_TOKEN}|Content-Type|application/json" \
+        '{"conversationId":1,"limit":100}' "200"
     
     test_api "对话-切换账号清除缓存" "POST" "${BASE_URL}/user/conversations/cache/clear" \
         "X-User-Token|${USER_TOKEN}" "" "" "200"

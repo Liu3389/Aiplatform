@@ -26,6 +26,7 @@
 **认证**: 需要 `X-User-Token`
 
 **请求**:
+
 ```http
 POST /v1/file/upload
 Content-Type: multipart/form-data
@@ -35,6 +36,7 @@ files: [File, File, ...]  // 最多8个文件
 ```
 
 **响应**:
+
 ```json
 {
   "code": 200,
@@ -64,6 +66,7 @@ files: [File, File, ...]  // 最多8个文件
 ```
 
 **错误响应**:
+
 ```json
 {
   "code": 400,
@@ -72,6 +75,7 @@ files: [File, File, ...]  // 最多8个文件
 ```
 
 **说明**:
+
 - 最多支持一次上传8个文件
 - 单个文件大小不超过10MB
 - 支持的文件格式：`.txt`, `.md`, `.java`, `.py`, `.cpp`, `.xlsx`, `.docx`, `.html`, `.css`, `.js`, `.xml`, `.json`
@@ -87,12 +91,14 @@ files: [File, File, ...]  // 最多8个文件
 **认证**: 需要 `X-User-Token`
 
 **请求**:
+
 ```http
 GET /v1/file/parse-status/abc123def456...
 X-User-Token: {user_token}
 ```
 
 **响应（解析中）**:
+
 ```json
 {
   "code": 200,
@@ -107,6 +113,7 @@ X-User-Token: {user_token}
 ```
 
 **响应（解析成功）**:
+
 ```json
 {
   "code": 200,
@@ -123,6 +130,7 @@ X-User-Token: {user_token}
 ```
 
 **响应（解析失败）**:
+
 ```json
 {
   "code": 200,
@@ -138,12 +146,14 @@ X-User-Token: {user_token}
 ```
 
 **状态说明**:
+
 - `PENDING`: 等待解析
 - `PARSING`: 解析中
 - `SUCCESS`: 解析成功
 - `FAILED`: 解析失败
 
 **前端轮询示例**:
+
 ```javascript
 const checkStatus = async (fileId) => {
   const res = await fetch(`/v1/file/parse-status/${fileId}`, {
@@ -170,12 +180,14 @@ const checkStatus = async (fileId) => {
 **认证**: 需要 `X-User-Token`
 
 **请求**:
+
 ```http
 DELETE /v1/file/abc123def456...
 X-User-Token: {user_token}
 ```
 
 **响应**:
+
 ```json
 {
   "code": 200,
@@ -184,6 +196,7 @@ X-User-Token: {user_token}
 ```
 
 **说明**:
+
 - 只能删除未使用的文件（未在对话中使用）
 - 如果文件已在对话中使用，会返回错误
 - 删除后会同时清理Redis缓存
@@ -197,6 +210,7 @@ X-User-Token: {user_token}
 **认证**: 需要 `X-User-Token`
 
 **请求**:
+
 ```http
 POST /chat/stream-with-files
 Content-Type: application/json
@@ -237,18 +251,20 @@ data: {"finished": true, "inputTokens": 1523, "outputTokens": 456, "cost": 3.500
 
 **SSE事件说明**:
 
-| 事件名 | 触发时机 | 数据格式 | 前端处理 |
-|--------|---------|----------|---------|
-| `status` | 阶段状态变化 | `{"stage": "...", "message": "..."}` | 显示进度提示 |
-| `message` | AI逐字输出 | `{"content": "单个字符或词"}` | 实时追加到显示区 |
-| `done` | 对话完成 | `{"finished": true, "inputTokens": x, "outputTokens": y, "cost": z}` | 显示统计信息，关闭连接 |
-| `error` | 发生错误 | `{"message": "错误描述"}` | 显示错误提示，关闭连接 |
+| 事件名       | 触发时机   | 数据格式                                                                 | 前端处理        |
+|-----------|--------|----------------------------------------------------------------------|-------------|
+| `status`  | 阶段状态变化 | `{"stage": "...", "message": "..."}`                                 | 显示进度提示      |
+| `message` | AI逐字输出 | `{"content": "单个字符或词"}`                                              | 实时追加到显示区    |
+| `done`    | 对话完成   | `{"finished": true, "inputTokens": x, "outputTokens": y, "cost": z}` | 显示统计信息，关闭连接 |
+| `error`   | 发生错误   | `{"message": "错误描述"}`                                                | 显示错误提示，关闭连接 |
 
 **Stage类型**:
+
 - `reading_files`: 正在读取文件内容
 - `processing`: 正在与AI对话
 
 **前端对接示例**:
+
 ```javascript
 const response = await fetch('/chat/stream-with-files', {
   method: 'POST',

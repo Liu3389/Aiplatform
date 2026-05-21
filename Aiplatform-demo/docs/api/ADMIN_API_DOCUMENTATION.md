@@ -928,9 +928,74 @@ curl -X GET "http://localhost:8080/api/admin/statistics/export?type=revenue&star
 
 ---
 
+### 37. 获取平台总营收统计 ⭐新增
+
+**接口**: `GET /admin/platform/revenue`
+
+**权限**: ADMIN/SUPER_ADMIN
+
+**说明**: 聚合 `platform_statistics` 和 `user_subscription` 双表数据，返回平台完整的营收统计。
+
+**响应示例**:
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "totalRevenue": 1250.50,
+    "todayRevenue": 0,
+    "monthRevenue": 850.00,
+    "totalRecharge": 850.00,
+    "packageSales": 23,
+    "activeSubscriptionCount": 5,
+    "totalSubscriptionCount": 8,
+    "subscriptionRevenue": 400.50,
+    "packageSalesBreakdown": [
+      {
+        "packageCode": "silver",
+        "packageName": "白银月卡会员",
+        "sales": 10,
+        "revenue": 150.00
+      },
+      {
+        "packageCode": "gold",
+        "packageName": "黄金进阶会员",
+        "sales": 8,
+        "revenue": 160.00
+      },
+      {
+        "packageCode": "diamond",
+        "packageName": "钻石旗舰会员",
+        "sales": 5,
+        "revenue": 90.50
+      }
+    ],
+    "statisticsDate": "2026-05-19"
+  }
+}
+```
+
+**字段说明**:
+
+| 字段                      | 来源                  | 说明                   |
+|-------------------------|---------------------|----------------------|
+| totalRevenue            | platform_statistics | 累计总营收金额（元）           |
+| todayRevenue            | platform_statistics | 今日营收金额               |
+| monthRevenue            | platform_statistics | 本月累计营收               |
+| totalRecharge           | platform_statistics | 累计充值金额               |
+| packageSales            | platform_statistics | 累计套餐销量               |
+| activeSubscriptionCount | user_subscription   | 当前活跃订阅数              |
+| totalSubscriptionCount  | user_subscription   | 累计订阅记录数              |
+| subscriptionRevenue     | user_subscription   | 订阅总收入（所有pricePaid之和） |
+| packageSalesBreakdown   | user_subscription   | 各套餐销量明细（代码/名称/销量/收入） |
+| statisticsDate          | platform_statistics | 统计数据日期               |
+
+---
+
 ## 🎫 优惠券与通知发送
 
-### 37. 发放优惠券
+### 38. 发放优惠券
 
 **接口**: `POST /admin/coupons/send`
 
@@ -959,7 +1024,7 @@ curl -X GET "http://localhost:8080/api/admin/statistics/export?type=revenue&star
 
 ---
 
-### 38. 发送系统通知
+### 39. 发送系统通知
 
 **接口**: `POST /admin/notifications/send`
 
@@ -985,7 +1050,7 @@ curl -X GET "http://localhost:8080/api/admin/statistics/export?type=revenue&star
 
 ## 💰 用户充值与优惠券使用
 
-### 39. 使用优惠券充值（用户接口）
+### 40. 使用优惠券充值（用户接口）
 
 **接口**: `POST /user/recharge-with-coupon`
 
@@ -1027,7 +1092,7 @@ curl -X GET "http://localhost:8080/api/admin/statistics/export?type=revenue&star
 
 ---
 
-### 40. 获取优惠券使用记录（用户接口）
+### 41. 获取优惠券使用记录（用户接口）
 
 **接口**: `GET /user/coupon-usage-records`
 
@@ -1100,6 +1165,7 @@ curl -X GET "http://localhost:8080/api/admin/statistics/export?type=revenue&star
    - GET `/admin/statistics/weekly` - 按周查询
    - GET `/admin/statistics/monthly` - 按月查询
    - GET `/admin/statistics/export` - 导出CSV报表
+   - **GET `/admin/platform/revenue` - 获取平台总营收统计**（⭐新增）
 
 7. **套餐管理**
    - GET `/admin/packages/list` - 获取套餐列表
@@ -1129,9 +1195,12 @@ curl -X GET "http://localhost:8080/api/admin/statistics/export?type=revenue&star
 
 ---
 
-**文档版本**: v3.0  
-**更新日期**: 2026-05-15  
-**更新内容**: 
+**文档版本**: v3.1  
+**更新日期**: 2026-05-19  
+**更新内容**:
+
+- ✅ 新增平台总营收统计接口 `/admin/platform/revenue`（聚合 platform_statistics + user_subscription 双表）
+- ✅ 新增接口编号 37，后续编号顺延
 - ✅ 新增套餐管理模块完整文档（6个接口）
 - ✅ 所有管理接口已 100% 使用 DTO + Validation
 - ✅ 修复统计服务逻辑，实现真实数据查询

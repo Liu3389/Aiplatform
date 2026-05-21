@@ -3,9 +3,10 @@ package com.ai.gateway.service;
 import com.ai.gateway.common.ResultCode;
 import com.ai.gateway.dto.UserLoginRequest;
 import com.ai.gateway.dto.UserRegisterRequest;
-import com.ai.gateway.entity.BillingRecord;
+import com.ai.gateway.entity.PlatformStatistics;
 import com.ai.gateway.entity.PointsBill;
 import com.ai.gateway.entity.User;
+import com.ai.gateway.entity.UserSubscription;
 import com.ai.gateway.exception.BusinessException;
 import com.ai.gateway.mapper.BillingRecordMapper;
 import com.ai.gateway.mapper.PointsBillMapper;
@@ -47,6 +48,7 @@ public class UserService {
     private final ConversationVersionService conversationVersionService;
     private final com.ai.gateway.mapper.ConversationMapper conversationMapper;
     private final com.ai.gateway.mapper.ChatMessageMapper chatMessageMapper;
+    private final com.ai.gateway.mapper.PlatformStatisticsMapper platformStatisticsMapper;
     private final com.ai.gateway.util.RedisScanUtil redisScanUtil;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private static final String BIND_CODE_PREFIX = "bind:code:";
@@ -182,11 +184,9 @@ public class UserService {
         userMapper.updateById(user);
 
         billingService.syncUserBalanceToRedis(userId, balanceAfter);
-        
-        // 注意：充值只增加余额（balance），不直接增加点数
-        // 用户需要使用余额购买套餐来获得点数和会员权益
-        // 套餐制度：越贵的套餐越划算（例如：100元=1500点，比10元=100点更优惠）
 
+        recordRevenue(amount);
+        
         log.info("用户充值成功: userId={}, amount={}, balanceBefore={}, balanceAfter={}",
                 userId, amount, balanceBefore, balanceAfter);
     }
@@ -242,9 +242,8 @@ public class UserService {
         userMapper.updateById(user);
 
         billingService.syncUserBalanceToRedis(userId, balanceAfter);
-        
-        // ⚠️ 注意：充值只增加余额（balance），不直接增加点数
-        // 用户需要使用余额购买套餐才能获得点数和会员权益
+
+        recordRevenue(actualAmount);
 
         result.put("success", true);
         result.put("amount", amount);
@@ -307,7 +306,23 @@ public class UserService {
     }
 
     public long countUsers() {
-        return userMapper.selectCount(null);
+        // 修复 P1-1: 使用缓存计数器替代全表COUNT(*)查询
+        try {
+            // 从缓存获取近似计数
+            String cacheKey = "user:count:approx";
+            String cached = redisTemplate.opsForValue().get(cacheKey);
+            if (cached != null) {
+                return Long.parseLong(cached);
+            }
+
+            // 缓存未命中，查询数据库并缓存
+            long count = userMapper.selectCount(null);
+            redisTemplate.opsForValue().set(cacheKey, String.valueOf(count), 30, TimeUnit.MINUTES);
+            return count;
+        } catch (Exception e) {
+            log.warn("获取用户总数失败，返回0", e);
+            return 0;
+        }
     }
 
     public long countActiveUsers() {
@@ -555,22 +570,23 @@ public class UserService {
         int safePage = Math.max(page, 1);
         
         Page<PointsBill> pageObj = new Page<>(safePage, safeSize);
+        // 修复：同时查询 RECHARGE 和 SUBSCRIPTION_GRANT 类型的记录
         LambdaQueryWrapper<PointsBill> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PointsBill::getUserId, userId)
-               .eq(PointsBill::getChangeType, "RECHARGE")
+                .in(PointsBill::getChangeType, Arrays.asList("RECHARGE", "SUBSCRIPTION_GRANT"))
                .orderByDesc(PointsBill::getCreateTime);
         
         Page<PointsBill> resultPage = pointsBillMapper.selectPage(pageObj, wrapper);
-        List<PointsBill> rechargeBills = resultPage.getRecords();
+        List<PointsBill> bills = resultPage.getRecords();
         
         List<Map<String, Object>> records = new ArrayList<>();
-        for (PointsBill bill : rechargeBills) {
+        for (PointsBill bill : bills) {
             Map<String, Object> record = new HashMap<>();
             record.put("id", bill.getId());
-            record.put("amount", bill.getPointsChange()); // 充值金额（点数）
+            record.put("points", bill.getPointsChange());
+            record.put("changeType", bill.getChangeType());
             record.put("balanceBefore", bill.getBalanceBefore());
             record.put("balanceAfter", bill.getBalanceAfter());
-            record.put("paymentMethod", "POINTS"); // 点数充值
             record.put("status", "COMPLETED");
             record.put("description", bill.getDescription());
             record.put("businessId", bill.getBusinessId());
@@ -580,6 +596,85 @@ public class UserService {
         
         log.info("查询充值记录: userId={}, page={}, size={}, count={}", userId, page, size, records.size());
         return records;
+    }
+
+    /**
+     * 获取用户完整的充值/购买历史记录（包含充值、订阅购买）
+     */
+    public Map<String, Object> getRechargeHistory(Long userId, int page, int size) {
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        int safePage = Math.max(page, 1);
+
+        // 1. 查询点数账单中的充值记录
+        Page<PointsBill> billPageObj = new Page<>(safePage, safeSize);
+        LambdaQueryWrapper<PointsBill> billWrapper = new LambdaQueryWrapper<>();
+        billWrapper.eq(PointsBill::getUserId, userId)
+                .in(PointsBill::getChangeType, Arrays.asList("RECHARGE", "SUBSCRIPTION_GRANT"))
+                .orderByDesc(PointsBill::getCreateTime);
+        Page<PointsBill> billPage = pointsBillMapper.selectPage(billPageObj, billWrapper);
+
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (PointsBill bill : billPage.getRecords()) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", bill.getId());
+            item.put("recordType", "POINTS_BILL");
+            item.put("changeType", bill.getChangeType());
+            item.put("points", bill.getPointsChange().abs());
+            item.put("description", bill.getDescription());
+            item.put("businessId", bill.getBusinessId());
+            item.put("createTime", bill.getCreateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+            items.add(item);
+        }
+
+        // 2. 查询订阅购买记录
+        LambdaQueryWrapper<UserSubscription> subWrapper = new LambdaQueryWrapper<>();
+        subWrapper.eq(UserSubscription::getUserId, userId)
+                .orderByDesc(UserSubscription::getCreateTime);
+        List<UserSubscription> subscriptions = userSubscriptionService.getSubscriptionHistory(userId);
+
+        for (UserSubscription sub : subscriptions) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", sub.getId());
+            item.put("recordType", "SUBSCRIPTION");
+            item.put("changeType", "PURCHASE");
+            item.put("amount", sub.getPricePaid());
+            item.put("packageName", sub.getPackageName());
+            item.put("identityLabel", sub.getIdentityLabel());
+            item.put("pointsGranted", sub.getPointsGranted());
+            item.put("orderId", sub.getOrderId());
+            item.put("startTime", sub.getStartTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+            item.put("expireTime", sub.getExpireTime() != null ? sub.getExpireTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
+            item.put("status", sub.getStatus());
+            item.put("createTime", sub.getCreateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+            items.add(item);
+        }
+
+        // 按时间排序
+        items.sort((a, b) -> {
+            String timeA = (String) a.get("createTime");
+            String timeB = (String) b.get("createTime");
+            return timeB.compareTo(timeA);
+        });
+
+        // 分页处理
+        int total = items.size();
+        int fromIndex = (safePage - 1) * safeSize;
+        int toIndex = Math.min(fromIndex + safeSize, total);
+        List<Map<String, Object>> pagedItems;
+        if (fromIndex >= total) {
+            pagedItems = new ArrayList<>();
+        } else {
+            pagedItems = items.subList(fromIndex, toIndex);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("records", pagedItems);
+        result.put("total", total);
+        result.put("page", safePage);
+        result.put("size", safeSize);
+
+        log.info("查询完整充值/购买历史: userId={}, page={}, size={}, total={}", userId, page, size, total);
+        return result;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -663,7 +758,7 @@ public class UserService {
         if (packageCode == null || packageCode.isEmpty()) {
             throw new BusinessException("请选择要购买的套餐");
         }
-        
+
         // 委托给 UserSubscriptionService 处理扣费和创建订阅（默认月度）
         userSubscriptionService.purchasePackage(userId, packageCode, "MONTHLY", null);
         
@@ -771,7 +866,7 @@ public class UserService {
     public List<Map<String, Object>> fetchConversations(Long userId) {
         String key = CONVERSATIONS_KEY + userId;
         String json = redisTemplate.opsForValue().get(key);
-        
+
         // Redis中没有数据，从数据库加载并缓存（懒加载机制）
         if (json == null || json.isEmpty()) {
             log.info("Redis缓存未命中，从数据库加载对话列表: userId={}", userId);
@@ -785,7 +880,7 @@ public class UserService {
             return loadConversationsFromDatabase(userId);
         }
     }
-    
+
     /**
      * 从数据库加载对话列表并写入Redis缓存
      */
@@ -793,32 +888,32 @@ public class UserService {
         try {
             // 1. 查询数据库
             java.util.List<com.ai.gateway.entity.Conversation> conversations = conversationMapper.selectList(
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.ai.gateway.entity.Conversation>()
-                    .eq(com.ai.gateway.entity.Conversation::getUserId, userId)
-                    .eq(com.ai.gateway.entity.Conversation::getIsDeleted, 0)
-                    .orderByDesc(com.ai.gateway.entity.Conversation::getLastMessageTime)
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.ai.gateway.entity.Conversation>()
+                            .eq(com.ai.gateway.entity.Conversation::getUserId, userId)
+                            .eq(com.ai.gateway.entity.Conversation::getIsDeleted, 0)
+                            .orderByDesc(com.ai.gateway.entity.Conversation::getLastMessageTime)
             );
-            
+
             if (conversations.isEmpty()) {
                 log.info("用户{}没有历史对话", userId);
                 return new ArrayList<>();
             }
-            
+
             // 2. 获取每个会话的最后一条消息作为预览
             Map<Long, String> previewMap = new HashMap<>();
             for (com.ai.gateway.entity.Conversation conv : conversations) {
                 try {
                     // 查询最后一条消息
-                    com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.ai.gateway.entity.ChatMessage> msgWrapper = 
-                        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+                    com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.ai.gateway.entity.ChatMessage> msgWrapper =
+                            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
                     msgWrapper.eq(com.ai.gateway.entity.ChatMessage::getConversationId, conv.getId())
-                              .eq(com.ai.gateway.entity.ChatMessage::getUserId, userId)
-                              .orderByDesc(com.ai.gateway.entity.ChatMessage::getId);
-                    
-                    com.baomidou.mybatisplus.extension.plugins.pagination.Page<com.ai.gateway.entity.ChatMessage> page = 
-                        new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 1);
+                            .eq(com.ai.gateway.entity.ChatMessage::getUserId, userId)
+                            .orderByDesc(com.ai.gateway.entity.ChatMessage::getId);
+
+                    com.baomidou.mybatisplus.extension.plugins.pagination.Page<com.ai.gateway.entity.ChatMessage> page =
+                            new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 1);
                     java.util.List<com.ai.gateway.entity.ChatMessage> lastMsgList = chatMessageMapper.selectList(page, msgWrapper);
-                    
+
                     if (!lastMsgList.isEmpty()) {
                         String content = lastMsgList.get(0).getContent();
                         // 截取前50个字符作为预览
@@ -829,34 +924,34 @@ public class UserService {
                     log.warn("获取会话预览失败: conversationId={}", conv.getId(), e);
                 }
             }
-            
+
             // 3. 转换为前端需要的格式
             List<Map<String, Object>> convList = conversations.stream()
-                .map(conv -> {
-                    Map<String, Object> map = new HashMap<>();
-                    map.put("id", String.valueOf(conv.getId()));
-                    map.put("title", conv.getTitle());
-                    map.put("model", conv.getModel());
-                    map.put("messageCount", conv.getMessageCount());
-                    map.put("lastMessageTime", conv.getLastMessageTime());
-                    map.put("createTime", conv.getCreateTime());
-                    map.put("previewContent", previewMap.getOrDefault(conv.getId(), "暂无消息"));
-                    return map;
-                })
-                .collect(Collectors.toList());
-            
+                    .map(conv -> {
+                        Map<String, Object> map = new HashMap<>();
+                        map.put("id", String.valueOf(conv.getId()));
+                        map.put("title", conv.getTitle());
+                        map.put("model", conv.getModel());
+                        map.put("messageCount", conv.getMessageCount());
+                        map.put("lastMessageTime", conv.getLastMessageTime());
+                        map.put("createTime", conv.getCreateTime());
+                        map.put("previewContent", previewMap.getOrDefault(conv.getId(), "暂无消息"));
+                        return map;
+                    })
+                    .collect(Collectors.toList());
+
             // 4. 写入Redis缓存（90天过期）
             String jsonData = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(convList);
             redisTemplate.opsForValue().set(CONVERSATIONS_KEY + userId, jsonData, 90, TimeUnit.DAYS);
-            
+
             // 5. 更新版本号
             long version = System.currentTimeMillis();
             redisTemplate.opsForValue().set(CONVERSATIONS_VERSION_KEY + userId, String.valueOf(version), 90, TimeUnit.DAYS);
-            
+
             log.info("✅ 从数据库加载对话列表成功: userId={}, count={}, version={}", userId, convList.size(), version);
-            
+
             return convList;
-            
+
         } catch (Exception e) {
             log.error("❌ 从数据库加载对话列表失败: userId={}", userId, e);
             return new ArrayList<>();
@@ -917,6 +1012,47 @@ public class UserService {
             }
         } catch (Exception e) {
             log.error("生成会话标题失败", e);
+        }
+    }
+
+    /**
+     * 记录充值营收到 platform_statistics 表
+     * 如果今天已有记录则更新，否则插入新记录
+     */
+    private void recordRevenue(BigDecimal amount) {
+        try {
+            java.time.LocalDate today = java.time.LocalDate.now();
+
+            LambdaQueryWrapper<PlatformStatistics> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(PlatformStatistics::getStatDate, today);
+            PlatformStatistics todayStats = platformStatisticsMapper.selectOne(wrapper);
+
+            if (todayStats != null) {
+                BigDecimal currentRevenue = todayStats.getTotalRevenue() != null ? todayStats.getTotalRevenue() : BigDecimal.ZERO;
+                BigDecimal currentRecharge = todayStats.getRechargeAmount() != null ? todayStats.getRechargeAmount() : BigDecimal.ZERO;
+                todayStats.setTotalRevenue(currentRevenue.add(amount));
+                todayStats.setRechargeAmount(currentRecharge.add(amount));
+                platformStatisticsMapper.updateById(todayStats);
+            } else {
+                PlatformStatistics newStats = new PlatformStatistics();
+                newStats.setStatDate(today);
+                newStats.setTotalRevenue(amount);
+                newStats.setRechargeAmount(amount);
+                newStats.setTotalUsers(0);
+                newStats.setNewUsers(0);
+                newStats.setActiveUsers(0);
+                newStats.setRetainedUsers(0);
+                newStats.setTotalCalls(0L);
+                newStats.setTotalTokens(0L);
+                newStats.setTotalPointsConsumed(BigDecimal.ZERO);
+                newStats.setPackageSales(0);
+                newStats.setAvgOrderValue(amount);
+                platformStatisticsMapper.insert(newStats);
+            }
+
+            log.info("营收记录已更新: date={}, amount={}", today, amount);
+        } catch (Exception e) {
+            log.error("记录营收数据失败: amount={}, error={}", amount, e.getMessage(), e);
         }
     }
 }

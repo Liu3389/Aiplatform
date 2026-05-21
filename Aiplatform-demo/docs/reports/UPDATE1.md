@@ -1,11 +1,13 @@
 # 后端重构更新说明 - 套餐与点数体系
 
 ## 📅 更新时间
+
 2026-05-17
 
 ## ✅ 已完成工作（全部完成）
 
 ### 1. 数据库结构调整 ✅
+
 - [x] `package_template` 表字段重构
 - [x] `platform_model_config` 表添加 `access_level` 字段
 - [x] `points_bill` 表添加 `is_temporary` 字段
@@ -14,12 +16,14 @@
 - [x] schema.sql / rebuild.sql / testdata_large.sql 全部同步
 
 ### 2. 实体类更新 ✅
+
 - [x] `PackageTemplate.java` 字段同步
 - [x] `PlatformModelConfig.java` 添加 accessLevel 字段
 - [x] `PointsBill.java` 添加 isTemporary 字段
 - [x] 标记废弃字段（@Deprecated）
 
 ### 3. 核心服务开发 ✅
+
 - [x] `PointsDistributionService` - 点数双发放服务（限时+永久）
 - [x] `StatisticsSchedulerConfig` - 每日点数发放 + 订阅过期检查
 - [x] `DailyPointsService` 已退役（保留手动发放功能）
@@ -27,11 +31,13 @@
 - [x] `OpenAiChatService` 集成模型权限校验 `validateModelAccess()`
 
 ### 4. 权限校验逻辑 ✅
+
 - [x] 模型权限校验集成到 OpenAiChatService（chat + streamChat）
 - [x] 对话前检查用户等级与模型等级
 - [x] 订阅过期自动降级
 
 ### 5. Controller接口开发 ✅
+
 - [x] `GET /platform-model/available` - 获取可用模型列表（含权限标记）
 - [x] `GET /user/points/info` - 获取用户点数详情（限时/永久拆分）
 - [x] `POST /user/subscriptions/purchase` - 购买套餐
@@ -39,21 +45,25 @@
 - [x] `GET /user/subscriptions/packages` - 获取套餐列表
 
 ### 6. 订阅管理 ✅
+
 - [x] `UserSubscriptionService` 已完成
 - [x] 订阅到期检测定时任务（每天00:10）
 - [x] 自动降级逻辑
 
 ### 7. VO对象创建 ✅
+
 - [x] `PackageVO` - 套餐展示对象
 - [x] `UserPointsInfoVO` - 用户点数信息
 - [x] `AvailableModelVO` - 可用模型对象
 
 ### 8. SQL脚本同步 ✅
+
 - [x] `schema.sql` - platform_model_config(access_level) + points_bill(is_temporary) + package_template(新字段)
 - [x] `rebuild.sql` - points_bill(is_temporary) + daily_points注释修正
 - [x] `testdata_large.sql` - 套餐和模型数据同步
 
 ### 9. 文档编写 ✅
+
 - [x] `docs/reports/UPDATE1.md` 前端对接文档（v2.0 更新）
 
 ---
@@ -61,6 +71,7 @@
 ## 🎯 重构概述
 
 根据《平台计费规则.md》全面重构套餐和点数体系，实现：
+
 1. ✅ 4级会员套餐（免费/白银/黄金/钻石）
 2. ✅ 多周期订阅（月/季/年）
 3. ✅ 每日点数双发放（30限时 + 套餐永久点数可叠加）
@@ -77,6 +88,7 @@
 ### package_template 表结构调整
 
 **新增字段**：
+
 - `points_granted` - 开通赠送点数（永久有效）
 - `daily_points` - 每日发放永久点数（付费会员可叠加，免费套餐为限时30点）
 - `price_monthly` - 月付价格
@@ -87,6 +99,7 @@
 - `model_access_level` - 模型访问等级（0-3）
 
 **删除字段**：
+
 - `points` - 替换为 points_granted + daily_points
 - `price` - 替换为三周期价格
 - `duration_days` - 由订阅时长决定
@@ -96,12 +109,12 @@
 
 **新套餐配置**：
 
-| 套餐代码 | 名称 | 开通赠送 | 每日点数 | 月付 | 季付 | 年付 | 输入Token | 输出Token | 模型等级 |
-|---------|------|---------|---------|------|------|------|----------|----------|---------|
-| free | 免费普通用户 | 0 | 30 | ¥0 | - | - | 6000 | 6000 | 0(基础) |
-| silver | 白银月卡会员 | 600 | 80 | ¥15 | ¥40 | ¥100 | 12000 | 12000 | 1(中端) |
-| gold | 黄金进阶会员 | 1800 | 150 | ¥30 | ¥80 | ¥200 | 18000 | 18000 | 2(高端) |
-| diamond | 钻石旗舰会员 | 5000 | 300 | ¥60 | ¥160 | ¥420 | 32000 | 32000 | 3(全部) |
+| 套餐代码    | 名称     | 开通赠送 | 每日点数 | 月付  | 季付   | 年付   | 输入Token | 输出Token | 模型等级  |
+|---------|--------|------|------|-----|------|------|---------|---------|-------|
+| free    | 免费普通用户 | 0    | 30   | ¥0  | -    | -    | 6000    | 6000    | 0(基础) |
+| silver  | 白银月卡会员 | 600  | 80   | ¥15 | ¥40  | ¥100 | 12000   | 12000   | 1(中端) |
+| gold    | 黄金进阶会员 | 1800 | 150  | ¥30 | ¥80  | ¥200 | 18000   | 18000   | 2(高端) |
+| diamond | 钻石旗舰会员 | 5000 | 300  | ¥60 | ¥160 | ¥420 | 32000   | 32000   | 3(全部) |
 
 ---
 
@@ -110,10 +123,12 @@
 ### 1. 定时任务 - 每日点数双发放
 
 **执行时间**：
+
 - 每天凌晨 00:00 - 每日点数双发放
 - 每天凌晨 00:10 - 订阅过期检查
 
 **逻辑**：
+
 ```java
 // StatisticsSchedulerConfig 统一管理定时任务
 @Scheduled(cron = "0 0 0 * * ?")
@@ -129,12 +144,14 @@ public void checkSubscriptionExpiry() {
 ```
 
 **点数发放规则（PointsDistributionService）**：
+
 - **免费用户**：发放30限时点数（当日有效）
 - **白银会员**：发放30限时点数 + 80永久点数（可叠加）
 - **黄金会员**：发放30限时点数 + 150永久点数（可叠加）
 - **钻石会员**：发放30限时点数 + 300永久点数（可叠加）
 
 **点数类型**：
+
 - **限时点数**：每日发放，当日23:59过期，is_temporary=1
 - **永久点数**：每日套餐发放 + 开通赠送 + 充值获得，永不过期，is_temporary=0
 
@@ -149,12 +166,14 @@ public void checkSubscriptionExpiry() {
 **校验时机**：每次对话请求（chat + streamChat）开始时
 
 **等级映射**：
+
 - 0 - 基础模型（DeepSeek-V4-Flash）
 - 1 - 中端模型（DeepSeek-V4-Pro）
 - 2 - 高端模型（GPT-4o, Claude-3）
 - 3 - 旗舰模型（所有模型）
 
 **校验逻辑**：
+
 ```java
 // 对话前校验
 if (userModelAccessLevel < modelRequiredLevel) {
@@ -167,10 +186,12 @@ if (userModelAccessLevel < modelRequiredLevel) {
 ### 3. Token限制检查
 
 **后台静默检查**（不告诉用户具体限制）：
+
 - 输入Token超限 → 提示"请求内容过长，请缩短输入"
 - 输出Token超限 → 自动调整max_tokens参数
 
 **不同套餐限制**：
+
 - 免费：输入6000 / 输出6000
 - 白银：输入12000 / 输出12000
 - 黄金：输入18000 / 输出18000
@@ -185,6 +206,7 @@ if (userModelAccessLevel < modelRequiredLevel) {
 **接口**：`GET /api/user/subscriptions/packages`
 
 **返回**：
+
 ```json
 {
   "code": 200,
@@ -215,6 +237,7 @@ if (userModelAccessLevel < modelRequiredLevel) {
 **接口**：`GET /api/user/points/info`
 
 **返回**：
+
 ```json
 {
   "code": 200,
@@ -240,6 +263,7 @@ if (userModelAccessLevel < modelRequiredLevel) {
 **接口**：`GET /api/platform-model/available`
 
 **返回**：
+
 ```json
 {
   "code": 200,
@@ -275,6 +299,7 @@ if (userModelAccessLevel < modelRequiredLevel) {
 **接口**：`POST /api/user/subscriptions/purchase`
 
 **请求**：
+
 ```json
 {
   "packageCode": "gold",
@@ -284,11 +309,13 @@ if (userModelAccessLevel < modelRequiredLevel) {
 ```
 
 **cycle枚举**：
+
 - `MONTHLY` - 按月
 - `QUARTERLY` - 按季
 - `YEARLY` - 按年
 
 **返回**：
+
 ```json
 {
   "code": 200,
@@ -312,6 +339,7 @@ if (userModelAccessLevel < modelRequiredLevel) {
 **接口**：`GET /api/user/points-bills?page=1&size=20`
 
 **返回**：
+
 ```json
 {
   "code": 200,
@@ -350,17 +378,17 @@ if (userModelAccessLevel < modelRequiredLevel) {
 ### 后端校验点
 
 1. **对话接口** (`/api/chat/completions`)
-   - 校验用户会员等级 >= 模型所需等级
-   - 校验输入Token <= 套餐限制
-   - 校验点数余额充足
+    - 校验用户会员等级 >= 模型所需等级
+    - 校验输入Token <= 套餐限制
+    - 校验点数余额充足
 
 2. **模型列表接口** (`GET /api/platform-model/available`)
-   - 标记每个模型的 accessible 状态
-   - 不可用模型返回 upgradeHint
+    - 标记每个模型的 accessible 状态
+    - 不可用模型返回 upgradeHint
 
 3. **点数发放接口**
-   - 仅定时任务可调用
-   - 防止重复发放
+    - 仅定时任务可调用
+    - 防止重复发放
 
 ---
 
@@ -369,6 +397,7 @@ if (userModelAccessLevel < modelRequiredLevel) {
 ### 1. 套餐展示
 
 **必须显示**：
+
 - 套餐名称和身份标识
 - 三种周期价格（月/季/年）
 - 开通赠送点数（永久）
@@ -377,6 +406,7 @@ if (userModelAccessLevel < modelRequiredLevel) {
 - 可用模型列表
 
 **优惠标签**：
+
 - 季付显示"省10%"
 - 年付显示"省30%"
 
@@ -385,6 +415,7 @@ if (userModelAccessLevel < modelRequiredLevel) {
 ### 2. 点数展示
 
 **分开显示**：
+
 ```
 总点数：1250
 ├─ 限时点数：30（今日有效）
@@ -400,6 +431,7 @@ if (userModelAccessLevel < modelRequiredLevel) {
 **可用模型**：正常显示，可选择
 
 **不可用模型**：
+
 - 灰显或加锁图标
 - 显示"升级至XX会员解锁"
 - 点击跳转套餐页面
@@ -409,16 +441,19 @@ if (userModelAccessLevel < modelRequiredLevel) {
 ### 4. 错误提示
 
 **点数不足**：
+
 ```
 "点数不足（当前：30），请充值或等待明日点数发放"
 ```
 
 **模型权限不足**：
+
 ```
 "当前会员等级无法使用该模型，请升级至黄金会员"
 ```
 
 **Token超限**：
+
 ```
 "请求内容过长，请缩短输入内容"
 ```
@@ -483,26 +518,26 @@ StatisticsSchedulerConfig.checkSubscriptionExpiry()
 ## 📌 注意事项
 
 1. **点数区分**：
-   - 限时点数：每日发放，当日有效
-   - 永久点数：开通赠送、充值获得
+    - 限时点数：每日发放，当日有效
+    - 永久点数：开通赠送、充值获得
 
 2. **消费顺序**：
-   - 优先消耗限时点数
-   - 再消耗永久点数
+    - 优先消耗限时点数
+    - 再消耗永久点数
 
 3. **权限校验**：
-   - 后端必须校验，不依赖前端
-   - 所有对话接口都要检查
+    - 后端必须校验，不依赖前端
+    - 所有对话接口都要检查
 
 4. **Token限制**：
-   - 后台静默检查
-   - 不告诉用户具体数值
-   - 超限时给出通用提示
+    - 后台静默检查
+    - 不告诉用户具体数值
+    - 超限时给出通用提示
 
 5. **模型权限**：
-   - 前端显示可用/不可用
-   - 后端双重校验
-   - 不可用模型返回升级提示
+    - 前端显示可用/不可用
+    - 后端双重校验
+    - 不可用模型返回升级提示
 
 ---
 
@@ -520,8 +555,9 @@ StatisticsSchedulerConfig.checkSubscriptionExpiry()
    ```
 
 3. **验认定时任务**：
-   - 查看日志确认每日点数发放任务已注册
-   - 手动触发测试：调用 `DailyPointsService.manualDistributePoints()` 或 `PointsDistributionService.distributeDailyPoints()`
+    - 查看日志确认每日点数发放任务已注册
+    - 手动触发测试：调用 `DailyPointsService.manualDistributePoints()` 或
+      `PointsDistributionService.distributeDailyPoints()`
 
 ---
 
@@ -534,6 +570,7 @@ StatisticsSchedulerConfig.checkSubscriptionExpiry()
 **Content-Type**：`multipart/form-data`
 
 **请求参数**：
+
 - `file` - 上传的文件（MultipartFile）
 - `question` - 用户问题（String）
 
@@ -573,12 +610,12 @@ eventSource.addEventListener('error', (event) => {
 
 **事件类型**：
 
-| 事件名 | 说明 | 数据格式 |
-|--------|------|----------|
-| `status` | 状态更新 | `{"stage": "parsing/parsed", "message": "..."}` |
-| `content` | AI回复内容 | `{"text": "AI回复的完整内容"}` |
-| `done` | 对话完成 | `{"message": "对话完成"}` |
-| `error` | 错误信息 | `{"message": "错误描述"}` |
+| 事件名       | 说明     | 数据格式                                            |
+|-----------|--------|-------------------------------------------------|
+| `status`  | 状态更新   | `{"stage": "parsing/parsed", "message": "..."}` |
+| `content` | AI回复内容 | `{"text": "AI回复的完整内容"}`                         |
+| `done`    | 对话完成   | `{"message": "对话完成"}`                           |
+| `error`   | 错误信息   | `{"message": "错误描述"}`                           |
 
 **前端处理逻辑**：
 
@@ -590,6 +627,7 @@ eventSource.addEventListener('error', (event) => {
 6. **收到 `error` 事件** → 显示错误提示，关闭连接
 
 **优势**：
+
 - ✅ 前端可以实时看到文件解析进度
 - ✅ 等后端解析完毕后再发送对话请求
 - ✅ 用户体验更好，不会长时间等待无响应

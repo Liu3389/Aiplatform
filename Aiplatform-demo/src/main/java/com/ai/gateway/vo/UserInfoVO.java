@@ -30,6 +30,16 @@ public class UserInfoVO {
 
     private String membership;
 
+    /**
+     * 会员过期时间
+     */
+    private LocalDateTime membershipExpireTime;
+
+    /**
+     * 点数余额（保留三位小数）
+     */
+    private BigDecimal points;
+
     private Integer userPoints;
 
     private LocalDateTime createTime;

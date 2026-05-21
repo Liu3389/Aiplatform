@@ -23,12 +23,10 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Service
@@ -127,7 +125,7 @@ public class OpenAiChatService {
             String content = rootNode.path("choices").get(0).path("message").path("content").asText();
             int inputTokens = rootNode.path("usage").path("prompt_tokens").asInt();
             int outputTokens = rootNode.path("usage").path("completion_tokens").asInt();
-            
+
             log.debug("非流式对话Token统计: userId={}, model={}, inputTokens={}, outputTokens={}, mode=actual",
                     userId, request.getModel(), inputTokens, outputTokens);
 
@@ -174,50 +172,61 @@ public class OpenAiChatService {
     public SseEmitter streamChat(Long userId, ChatRequest request) {
         // 生成内部 requestId 用于计费追踪
         String requestId = "req_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8);
+        return streamChatWithEmitter(userId, request, requestId, null);
+    }
+
+    /**
+     * 流式对话（支持传入自定义 SseEmitter）
+     * 用于文件对话等场景，可以复用同一个 emitter
+     */
+    public SseEmitter streamChatWithEmitter(Long userId, ChatRequest request, String requestId, SseEmitter customEmitter) {
         String apiKey = null; // 平台模式不再需要用户传入 API Key
         long startTime = System.currentTimeMillis();
-        // 增加超时时间到120秒，支持更长的对话
-        SseEmitter emitter = new SseEmitter(120000L);
+        // 使用自定义emitter或创建新的
+        SseEmitter emitter = customEmitter != null ? customEmitter : new SseEmitter(120000L);
         // 修复 P1-2: 使用原子标志位防止超时后异步线程继续执行
         java.util.concurrent.atomic.AtomicBoolean isCompleted = new java.util.concurrent.atomic.AtomicBoolean(false);
 
-        // 设置完成和错误回调，防止内存泄漏
-        emitter.onCompletion(() -> {
-            isCompleted.set(true);
-            log.info("SSE连接完成: userId={}, requestId={}", userId, requestId);
-        });
-        
-        emitter.onTimeout(() -> {
-            if (isCompleted.compareAndSet(false, true)) {
-                log.warn("SSE连接超时: userId={}, requestId={}", userId, requestId);
-                try {
-                    Map<String, Object> errData = new HashMap<>();
-                    errData.put("message", "对话响应超时，请稍后重试");
-                    emitter.send(SseEmitter.event().name("error").data(errData));
-                } catch (IOException e) {
-                    log.error("发送超时错误事件失败", e);
+        // 只有在使用新创建的emitter时才设置回调
+        if (customEmitter == null) {
+            // 设置完成和错误回调，防止内存泄漏
+            emitter.onCompletion(() -> {
+                isCompleted.set(true);
+                log.info("SSE连接完成: userId={}, requestId={}", userId, requestId);
+            });
+
+            emitter.onTimeout(() -> {
+                if (isCompleted.compareAndSet(false, true)) {
+                    log.warn("SSE连接超时: userId={}, requestId={}", userId, requestId);
+                    try {
+                        Map<String, Object> errData = new HashMap<>();
+                        errData.put("message", "对话响应超时，请稍后重试");
+                        emitter.send(SseEmitter.event().name("error").data(errData));
+                    } catch (IOException e) {
+                        log.error("发送超时错误事件失败", e);
+                    }
+                    if ("paid".equals(request.getMode())) {
+                        pointsService.rollbackPreDeduct(userId, requestId);
+                    }
                 }
-                if ("paid".equals(request.getMode())) {
-                    pointsService.rollbackPreDeduct(userId, requestId);
+            });
+
+            emitter.onError((ex) -> {
+                if (isCompleted.compareAndSet(false, true)) {
+                    log.error("SSE连接错误: userId={}, requestId={}", userId, requestId, ex);
+                    try {
+                        Map<String, Object> errData = new HashMap<>();
+                        errData.put("message", "对话连接发生异常");
+                        emitter.send(SseEmitter.event().name("error").data(errData));
+                    } catch (IOException e) {
+                        log.error("发送错误事件失败", e);
+                    }
+                    if ("paid".equals(request.getMode())) {
+                        pointsService.rollbackPreDeduct(userId, requestId);
+                    }
                 }
-            }
-        });
-        
-        emitter.onError((ex) -> {
-            if (isCompleted.compareAndSet(false, true)) {
-                log.error("SSE连接错误: userId={}, requestId={}", userId, requestId, ex);
-                try {
-                    Map<String, Object> errData = new HashMap<>();
-                    errData.put("message", "对话连接发生异常");
-                    emitter.send(SseEmitter.event().name("error").data(errData));
-                } catch (IOException e) {
-                    log.error("发送错误事件失败", e);
-                }
-                if ("paid".equals(request.getMode())) {
-                    pointsService.rollbackPreDeduct(userId, requestId);
-                }
-            }
-        });
+            });
+        }
 
         ChatConfig config = resolveChatConfig(request, userId);
 
@@ -230,7 +239,9 @@ public class OpenAiChatService {
                 errData.put("message", e.getMessage());
                 emitter.send(SseEmitter.event().name("error").data(errData));
                 emitter.complete();
-            } catch (IOException ignored) {}
+            } catch (IOException ioEx) {
+                log.debug("发送模型权限错误事件时IO异常: {}", ioEx.getMessage());
+            }
             return emitter;
         }
 
@@ -240,7 +251,9 @@ public class OpenAiChatService {
                 errData.put("message", "模型 " + request.getModel() + " 不支持图片输入");
                 emitter.send(SseEmitter.event().name("error").data(errData));
                 emitter.complete();
-            } catch (IOException ignored) {}
+            } catch (IOException ioEx) {
+                log.debug("发送图片支持错误事件时IO异常: {}", ioEx.getMessage());
+            }
             return emitter;
         }
 
@@ -253,7 +266,9 @@ public class OpenAiChatService {
                 errData.put("message", e.getMessage());
                 emitter.send(SseEmitter.event().name("error").data(errData));
                 emitter.complete();
-            } catch (IOException ignored) {}
+            } catch (IOException ioEx) {
+                log.debug("发送Token限制错误事件时IO异常: {}", ioEx.getMessage());
+            }
             return emitter;
         }
 
@@ -265,7 +280,9 @@ public class OpenAiChatService {
                     errData.put("message", "今日点数额度已用完（已用" + quota.get("usedCalls") + "/" + quota.get("maxCalls") + "次调用）。请充值点数或等待明日重置");
                     emitter.send(SseEmitter.event().name("error").data(errData));
                     emitter.complete();
-                } catch (IOException ignored) {}
+                } catch (IOException ioEx) {
+                    log.debug("发送免费额度错误事件时IO异常: {}", ioEx.getMessage());
+                }
                 return emitter;
             }
         } else if ("paid".equals(request.getMode())) {
@@ -278,7 +295,9 @@ public class OpenAiChatService {
                     errData.put("message", "点数不足（当前点数：" + currentPoints + "），请充值点数或使用每日赠送的点数");
                     emitter.send(SseEmitter.event().name("error").data(errData));
                     emitter.complete();
-                } catch (IOException ignored) {}
+                } catch (IOException ioEx) {
+                    log.debug("发送点数不足错误事件时IO异常: {}", ioEx.getMessage());
+                }
                 return emitter;
             }
         }
@@ -358,7 +377,7 @@ public class OpenAiChatService {
                 // 尝试从完整响应中提取真实的usage信息（如果存在）
                 String fullResponseText = fullContent.toString();
                 boolean useEstimatedTokens = false;
-                
+
                 // DeepSeek流式API通常在最后一条消息中包含usage，但可能被截断
                 // 这里我们直接使用估算值，因为：
                 // 1. 计费使用固定点数，与token无关
@@ -368,7 +387,7 @@ public class OpenAiChatService {
                         .map(ChatRequest.ChatMessage::getTextContent)
                         .reduce("", String::concat));
                 outputTokens = estimateTokens(fullResponseText);
-                
+
                 log.debug("流式对话Token统计: userId={}, inputTokens={}, outputTokens={}, mode=estimated",
                         userId, inputTokens, outputTokens);
 
@@ -391,10 +410,10 @@ public class OpenAiChatService {
 
                 // 使用objectMapper确保JSON格式严格一致
                 String doneJson = objectMapper.writeValueAsString(Map.of(
-                    "finished", true,
-                    "inputTokens", inputTokens,
-                    "outputTokens", outputTokens,
-                    "cost", cost
+                        "finished", true,
+                        "inputTokens", inputTokens,
+                        "outputTokens", outputTokens,
+                        "cost", cost
                 ));
                 emitter.send(SseEmitter.event().name("done").data(doneJson));
                 isCompleted.set(true); // 标记正常完成
@@ -410,7 +429,9 @@ public class OpenAiChatService {
                     errData.put("message", e.getMessage() != null ? e.getMessage() : "对话服务异常");
                     emitter.send(SseEmitter.event().name("error").data(errData));
                     if ("paid".equals(request.getMode())) pointsService.rollbackPreDeduct(userId, requestId);
-                } catch (IOException ignored) {}
+                } catch (IOException ioEx) {
+                    log.debug("发送错误事件时IO异常（可能客户端已断开）: {}", ioEx.getMessage());
+                }
                 emitter.completeWithError(e);
             } finally {
                 if (reader != null) {
@@ -565,8 +586,8 @@ public class OpenAiChatService {
 
     private boolean supportsVision(ChatConfig config) {
         return config.modelConfig != null
-            && config.modelConfig.getSupportsVision() != null
-            && config.modelConfig.getSupportsVision() == 1;
+                && config.modelConfig.getSupportsVision() != null
+                && config.modelConfig.getSupportsVision() == 1;
     }
 
     /**
@@ -577,10 +598,10 @@ public class OpenAiChatService {
         try {
             // 1. 获取用户当前套餐
             com.ai.gateway.entity.UserSubscription subscription = userSubscriptionService.getCurrentSubscription(userId);
-            
+
             int maxInputTokens = 0;  // 0表示无限制
             int maxOutputTokens = 0;
-            
+
             if (subscription != null) {
                 // 有套餐，使用套餐限制
                 com.ai.gateway.entity.PackageTemplate pkg = packageTemplateMapper.selectById(subscription.getPackageId());
@@ -593,29 +614,29 @@ public class OpenAiChatService {
                 maxInputTokens = 6000;
                 maxOutputTokens = 6000;
             }
-            
+
             // 2. 估算输入token数
             String promptText = request.getMessages().stream()
                     .map(ChatRequest.ChatMessage::getTextContent)
                     .reduce("", String::concat);
             int estimatedInputTokens = estimateTokens(promptText);
-            
+
             // 3. 检查输入token限制
             if (maxInputTokens > 0 && estimatedInputTokens > maxInputTokens) {
                 log.warn("输入Token超限: userId={}, estimated={}, limit={}", userId, estimatedInputTokens, maxInputTokens);
                 throw new BusinessException("请求内容过长，请缩短输入内容");
             }
-            
+
             // 4. 检查max_tokens参数（如果有设置）
             if (request.getMaxTokens() != null && maxOutputTokens > 0 && request.getMaxTokens() > maxOutputTokens) {
                 log.warn("输出Token限制超限: userId={}, requested={}, limit={}", userId, request.getMaxTokens(), maxOutputTokens);
                 // 自动调整max_tokens为限制值
                 request.setMaxTokens(maxOutputTokens);
             }
-            
-            log.debug("Token限制检查通过: userId={}, inputLimit={}, outputLimit={}", 
+
+            log.debug("Token限制检查通过: userId={}, inputLimit={}, outputLimit={}",
                     userId, maxInputTokens, maxOutputTokens);
-            
+
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
@@ -636,72 +657,72 @@ public class OpenAiChatService {
         // 否则创建新会话
         com.ai.gateway.entity.Conversation conversation = new com.ai.gateway.entity.Conversation();
         conversation.setUserId(userId);
-        
+
         // 使用第一条用户消息作为标题（截取前20个字符，避免emoji等多字节字符截断）
         String firstUserMessage = request.getMessages().stream()
                 .filter(msg -> "user".equals(msg.getRole()))
                 .findFirst()
                 .map(msg -> msg.getTextContent())
                 .orElse("新对话");
-        
+
         // 安全截取：按codepoint而不是char，避免多字节字符截断
         int titleLength = Math.min(firstUserMessage.length(), 20);
-        String title = firstUserMessage.length() > 20 
-            ? firstUserMessage.substring(0, firstUserMessage.offsetByCodePoints(0, titleLength)) + "..." 
-            : firstUserMessage;
-        
+        String title = firstUserMessage.length() > 20
+                ? firstUserMessage.substring(0, firstUserMessage.offsetByCodePoints(0, titleLength)) + "..."
+                : firstUserMessage;
+
         conversation.setTitle(title);
         conversation.setModel(request.getModel());
         conversation.setMessageCount(0);
         conversation.setLastMessageTime(java.time.LocalDateTime.now());
-        
+
         conversationMapper.insert(conversation);
-        
+
         log.info("创建新会话: userId={}, conversationId={}, title={}", userId, conversation.getId(), title);
-        
+
         return conversation.getId();
     }
 
     /**
      * 保存对话消息到数据库
      */
-    private void saveChatMessages(Long conversationId, Long userId, ChatRequest request, 
+    private void saveChatMessages(Long conversationId, Long userId, ChatRequest request,
                                   String aiResponse, String model, int totalTokens) {
         try {
             int messageCount = 0;
-            
+
             // 1. 保存用户消息（取最后一条用户消息）
             String userMessage = request.getMessages().stream()
                     .filter(msg -> "user".equals(msg.getRole()))
                     .reduce((first, second) -> second) // 取最后一条
                     .map(msg -> msg.getTextContent())
                     .orElse("");
-            
+
             if (!userMessage.isEmpty()) {
                 chatMessageService.saveMessage(
-                    conversationId, 
-                    userId, 
-                    "user", 
-                    userMessage, 
-                    model, 
-                    null // 用户消息不计算token
+                        conversationId,
+                        userId,
+                        "user",
+                        userMessage,
+                        model,
+                        null // 用户消息不计算token
                 );
                 messageCount++;
             }
-            
+
             // 2. 保存AI回复
             if (!aiResponse.isEmpty()) {
                 chatMessageService.saveMessage(
-                    conversationId, 
-                    userId, 
-                    "assistant", 
-                    aiResponse, 
-                    model, 
-                    totalTokens
+                        conversationId,
+                        userId,
+                        "assistant",
+                        aiResponse,
+                        model,
+                        totalTokens
                 );
                 messageCount++;
             }
-            
+
             // 3. 更新会话的消息计数和最后消息时间（使用原子更新避免并发问题）
             if (messageCount > 0) {
                 com.ai.gateway.entity.Conversation conversation = conversationMapper.selectById(conversationId);
@@ -711,10 +732,10 @@ public class OpenAiChatService {
                     conversationMapper.updateById(conversation);
                 }
             }
-            
-            log.info("保存对话消息成功: conversationId={}, userId={}, tokens={}, messageCount={}", 
+
+            log.info("保存对话消息成功: conversationId={}, userId={}, tokens={}, messageCount={}",
                     conversationId, userId, totalTokens, messageCount);
-            
+
         } catch (Exception e) {
             log.error("保存对话消息失败: conversationId={}, userId={}", conversationId, userId, e);
             // 不抛出异常，避免影响主流程
@@ -749,8 +770,8 @@ public class OpenAiChatService {
                 String levelNames[] = {"", "白银", "黄金", "钻石"};
                 String requiredName = requiredLevel <= 3 ? levelNames[requiredLevel] : "更高";
                 throw new BusinessException(
-                    "当前会员等级无法使用模型 " + modelConfig.getDisplayName() +
-                    "，请升级至" + requiredName + "会员。"
+                        "当前会员等级无法使用模型 " + modelConfig.getDisplayName() +
+                                "，请升级至" + requiredName + "会员。"
                 );
             }
         } catch (BusinessException e) {

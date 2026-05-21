@@ -3,14 +3,12 @@ package com.ai.gateway.controller;
 import com.ai.gateway.common.Result;
 import com.ai.gateway.entity.PackageTemplate;
 import com.ai.gateway.entity.UserSubscription;
-import com.ai.gateway.service.PointsService;
-import com.ai.gateway.service.TokenService;
-import com.ai.gateway.service.UserService;
-import com.ai.gateway.service.UserSubscriptionService;
+import com.ai.gateway.service.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -23,6 +21,7 @@ public class UserController {
     private final TokenService tokenService;
     private final PointsService pointsService;
     private final UserSubscriptionService userSubscriptionService;
+    private final PackageTemplateService packageTemplateService;
 
     @PostMapping("/recharge")
     public Result<Void> recharge(@RequestHeader("X-User-Token") String token, @RequestParam BigDecimal amount) {
@@ -265,6 +264,101 @@ public class UserController {
             pointsService.getPointsBillList(userId, page, size, changeType);
         
         return Result.success(billPage);
+    }
+
+    /**
+     * 获取点数消费汇总（今天/本月/总计）
+     */
+    @GetMapping("/points/consumption-summary")
+    public Result<Map<String, Object>> getPointsConsumptionSummary(
+            @RequestHeader("X-User-Token") String token) {
+        Long userId = tokenService.getUserIdFromToken(token);
+        if (userId == null) return Result.error(401, "Token无效或已过期");
+
+        Map<String, Object> summary = pointsService.getConsumptionSummary(userId);
+        return Result.success(summary);
+    }
+
+    /**
+     * 获取用户充值/购买历史（包含点数充值和订阅购买）
+     */
+    @GetMapping("/recharge-history")
+    public Result<Map<String, Object>> getRechargeHistory(
+            @RequestHeader("X-User-Token") String token,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Long userId = tokenService.getUserIdFromToken(token);
+        if (userId == null) return Result.error(401, "Token无效或已过期");
+
+        Map<String, Object> history = userService.getRechargeHistory(userId, page, size);
+        return Result.success(history);
+    }
+
+    /**
+     * 获取用户会员状态详情
+     */
+    @GetMapping("/membership/status")
+    public Result<Map<String, Object>> getMembershipStatus(
+            @RequestHeader("X-User-Token") String token) {
+        Long userId = tokenService.getUserIdFromToken(token);
+        if (userId == null) return Result.error(401, "Token无效或已过期");
+
+        Map<String, Object> result = new HashMap<>();
+
+        // 获取用户基本信息
+        com.ai.gateway.entity.User user = userService.getUserEntityById(userId);
+        String identityLabel = user.getMembership() != null ? user.getMembership() : "free";
+        String labelDisplay = "普通用户";
+
+        switch (identityLabel) {
+            case "silver":
+                labelDisplay = "白银会员";
+                break;
+            case "gold":
+                labelDisplay = "黄金会员";
+                break;
+            case "diamond":
+                labelDisplay = "钻石会员";
+                break;
+            default:
+                labelDisplay = "普通用户";
+                break;
+        }
+
+        result.put("identityLabel", identityLabel);
+        result.put("identityLabelDisplay", labelDisplay);
+        result.put("membershipExpireTime", user.getMembershipExpireTime());
+        result.put("balance", user.getBalance());
+        result.put("points", user.getPoints());
+
+        // 获取当前生效订阅
+        UserSubscription subscription = null;
+        try {
+            subscription = userSubscriptionService.getCurrentSubscription(userId);
+        } catch (Exception ignored) {
+        }
+
+        if (subscription != null) {
+            result.put("hasActiveSubscription", true);
+            result.put("subscription", Map.of(
+                    "id", subscription.getId(),
+                    "packageCode", subscription.getPackageCode(),
+                    "packageName", subscription.getPackageName(),
+                    "identityLabel", subscription.getIdentityLabel(),
+                    "startTime", subscription.getStartTime(),
+                    "expireTime", subscription.getExpireTime(),
+                    "pointsGranted", subscription.getPointsGranted(),
+                    "pricePaid", subscription.getPricePaid()
+            ));
+            // 从套餐模板获取每日点数
+            PackageTemplate pkg = packageTemplateService.getByCode(subscription.getPackageCode());
+            result.put("dailyPoints", pkg != null && pkg.getDailyPoints() != null ? pkg.getDailyPoints() : BigDecimal.ZERO);
+        } else {
+            result.put("hasActiveSubscription", false);
+            result.put("dailyPoints", new BigDecimal("30.000"));
+        }
+
+        return Result.success(result);
     }
 
     @PostMapping("/invoice/apply")

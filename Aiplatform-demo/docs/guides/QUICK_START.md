@@ -21,6 +21,7 @@ chmod +x scripts/database/*.sh
 ```
 
 **方式二：手动执行SQL**
+
 ```bash
 # 完全重建数据库
 mysql -h localhost -P 3307 -u root -p123456 ai_gateway < src/main/resources/sql/rebuild.sql
@@ -30,6 +31,7 @@ mysql -h localhost -P 3307 -u root -p123456 ai_gateway < src/main/resources/sql/
 ```
 
 **验证数据**
+
 ```bash
 mysql -h localhost -P 3307 -u root -p123456 ai_gateway -e "
 SELECT COUNT(*) as user_count FROM user;
@@ -38,10 +40,12 @@ SELECT COUNT(*) as model_count FROM platform_model_config;
 ```
 
 应该看到：
+
 - 用户数：53（rebuild.sql是3个，加testdata后是53个）
 - 模型数：10
 
 **默认管理员账号**
+
 - 用户名：superadmin
 - 密码：Test@123456
 

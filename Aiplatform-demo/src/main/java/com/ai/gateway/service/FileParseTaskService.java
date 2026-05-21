@@ -30,8 +30,8 @@ public class FileParseTaskService {
 
     /**
      * 分页查询会话关联的文件详情
-     * 
-     * @param userId 用户ID（用于权限校验）
+     *
+     * @param userId  用户ID（用于权限校验）
      * @param request 分页请求
      * @return 文件分页结果
      */
@@ -39,48 +39,48 @@ public class FileParseTaskService {
         Long conversationId = request.getConversationId();
         Integer page = request.getPage() != null ? request.getPage() : 1;
         Integer size = request.getSize() != null ? request.getSize() : 10;
-        
+
         // 限制最大每页大小
         if (size > 50) {
             size = 50;
         }
-        
-        log.info("查询会话文件: userId={}, conversationId={}, page={}, size={}", 
+
+        log.info("查询会话文件: userId={}, conversationId={}, page={}, size={}",
                 userId, conversationId, page, size);
-        
+
         // 1. 获取会话关联的所有fileId列表
         List<String> allFileIds = chatMessageService.getFileIdsByConversationId(conversationId);
-        
+
         if (allFileIds.isEmpty()) {
             log.info("会话没有关联文件: conversationId={}", conversationId);
             return createEmptyPageVO(page, size);
         }
-        
+
         // 2. 分页处理
         int total = allFileIds.size();
         int fromIndex = (page - 1) * size;
         int toIndex = Math.min(fromIndex + size, total);
-        
+
         if (fromIndex >= total) {
             log.warn("页码超出范围: page={}, total={}", page, total);
             return createEmptyPageVO(page, size);
         }
-        
+
         List<String> pageFileIds = allFileIds.subList(fromIndex, toIndex);
-        
+
         // 3. 批量查询文件详情
         LambdaQueryWrapper<FileParseTask> wrapper = new LambdaQueryWrapper<>();
         wrapper.in(FileParseTask::getFileId, pageFileIds)
-               .eq(FileParseTask::getUserId, userId)  // 权限校验
-               .orderByDesc(FileParseTask::getUploadTime);
-        
+                .eq(FileParseTask::getUserId, userId)  // 权限校验
+                .orderByDesc(FileParseTask::getUploadTime);
+
         List<FileParseTask> tasks = fileParseTaskMapper.selectList(wrapper);
-        
+
         // 4. 转换为VO
         List<FileDetailVO> fileDetails = tasks.stream()
                 .map(this::convertToVO)
                 .collect(Collectors.toList());
-        
+
         // 5. 构建分页响应
         ConversationFilePageVO vo = new ConversationFilePageVO();
         vo.setFiles(fileDetails);
@@ -89,10 +89,10 @@ public class FileParseTaskService {
         vo.setSize(size);
         vo.setTotalPages((int) Math.ceil((double) total / size));
         vo.setHasNext(toIndex < total);
-        
-        log.info("查询完成: total={}, pageCount={}, resultSize={}", 
+
+        log.info("查询完成: total={}, pageCount={}, resultSize={}",
                 total, vo.getTotalPages(), fileDetails.size());
-        
+
         return vo;
     }
 

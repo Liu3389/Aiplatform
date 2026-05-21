@@ -57,7 +57,7 @@ public interface CallLogMapper extends BaseMapper<CallLog> {
     /**
      * 按日期聚合调用数据
      */
-    @Select("<script>SELECT DATE(create_time) as date, COUNT(*) as calls, COALESCE(SUM(cost), 0) as cost " +
+    @Select("<script>SELECT DATE(create_time) as date, COUNT(*) as calls, COALESCE(SUM(cost), 0) as cost, COALESCE(SUM(input_tokens + output_tokens), 0) as tokens " +
             "FROM call_log WHERE create_time &gt;= #{startDate} AND create_time &lt; #{endDate} " +
             "GROUP BY DATE(create_time) ORDER BY date</script>")
     List<Map<String, Object>> aggregateByDate(@Param("startDate") LocalDateTime startDate, 

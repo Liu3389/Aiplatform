@@ -74,10 +74,11 @@ public class PlatformModelService {
         // 3. 查询数据库：优先匹配展示名称，其次匹配实际模型名
         LambdaQueryWrapper<PlatformModelConfig> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PlatformModelConfig::getStatus, 1)
-               .and(w -> w.eq(PlatformModelConfig::getDisplayName, modelId)
-                         .or()
-                         .eq(PlatformModelConfig::getActualModel, modelId))
-               .last("LIMIT 1");
+                .and(w -> w.eq(PlatformModelConfig::getDisplayName, modelId)
+                        .or()
+                        .eq(PlatformModelConfig::getActualModel, modelId))
+                .orderByDesc(PlatformModelConfig::getId)
+                .last("LIMIT 1");
         PlatformModelConfig config = platformModelConfigMapper.selectOne(wrapper);
 
         if (config != null) {
@@ -122,6 +123,7 @@ public class PlatformModelService {
 
     /**
      * 获取用户可用的模型列表（含权限信息）
+     *
      * @param userAccessLevel 用户模型访问等级（0-基础，1-中端，2-高端，3-全部）
      * @return 带权限标记的模型列表
      */

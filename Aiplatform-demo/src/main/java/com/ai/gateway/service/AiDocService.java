@@ -1,23 +1,19 @@
 package com.ai.gateway.service;
 
-import cn.hutool.http.HttpRequest;
-import cn.hutool.http.HttpResponse;
 import com.ai.gateway.dto.ChatRequest;
-import com.ai.gateway.service.OpenAiChatService;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
-import org.commonmark.parser.Parser;
-import org.commonmark.renderer.text.TextContentRenderer;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
@@ -31,13 +27,12 @@ import java.util.concurrent.TimeUnit;
 public class AiDocService {
 
     private final OssService ossService;
-    private final OpenAiChatService openAiChatService;
-    private final RedisTemplate<String, Object> redisTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
     // 解析内容缓存 key 前缀和 TTL（30分钟）
     private static final String PARSED_FILE_KEY_PREFIX = "ai-doc:parsed:";
     private static final long PARSED_FILE_TTL_MINUTES = 30;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final OpenAiChatService openAiChatService;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     // 支持的文件类型与大小限制 (10MB)
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -78,7 +73,10 @@ public class AiDocService {
         String suffix = fileName.substring(fileName.lastIndexOf(".")).toLowerCase();
         boolean isAllowed = false;
         for (String ext : ALLOWED_EXTENSIONS) {
-            if (ext.equals(suffix)) { isAllowed = true; break; }
+            if (ext.equals(suffix)) {
+                isAllowed = true;
+                break;
+            }
         }
         if (!isAllowed) throw new IllegalArgumentException("不支持的文件格式: " + suffix);
 
@@ -200,7 +198,7 @@ public class AiDocService {
     public String cacheParsedContent(Long userId, String fileName, String content) {
         String fileId = UUID.randomUUID().toString().replace("-", "");
         String key = PARSED_FILE_KEY_PREFIX + userId + ":" + fileId;
-        
+
         Map<String, Object> cacheData = new HashMap<>();
         cacheData.put("fileId", fileId);
         cacheData.put("userId", userId);
@@ -208,10 +206,10 @@ public class AiDocService {
         cacheData.put("content", content);
         cacheData.put("status", "parsed");
         cacheData.put("createdAt", System.currentTimeMillis());
-        
+
         redisTemplate.opsForValue().set(key, cacheData, PARSED_FILE_TTL_MINUTES, TimeUnit.MINUTES);
         log.info("文件解析内容已缓存: userId={}, fileId={}, fileName={}", userId, fileId, fileName);
-        
+
         return fileId;
     }
 
@@ -221,12 +219,12 @@ public class AiDocService {
     public String getParsedContent(Long userId, String fileId) {
         String key = PARSED_FILE_KEY_PREFIX + userId + ":" + fileId;
         Object cached = redisTemplate.opsForValue().get(key);
-        
+
         if (cached == null) {
             log.warn("文件内容不存在或已过期: userId={}, fileId={}", userId, fileId);
             return null;
         }
-        
+
         try {
             if (cached instanceof Map) {
                 return (String) ((Map<?, ?>) cached).get("content");
@@ -244,11 +242,11 @@ public class AiDocService {
     public Map<String, Object> getParseStatus(Long userId, String fileId) {
         String key = PARSED_FILE_KEY_PREFIX + userId + ":" + fileId;
         Object cached = redisTemplate.opsForValue().get(key);
-        
+
         if (cached == null) {
             return null;
         }
-        
+
         try {
             if (cached instanceof Map) {
                 Map<?, ?> data = (Map<?, ?>) cached;

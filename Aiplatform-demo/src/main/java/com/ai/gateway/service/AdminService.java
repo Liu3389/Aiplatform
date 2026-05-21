@@ -1,17 +1,17 @@
 package com.ai.gateway.service;
 
 import com.ai.gateway.entity.ApiKey;
-import com.ai.gateway.entity.CallLog;
+import com.ai.gateway.entity.PlatformStatistics;
 import com.ai.gateway.entity.User;
-import com.ai.gateway.mapper.ApiKeyMapper;
-import com.ai.gateway.mapper.CallLogMapper;
-import com.ai.gateway.mapper.UserMapper;
+import com.ai.gateway.entity.UserSubscription;
+import com.ai.gateway.mapper.*;
 import com.ai.gateway.util.DataMaskUtil;
 import com.ai.gateway.vo.SystemStatsVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +20,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -32,6 +33,9 @@ public class AdminService {
     private final CallLogMapper callLogMapper;
     private final UserMapper userMapper;
     private final PointsService pointsService;
+    private final StringRedisTemplate redisTemplate;
+    private final PlatformStatisticsMapper platformStatisticsMapper;
+    private final UserSubscriptionMapper userSubscriptionMapper;
 
     public SystemStatsVO getSystemStats() {
         SystemStatsVO stats = new SystemStatsVO();
@@ -39,7 +43,20 @@ public class AdminService {
         stats.setTotalUsers(userService.countUsers());
         stats.setActiveUsers(userService.countActiveUsers());
 
-        Long totalApiKeys = apiKeyMapper.selectCount(null);
+        Long totalApiKeys = 0L;
+        try {
+            // 修复 P1-1: 使用缓存计数器替代全表COUNT(*)查询
+            String cacheKey = "apikey:count:approx";
+            String cached = redisTemplate.opsForValue().get(cacheKey);
+            if (cached != null) {
+                totalApiKeys = Long.parseLong(cached);
+            } else {
+                totalApiKeys = apiKeyMapper.selectCount(null);
+                redisTemplate.opsForValue().set(cacheKey, String.valueOf(totalApiKeys), 30, TimeUnit.MINUTES);
+            }
+        } catch (Exception e) {
+            log.warn("获取API Key总数失败", e);
+        }
         stats.setTotalApiKeys(totalApiKeys);
 
         // 优化：使用批量查询而不是为每个用户单独查询
@@ -89,7 +106,21 @@ public class AdminService {
         stats.setUsers(userStats);
         
         // 从数据库聚合真实调用次数和消费金额
-        stats.setTotalCalls(callLogMapper.selectCount(null));
+        Long totalCalls = 0L;
+        try {
+            // 修复 P1-1: 使用缓存计数器替代全表COUNT(*)查询
+            String cacheKey = "calllog:count:approx";
+            String cached = redisTemplate.opsForValue().get(cacheKey);
+            if (cached != null) {
+                totalCalls = Long.parseLong(cached);
+            } else {
+                totalCalls = callLogMapper.selectCount(null);
+                redisTemplate.opsForValue().set(cacheKey, String.valueOf(totalCalls), 30, TimeUnit.MINUTES);
+            }
+        } catch (Exception e) {
+            log.warn("获取调用总数失败", e);
+        }
+        stats.setTotalCalls(totalCalls);
         stats.setTotalCost(callLogMapper.sumCost());
 
         LocalDate today = LocalDate.now();
@@ -147,9 +178,11 @@ public class AdminService {
             if (row != null) {
                 item.put("calls", ((Number) row.get("calls")).longValue());
                 item.put("cost", new BigDecimal(row.get("cost").toString()).setScale(2, BigDecimal.ROUND_HALF_UP));
+                item.put("tokens", ((Number) row.get("tokens")).longValue());
             } else {
                 item.put("calls", 0L);
                 item.put("cost", BigDecimal.ZERO);
+                item.put("tokens", 0L);
             }
             result.add(item);
         }
@@ -203,13 +236,17 @@ public class AdminService {
     public List<Map<String, Object>> getRevenueTrend(int months) {
         LocalDate today = LocalDate.now();
         LocalDate startDate = today.minusMonths(months - 1).withDayOfMonth(1);
-        List<Map<String, Object>> dbData = callLogMapper.aggregateRevenueByMonth(startDate.atStartOfDay());
-        
-        Map<String, Double> revenueMap = new LinkedHashMap<>();
-        for (Map<String, Object> row : dbData) {
-            String month = (String) row.get("month");
-            Double revenue = ((Number) row.get("revenue")).doubleValue();
-            revenueMap.put(month, revenue);
+
+        // 从 platform_statistics 聚合每月的真实营收数据
+        LambdaQueryWrapper<PlatformStatistics> wrapper = new LambdaQueryWrapper<>();
+        wrapper.ge(PlatformStatistics::getStatDate, startDate);
+        List<PlatformStatistics> statsList = platformStatisticsMapper.selectList(wrapper);
+
+        Map<String, BigDecimal> revenueMap = new LinkedHashMap<>();
+        for (PlatformStatistics stats : statsList) {
+            String month = stats.getStatDate().format(DateTimeFormatter.ofPattern("yyyy-MM"));
+            BigDecimal revenue = stats.getTotalRevenue() != null ? stats.getTotalRevenue() : BigDecimal.ZERO;
+            revenueMap.merge(month, revenue, BigDecimal::add);
         }
         
         List<Map<String, Object>> result = new ArrayList<>();
@@ -219,7 +256,7 @@ public class AdminService {
             
             Map<String, Object> item = new HashMap<>();
             item.put("month", monthKey);
-            item.put("revenue", revenueMap.getOrDefault(monthKey, 0.0));
+            item.put("revenue", revenueMap.getOrDefault(monthKey, BigDecimal.ZERO).setScale(2, BigDecimal.ROUND_HALF_UP));
             item.put("costs", 0.0);
             result.add(item);
         }
@@ -463,7 +500,7 @@ public class AdminService {
         for (int i = 0; i < userIds.size(); i++) {
             Long userId = userIds.get(i);
             String businessId = "admin_batch_" + baseTime + "_" + uuidSuffix + "_" + i + "_" + userId;
-            pointsService.addPoints(userId, points, "GRANT", businessId, 
+            pointsService.addPoints(userId, points, "GRANT", businessId,
                     "管理员批量发放点数", null, 0);
             successCount++;
         }
@@ -482,7 +519,7 @@ public class AdminService {
         String businessId = "admin_adjust_" + System.currentTimeMillis();
         
         // 修复 P1-9: 传入原始数值（含符号），确保账单记录与实际变动一致
-        pointsService.addPoints(userId, points, changeType, businessId, 
+        pointsService.addPoints(userId, points, changeType, businessId,
                 "管理员调整: " + reason, null, 0);
         
         log.info("调整用户点数: userId={}, 调整={}, 类型={}, 原因={}", userId, points, changeType, reason);
@@ -556,5 +593,107 @@ public class AdminService {
         log.info("批量开通会员: 总数={}, 成功={}, 等级={}, 天数={}", 
                 userIds.size(), rows, membership, days);
         return rows;
+    }
+
+    // ==================== 平台营收统计 ====================
+
+    /**
+     * 获取平台总营收统计数据
+     * 从 platform_statistics 和 user_subscription 表聚合数据
+     */
+    public Map<String, Object> getPlatformRevenue() {
+        Map<String, Object> result = new HashMap<>();
+        LocalDate today = LocalDate.now();
+        LocalDateTime startOfDay = today.atStartOfDay();
+        LocalDate firstDayOfMonth = today.withDayOfMonth(1);
+
+        // 1. 从 platform_statistics 聚合历史数据
+        LambdaQueryWrapper<PlatformStatistics> allStatsWrapper = new LambdaQueryWrapper<>();
+        List<PlatformStatistics> allStats = platformStatisticsMapper.selectList(allStatsWrapper);
+
+        BigDecimal totalRevenue = BigDecimal.ZERO;
+        BigDecimal totalRecharge = BigDecimal.ZERO;
+        int totalPackageSales = 0;
+
+        for (PlatformStatistics stats : allStats) {
+            if (stats.getTotalRevenue() != null) {
+                totalRevenue = totalRevenue.add(stats.getTotalRevenue());
+            }
+            if (stats.getRechargeAmount() != null) {
+                totalRecharge = totalRecharge.add(stats.getRechargeAmount());
+            }
+            if (stats.getPackageSales() != null) {
+                totalPackageSales += stats.getPackageSales();
+            }
+        }
+
+        // 2. 今日营收（从 platform_statistics 取今天的数据）
+        LambdaQueryWrapper<PlatformStatistics> todayWrapper = new LambdaQueryWrapper<>();
+        todayWrapper.eq(PlatformStatistics::getStatDate, today);
+        PlatformStatistics todayStats = platformStatisticsMapper.selectOne(todayWrapper);
+        BigDecimal todayRevenue = todayStats != null && todayStats.getTotalRevenue() != null ? todayStats.getTotalRevenue() : BigDecimal.ZERO;
+        BigDecimal todayRecharge = todayStats != null && todayStats.getRechargeAmount() != null ? todayStats.getRechargeAmount() : BigDecimal.ZERO;
+
+        // 3. 本月营收（聚合本月所有日期）
+        LambdaQueryWrapper<PlatformStatistics> monthWrapper = new LambdaQueryWrapper<>();
+        monthWrapper.ge(PlatformStatistics::getStatDate, firstDayOfMonth)
+                .le(PlatformStatistics::getStatDate, today);
+        List<PlatformStatistics> monthStats = platformStatisticsMapper.selectList(monthWrapper);
+        BigDecimal monthRevenue = BigDecimal.ZERO;
+        int monthPackageSales = 0;
+        for (PlatformStatistics stats : monthStats) {
+            if (stats.getTotalRevenue() != null) {
+                monthRevenue = monthRevenue.add(stats.getTotalRevenue());
+            }
+            if (stats.getPackageSales() != null) {
+                monthPackageSales += stats.getPackageSales();
+            }
+        }
+
+        // 4. 订阅销售统计（从 user_subscription 表）
+        LambdaQueryWrapper<UserSubscription> activeWrapper = new LambdaQueryWrapper<>();
+        activeWrapper.eq(UserSubscription::getStatus, "ACTIVE");
+        Long activeSubscriptionCount = userSubscriptionMapper.selectCount(activeWrapper);
+
+        LambdaQueryWrapper<UserSubscription> allSubsWrapper = new LambdaQueryWrapper<>();
+        allSubsWrapper.eq(UserSubscription::getStatus, "ACTIVE")
+                .or().eq(UserSubscription::getStatus, "EXPIRED")
+                .or().eq(UserSubscription::getStatus, "CANCELLED");
+        Long totalSubscriptionCount = userSubscriptionMapper.selectCount(allSubsWrapper);
+
+        // 按套餐统计销量
+        Map<String, Object> packageSalesMap = new HashMap<>();
+        for (String code : Arrays.asList("free", "silver", "gold", "diamond")) {
+            LambdaQueryWrapper<UserSubscription> pkgWrapper = new LambdaQueryWrapper<>();
+            pkgWrapper.eq(UserSubscription::getPackageCode, code);
+            long count = userSubscriptionMapper.selectCount(pkgWrapper);
+            packageSalesMap.put(code, count);
+        }
+
+        // 5. 从 user_subscription 汇总实际支付金额
+        LambdaQueryWrapper<UserSubscription> allPaidWrapper = new LambdaQueryWrapper<>();
+        List<UserSubscription> allSubscriptions = userSubscriptionMapper.selectList(allPaidWrapper);
+        BigDecimal subscriptionRevenue = BigDecimal.ZERO;
+        for (UserSubscription sub : allSubscriptions) {
+            if (sub.getPricePaid() != null) {
+                subscriptionRevenue = subscriptionRevenue.add(sub.getPricePaid());
+            }
+        }
+
+        result.put("totalRevenue", totalRevenue.setScale(2, java.math.RoundingMode.HALF_UP));
+        result.put("todayRevenue", todayRevenue.setScale(2, java.math.RoundingMode.HALF_UP));
+        result.put("monthRevenue", monthRevenue.setScale(2, java.math.RoundingMode.HALF_UP));
+        result.put("totalRechargeAmount", totalRecharge.setScale(2, java.math.RoundingMode.HALF_UP));
+        result.put("todayRechargeAmount", todayRecharge.setScale(2, java.math.RoundingMode.HALF_UP));
+        result.put("totalPackageSales", totalPackageSales);
+        result.put("monthPackageSales", monthPackageSales);
+        result.put("subscriptionRevenue", subscriptionRevenue.setScale(2, java.math.RoundingMode.HALF_UP));
+        result.put("activeSubscriptionCount", activeSubscriptionCount);
+        result.put("totalSubscriptionCount", totalSubscriptionCount);
+        result.put("packageSalesBreakdown", packageSalesMap);
+
+        log.info("查询平台营收统计: totalRevenue={}, todayRevenue={}, monthRevenue={}",
+                totalRevenue, todayRevenue, monthRevenue);
+        return result;
     }
 }

@@ -3,8 +3,10 @@
 <mapper namespace="com.ai.gateway.mapper.FileParseTaskMapper">
 
     <select id="selectByFileIdAndUserId" resultType="com.ai.gateway.entity.FileParseTask">
-        SELECT * FROM file_parse_task
-        WHERE file_id = #{fileId} AND user_id = #{userId}
+        SELECT *
+        FROM file_parse_task
+        WHERE file_id = #{fileId}
+          AND user_id = #{userId}
         LIMIT 1
     </select>
 

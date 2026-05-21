@@ -1,7 +1,6 @@
 package com.ai.gateway.controller;
 
 import com.ai.gateway.common.Result;
-import com.ai.gateway.dto.ChatRequest;
 import com.ai.gateway.service.AiDocService;
 import com.ai.gateway.service.OpenAiChatService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,14 +11,12 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -33,7 +30,7 @@ public class AiDocController {
 
     /**
      * 1. 独立上传文件并解析（两步流程：先上传解析，后对话）
-     * 
+     *
      * @deprecated 已废弃，请使用 /v1/file/upload 批量上传接口
      * @see com.ai.gateway.controller.FileUploadController#uploadFiles
      */
@@ -42,36 +39,36 @@ public class AiDocController {
     public Result<Map<String, Object>> uploadFile(
             @RequestParam("file") MultipartFile file,
             HttpServletRequest request) {
-        
+
         Long userId = (Long) request.getAttribute("userId");
         if (userId == null) throw new IllegalArgumentException("用户未登录");
-        
+
         try {
             String fileName = file.getOriginalFilename();
             long fileSize = file.getSize();
-            
+
             // MultipartFile 的 InputStream 只能读一次，先读取为字节数组
             byte[] fileBytes = file.getBytes();
-            
+
             // 上传并校验文件（从字节数组重新创建流）
             String ossUrl = aiDocService.uploadAndValidateBytes(file, fileName, fileBytes, userId);
-            
+
             // 解析文件内容为纯文本（从字节数组创建新流）
             try (InputStream is = new ByteArrayInputStream(fileBytes)) {
                 String content = aiDocService.parseFileToText(is, fileName);
-                
+
                 // 生成 fileId 并缓存解析结果
                 String fileId = aiDocService.cacheParsedContent(userId, fileName, content);
-                
+
                 // 返回 fileId 和文件信息
                 Map<String, Object> result = Map.of(
-                    "fileId", fileId,
-                    "fileName", fileName != null ? fileName : "unknown",
-                    "fileSize", fileSize,
-                    "status", "parsed",
-                    "ossUrl", ossUrl
+                        "fileId", fileId,
+                        "fileName", fileName != null ? fileName : "unknown",
+                        "fileSize", fileSize,
+                        "status", "parsed",
+                        "ossUrl", ossUrl
                 );
-                
+
                 return Result.success(result);
             }
         } catch (Exception e) {
@@ -81,7 +78,7 @@ public class AiDocController {
 
     /**
      * 2. 查询文件解析状态
-     * 
+     *
      * @deprecated 已废弃，请使用 /v1/file/parse-status/{fileId}
      */
     @Deprecated
@@ -89,10 +86,10 @@ public class AiDocController {
     public Result<Map<String, Object>> getParseStatus(
             @PathVariable String fileId,
             HttpServletRequest request) {
-        
+
         Long userId = (Long) request.getAttribute("userId");
         if (userId == null) throw new IllegalArgumentException("用户未登录");
-        
+
         try {
             Map<String, Object> status = aiDocService.getParseStatus(userId, fileId);
             if (status == null) {
@@ -106,7 +103,7 @@ public class AiDocController {
 
     /**
      * 2.5. 删除已缓存的解析文件（用户取消或清理）
-     * 
+     *
      * @deprecated 已废弃，请使用 DELETE /v1/file/{fileId}
      */
     @Deprecated
@@ -153,7 +150,7 @@ public class AiDocController {
 
     /**
      * 4. 上传文件并解析，与 AI 进行交互（非流式 - 旧接口保留兼容）
-     * 
+     *
      * @deprecated 已废弃，请使用新标准流程：先 /v1/file/upload 上传，再 /chat/stream-with-files 对话
      */
     @Deprecated
@@ -161,70 +158,8 @@ public class AiDocController {
     public Result<String> chatWithFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam("question") String question,
-            HttpServletRequest request) { 
-        Long userId = (Long) request.getAttribute("userId");
-        if (userId == null) throw new IllegalArgumentException("用户未登录");
-        
-        try {
-            byte[] fileBytes = file.getBytes();
-            String fileName = file.getOriginalFilename();
-            aiDocService.uploadAndValidateBytes(file, fileName, fileBytes, userId);
-            String content = aiDocService.parseFileToText(new ByteArrayInputStream(fileBytes), fileName);
-            String apiKey = (String) request.getAttribute("apiKey");
-            String requestId = (String) request.getAttribute("requestId");
-            String aiResponse = aiDocService.interactWithAi(question, content, userId, apiKey, requestId);
-            
-            return Result.success(aiResponse);
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
-    }
-
-    /**
-     * 5. 基于已解析文件进行流式 AI 对话（新两步流程）
-     * 
-     * @deprecated 已废弃，请使用 /chat/stream-with-files 接口
-     * @see com.ai.gateway.controller.ChatController#streamChatWithFiles
-     */
-    @Deprecated
-    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chatWithFileStream(
-            @RequestBody Map<String, String> request,
-            HttpServletRequest httpRequest) {
-        
-        Long userId = (Long) httpRequest.getAttribute("userId");
-        if (userId == null) throw new IllegalArgumentException("用户未登录");
-        
-        String fileId = request.get("fileId");
-        String question = request.get("question");
-        
-        if (fileId == null || fileId.isEmpty()) {
-            throw new IllegalArgumentException("fileId 不能为空");
-        }
-        if (question == null || question.isEmpty()) {
-            throw new IllegalArgumentException("question 不能为空");
-        }
-        
-        // 从缓存获取已解析的文件内容
-        String content = aiDocService.getParsedContent(userId, fileId);
-        if (content == null) {
-            throw new RuntimeException("文件内容不存在或已过期，请重新上传");
-        }
-        
-        // 构造 ChatRequest
-        String prompt = "你是一个智能文档助手。\n\n用户问题：" + question + "\n\n参考文档内容：\n" + content + "\n\n请根据文档内容回答用户问题。";
-        
-        ChatRequest chatRequest = new ChatRequest();
-        chatRequest.setModel("deepseek-v4-flash");
-        chatRequest.setMode("paid");  // 默认付费模式
-        
-        ChatRequest.ChatMessage msg = new ChatRequest.ChatMessage();
-        msg.setRole("user");
-        msg.setContent(prompt);
-        chatRequest.setMessages(List.of(msg));
-        
-        // 直接调用 OpenAiChatService 的流式方法
-        log.info("开始文件流式对话: userId={}, fileId={}", userId, fileId);
-        return openAiChatService.streamChat(userId, chatRequest);
+            HttpServletRequest request) {
+        // 修复 P3-5: 返回友好提示，引导用户使用新接口
+        return Result.error("该接口已废弃，请使用 /chat/stream-with-files 接口");
     }
 }

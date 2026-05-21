@@ -103,7 +103,7 @@ public class UserSubscriptionController {
         if (packageCode == null || packageCode.isEmpty()) {
             return Result.error(400, "套餐代码不能为空");
         }
-        
+
         // 获取订阅周期，默认为月度
         String cycle = (String) body.get("cycle");
         if (cycle == null || cycle.isEmpty()) {

@@ -3,18 +3,11 @@ package com.ai.gateway.controller;
 import com.ai.gateway.annotation.RequireAdmin;
 import com.ai.gateway.common.Result;
 import com.ai.gateway.dto.*;
-import com.ai.gateway.service.AdminOperationLogService;
-import com.ai.gateway.service.AdminService;
-import com.ai.gateway.service.DailyPointsService;
-import com.ai.gateway.service.NotificationService;
-import com.ai.gateway.service.SseConnectionManager;
-import com.ai.gateway.service.StatisticsService;
-import com.ai.gateway.service.TokenService;
-import com.ai.gateway.service.UserService;
-import com.ai.gateway.vo.SystemStatsVO;
-import com.ai.gateway.vo.DashboardStatsVO;
-import com.ai.gateway.vo.UserStatsVO;
+import com.ai.gateway.service.*;
 import com.ai.gateway.vo.ConversationStatsVO;
+import com.ai.gateway.vo.DashboardStatsVO;
+import com.ai.gateway.vo.SystemStatsVO;
+import com.ai.gateway.vo.UserStatsVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -831,7 +824,7 @@ public class AdminController {
     public Result<?> getUserGrowthStats(
             @RequestHeader("X-User-Token") String token,
             @RequestParam(defaultValue = "6") int months) {
-        
+
         java.util.List<java.util.Map<String, Object>> stats = adminService.getUserGrowth(months);
         return Result.success(stats);
     }
@@ -844,9 +837,26 @@ public class AdminController {
     public Result<?> getRevenueStats(
             @RequestHeader("X-User-Token") String token,
             @RequestParam(defaultValue = "6") int months) {
-        
+
         java.util.List<java.util.Map<String, Object>> stats = adminService.getRevenueTrend(months);
         return Result.success(stats);
+    }
+
+    /**
+     * 获取平台总营收统计数据
+     */
+    @RequireAdmin
+    @GetMapping("/platform/revenue")
+    public Result<Map<String, Object>> getPlatformRevenue(
+            @RequestHeader("X-User-Token") String token) {
+
+        Long userId = getUserIdFromToken(token);
+        if (userId == null) {
+            return Result.error(401, "Token无效");
+        }
+
+        Map<String, Object> revenue = adminService.getPlatformRevenue();
+        return Result.success(revenue);
     }
 
     /**
@@ -858,28 +868,28 @@ public class AdminController {
             @RequestHeader("X-User-Token") String token,
             @PathVariable Long userId,
             @RequestBody(required = false) java.util.Map<String, String> body) {
-        
+
         String reason = body != null ? body.get("reason") : "管理员操作";
-        
+
         // 获取用户当前状态
         com.ai.gateway.entity.User user = userService.getUserEntityById(userId);
         if (user == null) {
             return Result.error(404, "用户不存在");
         }
-        
+
         // 切换状态：1->0(封禁), 0->1(解封)
         int newStatus = user.getStatus() == 1 ? 0 : 1;
         String action = newStatus == 0 ? "BAN" : "UNBAN";
         String message = newStatus == 0 ? "用户已封禁" : "用户已解封";
-        
+
         // 使用 adminService 更新状态
         adminService.batchUpdateStatus(java.util.Arrays.asList(userId), newStatus);
-        
+
         Long adminId = getUserIdFromToken(token);
         String adminUsername = getUsernameFromToken(token);
-        operationLogService.logSuccess(adminId, adminUsername, "USER_MANAGE", 
+        operationLogService.logSuccess(adminId, adminUsername, "USER_MANAGE",
                 action, java.util.Arrays.asList(userId), java.util.Map.of("reason", reason != null ? reason : "N/A"));
-        
+
         return Result.success(message);
     }
 

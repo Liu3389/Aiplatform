@@ -18,7 +18,7 @@ import java.util.List;
 /**
  * 点数发放服务
  * 负责每日定时发放点数和套餐开通赠送点数
- *
+ * <p>
  * 发放规则：
  * - 免费用户：30限时点数（当日有效）
  * - 白银会员：30限时点数 + 80永久点数（可叠加）
@@ -55,8 +55,8 @@ public class PointsDistributionService {
 
         try {
             List<User> activeUsers = userMapper.selectList(
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<User>()
-                    .eq(User::getStatus, 1)
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<User>()
+                            .eq(User::getStatus, 1)
             );
 
             log.info("查询到活跃用户数: {}", activeUsers.size());
@@ -91,23 +91,25 @@ public class PointsDistributionService {
 
         // 1. 所有用户发放30限时点数
         pointsService.addTemporaryPoints(
-            userId,
-            FREE_TEMPORARY_POINTS,
-            "DAILY_GRANT",
-            "每日免费限时点数发放（当日有效）",
-            expireTime
+                userId,
+                FREE_TEMPORARY_POINTS,
+                "DAILY_GRANT",
+                "每日免费限时点数发放（当日有效）",
+                expireTime
         );
 
         // 2. 获取用户当前有效订阅
         UserSubscription subscription = userSubscriptionMapper.selectOne(
-            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<UserSubscription>()
-                .eq(UserSubscription::getUserId, userId)
-                .eq(UserSubscription::getStatus, "ACTIVE")
-                .orderByDesc(UserSubscription::getCreateTime)
-                .last("LIMIT 1")
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<UserSubscription>()
+                        .eq(UserSubscription::getUserId, userId)
+                        .eq(UserSubscription::getStatus, "ACTIVE")
+                        .orderByDesc(UserSubscription::getCreateTime)
+                        .last("LIMIT 1")
         );
 
-        if (subscription == null) {
+        // 检查订阅是否已过期
+        if (subscription == null || (subscription.getExpireTime() != null
+                && subscription.getExpireTime().isBefore(LocalDateTime.now()))) {
             log.debug("免费用户点数发放完成: userId={}", userId);
             return;
         }
@@ -125,11 +127,11 @@ public class PointsDistributionService {
         }
 
         pointsService.addPermanentPoints(
-            userId,
-            permanentPoints,
-            "DAILY_PERMANENT_GRANT",
-            "每日" + pkg.getPackageName() + "永久点数发放（可叠加）",
-            "daily_permanent_" + LocalDate.now() + "_" + userId
+                userId,
+                permanentPoints,
+                "DAILY_PERMANENT_GRANT",
+                "每日" + pkg.getPackageName() + "永久点数发放（可叠加）",
+                "daily_permanent_" + LocalDate.now() + "_" + userId
         );
 
         log.info("付费会员点数发放完成: userId={}, tempPoints={}, permanentPoints={}, package={}",
@@ -156,11 +158,11 @@ public class PointsDistributionService {
         }
 
         pointsService.addPermanentPoints(
-            userId,
-            pointsGranted,
-            "SUBSCRIPTION_GRANT",
-            "购买" + pkg.getPackageName() + "赠送点数（永久有效）",
-            orderId
+                userId,
+                pointsGranted,
+                "SUBSCRIPTION_GRANT",
+                "购买" + pkg.getPackageName() + "赠送点数（永久有效）",
+                orderId
         );
 
         log.info("套餐赠送点数发放成功: userId={}, points={}, package={}",

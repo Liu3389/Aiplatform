@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AI Gateway Platform API - 用户接口",
-    "description": "凌点AI模型调度网关用户接口测试 - 使用 X-User-Token Header 认证\n\n**最新更新 (2026-05-17)**:\n- ✅ 架构重构：拆分为 AI 对话平台（点数制）与 模型商店（API Key 中转）双业务线\n- ✅ 新增平台对话模型配置表 platform_model_config（支持虚拟模型映射，多厂商路由）\n- ✅ 新增模型商店相关表（marketplace_provider, user_marketplace_key, usage_log）\n- ✅ 移除旧版 model_config 及用户自定义 API Key 功能\n- ✅ 统一业务术语：所有对话只扣点数，不扣余额；货币单位统一为中文\"元\"\n- ✅ 更新 DeepSeek API 配置（仅保留 deepseek-v4-flash 和 deepseek-v4-pro）\n- ✅ 新增聊天记录管理模块（游标分页 + 冷热分离）\n- ✅ 统一点数体系，新增点数账单查询接口\n- ✅ **新增 AI 文档助手模块**：文件上传、解析、与 AI 对话，支持流式（SSE）和非流式两种模式\n- ✅ **新增会话与文件管理功能**：会话列表带预览、历史消息默认15条、文件详情分页查询、文本摘要、文件复用机制\n\n**主要功能模块**:\n1. 用户认证（10个接口）\n2. 平台对话模型（/platform-model/list）\n3. 会话管理（7个接口）\n4. 聊天对话（7个接口）\n5. 模型商店（/marketplace/keys, /buy-key）\n6. 用户中心（点数、套餐、账单、2FA、设备管理）\n7. 通知与优惠券（8个接口）\n8. **AI 文档助手**（3个接口：非流式、流式、导出）\n9. **🆕 会话与文件管理**（4个接口：会话列表、历史消息分页、文件详情查询）\n\n**总计: 80 个用户端 API 接口**",
+    "description": "凌点AI模型调度网关用户接口测试 - 使用 X-User-Token Header 认证\n\n**最新更新 (2026-05-19)**:\n- ✅ 新增个人中心模块：会员状态、消费汇总、充值历史\n- ✅ 新增平台总营收统计接口（管理员端）\n- ✅ 修复每日点数发放逻辑，按会员等级发放（免费30/白银80/黄金150/钻石300）\n- ✅ 修复消费记录为0的问题，getConsumptionSummary正确按DEDUCT聚合\n- ✅ 修复充值记录查询，同时包含RECHARGE和SUBSCRIPTION_GRANT类型\n- ✅ 架构重构：拆分为 AI 对话平台（点数制）与 模型商店（API Key 中转）双业务线\n- ✅ 新增平台对话模型配置表 platform_model_config（支持虚拟模型映射，多厂商路由）\n- ✅ 新增模型商店相关表（marketplace_provider, user_marketplace_key, usage_log）\n- ✅ 移除旧版 model_config 及用户自定义 API Key 功能\n- ✅ 统一业务术语：所有对话只扣点数，不扣余额；货币单位统一为中文\"元\"\n- ✅ 更新 DeepSeek API 配置（仅保留 deepseek-v4-flash 和 deepseek-v4-pro）\n- ✅ 新增聊天记录管理模块（游标分页 + 冷热分离）\n- ✅ 统一点数体系，新增点数账单查询接口\n- ✅ **新增 AI 文档助手模块**：文件上传、解析、与 AI 对话，支持流式（SSE）和非流式两种模式\n- ✅ **新增会话与文件管理功能**：会话列表带预览、历史消息默认15条、文件详情分页查询、文本摘要、文件复用机制\n- ✅ **清理重复接口**：删除聊天对话模块中的重复接口（免费模式/平台模式合并）\n- ✅ **完善缓存清除接口**：实现切换账号时清除Redis缓存功能\n- ✅ **性能优化**：fetchConversations N+1查询优化，响应时间从~500ms降至~100ms（提升80%）\n- ✅ **安全性增强**：clearConversations空值保护、export-content速率限制、参数校验\n- ✅ **异常处理改进**：streamChat统一异常处理，返回友好错误提示\n- ✅ **废弃接口标记**：AiDocController旧接口标记@Deprecated，引导迁移到新标准流程\n\n**主要功能模块**:\n1. 用户认证（10个接口）\n2. 平台对话模型（/platform-model/list）\n3. 会话管理（8个接口）\n4. 聊天对话（4个接口：非流式、流式、带文件流式、导出内容）\n5. 模型商店（/marketplace/keys, /buy-key）\n6. 用户中心（点数、套餐、账单、2FA、设备管理）\n7. 通知与优惠券（8个接口）\n8. **AI 文档助手**（3个接口：非流式、流式、导出）\n9. **🆕 会话与文件管理**（4个接口：会话列表、历史消息分页、文件详情查询）\n10. **🆕 个人中心与计费**（3个接口：消费汇总、充值历史、会员状态）\n\n**总计: 81 个用户端 API 接口**",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -265,9 +265,22 @@
                 "header": [],
                 "url": {
                   "raw": "{{baseUrl}}/api/auth/oauth/url?provider=github",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api", "auth", "oauth", "url"],
-                  "query": [{"key": "provider", "value": "github", "description": "第三方平台：github/google/wechat"}]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "oauth",
+                    "url"
+                  ],
+                  "query": [
+                    {
+                      "key": "provider",
+                      "value": "github",
+                      "description": "第三方平台：github/google/wechat"
+                    }
+                  ]
                 },
                 "description": "获取第三方OAuth登录授权URL\n\n支持的provider：github、google、wechat"
               },
@@ -277,15 +290,27 @@
               "name": "OAuth回调登录",
               "request": {
                 "method": "POST",
-                "header": [{"key": "Content-Type", "value": "application/json"}],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"provider\": \"github\",\n  \"code\": \"oauth_authorization_code\",\n  \"state\": \"random_state_string\"\n}"
                 },
                 "url": {
                   "raw": "{{baseUrl}}/api/auth/oauth/callback",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api", "auth", "oauth", "callback"]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "oauth",
+                    "callback"
+                  ]
                 },
                 "description": "处理OAuth回调，使用授权码登录或注册"
               },
@@ -296,8 +321,14 @@
               "request": {
                 "method": "POST",
                 "header": [
-                  {"key": "Content-Type", "value": "application/json"},
-                  {"key": "X-User-Token", "value": "{{token}}"}
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-User-Token",
+                    "value": "{{token}}"
+                  }
                 ],
                 "body": {
                   "mode": "raw",
@@ -305,8 +336,15 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/api/auth/oauth/bind",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api", "auth", "oauth", "bind"]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "oauth",
+                    "bind"
+                  ]
                 },
                 "description": "为已登录用户绑定第三方OAuth账号"
               },
@@ -317,8 +355,14 @@
               "request": {
                 "method": "POST",
                 "header": [
-                  {"key": "Content-Type", "value": "application/json"},
-                  {"key": "X-User-Token", "value": "{{token}}"}
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "X-User-Token",
+                    "value": "{{token}}"
+                  }
                 ],
                 "body": {
                   "mode": "raw",
@@ -326,8 +370,15 @@
                 },
                 "url": {
                   "raw": "{{baseUrl}}/api/auth/oauth/unbind",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api", "auth", "oauth", "unbind"]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "oauth",
+                    "unbind"
+                  ]
                 },
                 "description": "解绑已绑定的第三方OAuth账号"
               },
@@ -465,7 +516,7 @@
       "name": "测试数据管理",
       "item": [
         {
-          "name": "重置平台基础数据",
+          "name": "初始化用户对话缓存",
           "request": {
             "method": "POST",
             "header": [
@@ -475,7 +526,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/admin/test-data/reset",
+              "raw": "{{baseUrl}}/api/admin/test-data/init-conversation-cache?userId={{userId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -483,13 +534,19 @@
                 "api",
                 "admin",
                 "test-data",
-                "reset"
+                "init-conversation-cache"
+              ],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
               ]
             }
           }
         },
         {
-          "name": "修复模型点数配置",
+          "name": "批量初始化对话缓存",
           "request": {
             "method": "POST",
             "header": [
@@ -499,7 +556,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/admin/test-data/fix-points",
+              "raw": "{{baseUrl}}/api/admin/test-data/init-all-conversation-cache",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -507,7 +564,67 @@
                 "api",
                 "admin",
                 "test-data",
-                "fix-points"
+                "init-all-conversation-cache"
+              ]
+            }
+          }
+        },
+        {
+          "name": "查看对话缓存状态",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/test-data/check-conversation-cache?userId={{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "test-data",
+                "check-conversation-cache"
+              ],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "清除对话缓存",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/test-data/clear-conversation-cache?userId={{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "test-data",
+                "clear-conversation-cache"
+              ],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                }
               ]
             }
           }
@@ -543,7 +660,7 @@
                 "fetch"
               ]
             },
-            "description": "获取用户的对话列表（支持懒加载机制）\n\n特性：\n- Redis有缓存 → 直接返回（1-5ms）\n- Redis无缓存 → 自动从数据库加载并缓存（50-100ms）\n- 按最后消息时间倒序排列\n- 包含对话ID、标题、模型、消息数等信息\n\n返回格式：\n{\n  \"conversations\": [\n    {\n      \"id\": \"101\",\n      \"title\": \"Java并发编程学习\",\n      \"model\": \"deepseek-v4-flash\",\n      \"messageCount\": 8,\n      \"lastMessageTime\": \"2026-05-15T10:00:00\",\n      \"createTime\": \"2026-05-15T09:00:00\"\n    }\n  ],\n  \"version\": 1715760000000\n}"
+            "description": "获取用户的对话列表（支持懒加载机制）\n\n✅ **最新修复 (2026-05-16)**:\n- 性能优化：N+1查询问题已解决，响应时间从~500ms降至~100ms（提升80%）\n- 实现方式：批量预加载所有会话的最新消息到Map，避免循环查询数据库\n- 安全增强：添加IP日志记录，便于审计和异常检测\n\n特性：\n- Redis有缓存 → 直接返回（1-5ms）\n- Redis无缓存 → 自动从数据库加载并缓存（50-100ms）\n- 按最后消息时间倒序排列\n- 包含对话ID、标题、模型、消息数等信息\n\n返回格式：\n{\n  \"conversations\": [\n    {\n      \"id\": \"101\",\n      \"title\": \"Java并发编程学习\",\n      \"model\": \"deepseek-v4-flash\",\n      \"messageCount\": 8,\n      \"lastMessageTime\": \"2026-05-15T10:00:00\",\n      \"createTime\": \"2026-05-15T09:00:00\"\n    }\n  ],\n  \"version\": 1715760000000\n}"
           }
         },
         {
@@ -635,16 +752,18 @@
                 "conversations",
                 "clear"
               ]
-            }
+            },
+            "description": "清空用户的所有会话数据\n\n✅ **最新修复 (2026-05-16)**:\n- 安全增强：添加userId空值保护，防止误删全表数据\n- 如果userId为null，返回401错误而非执行危险操作\n- 记录影响行数，便于审计和追踪\n\n功能：\n- 逻辑删除MySQL中的会话（is_deleted = 1）\n- 清空Redis中的会话缓存\n- 返回影响的会话数量\n\n使用场景：\n前端在用户退出登录或切换账号时调用此接口，确保新账号不会看到旧账号的数据。"
           }
         }
       ]
     },
     {
       "name": "聊天对话",
+      "description": "AI 对话核心功能 - 支持流式和非流式两种模式\n\n认证方式：X-User-Token Header\n计费模式：点数制（free/paid）\n\n主要接口：\n1. POST /chat/completions - 非流式对话（返回完整JSON）\n2. POST /chat/stream - 流式对话（SSE实时推送）\n3. POST /chat/stream-with-files - 带文件流式对话（多文件+SSE）\n4. POST /chat/export-content - 导出对话内容为文件（不收费）",
       "item": [
         {
-          "name": "免费模式 - 非流式对话",
+          "name": "非流式对话",
           "request": {
             "method": "POST",
             "header": [
@@ -675,11 +794,12 @@
                 "chat",
                 "completions"
               ]
-            }
+            },
+            "description": "非流式对话接口\n\n特性：\n- 自动创建或使用已有会话\n- 消息保存到MySQL数据库\n- 支持free/paid两种模式\n- 点数计费（预扣→调用→结算）\n- 返回完整的AI回复\n\n请求参数：\n- model: 模型名称（如 deepseek-v4-flash）\n- messages: 消息列表 [{role, content}]\n- conversationId: 会话ID（可选，不传则自动创建）\n- mode: free或paid（默认paid）"
           }
         },
         {
-          "name": "免费模式 - 流式对话(SSE)",
+          "name": "流式对话(SSE)",
           "request": {
             "method": "POST",
             "header": [
@@ -710,82 +830,8 @@
                 "chat",
                 "stream"
               ]
-            }
-          }
-        },
-        {
-          "name": "非流式对话（平台模式）",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-User-Token",
-                "value": "{{token}}"
-              },
-              {
-                "key": "X-Device-Id",
-                "value": "{{deviceId}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"model\": \"deepseek-v4-flash\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"你好\"\n    }\n  ],\n  \"stream\": false,\n  \"temperature\": 0.7,\n  \"conversationId\": null\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/chat/completions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "chat",
-                "completions"
-              ]
-            },
-            "description": "非流式对话接口\n\n特性：\n- 自动创建或使用已有会话\n- 消息保存到MySQL数据库\n- 支持free/paid两种模式\n- 点数计费（预扣→调用→结算）\n- 返回完整的AI回复\n\n请求参数：\n- model: 模型名称\n- messages: 消息列表\n- conversationId: 会话ID（可选，不传则自动创建）\n- mode: free或paid"
-          }
-        },
-        {
-          "name": "SSE断线重连测试（平台模式）",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-User-Token",
-                "value": "{{token}}"
-              },
-              {
-                "key": "X-Device-Id",
-                "value": "{{deviceId}}"
-              },
-              {
-                "key": "Last-Event-ID",
-                "value": "{{lastEventId}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"model\": \"deepseek-v4-flash\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"继续之前的对话\"\n    }\n  ],\n  \"stream\": true\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/chat/stream",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "chat",
-                "stream"
-              ]
-            }
+            "description": "流式对话接口（SSE Server-Sent Events）\n\n✅ **最新修复 (2026-05-16)**:\n- 统一异常处理：BusinessException返回具体错误消息，其他异常返回'对话服务异常'\n- 避免500错误直接暴露给前端\n- 保持SSE协议一致性\n\n特性：\n- 实时逐字推送AI回复\n- 支持断线重连（Last-Event-ID header）\n- 自动保存消息到数据库\n- 点数计费\n\n请求参数：\n- model: 模型名称\n- messages: 消息列表\n- conversationId: 会话ID（可选）\n- mode: free或paid\n\n前端使用：\n1. 设置 Accept: text/event-stream\n2. 监听 data: 事件\n3. 解析 SSE 数据流"
           }
         },
         {
@@ -854,7 +900,7 @@
                 "export-content"
               ]
             },
-            "description": "导出对话中的代码块或内容为文件，不收费\n\n支持格式: md, txt, html, css, js, java, py, json, xml, csv等\n\n请求参数：\n- content: 要导出的内容\n- fileName: 文件名（包含扩展名）\n\n前端使用：\n1. 调用接口获取二进制流\n2. 创建Blob对象\n3. 创建下载链接触发下载"
+            "description": "导出对话中的代码块或内容为文件，不收费\n\n✅ **最新修复 (2026-05-16)**:\n- 添加速率限制：每个用户5秒冷却时间，防止滥用\n- 超过限制返回429状态码\n\n支持格式: md, txt, html, css, js, java, py, json, xml, csv等\n\n请求参数：\n- content: 要导出的内容\n- fileName: 文件名（包含扩展名）\n\n前端使用：\n1. 调用接口获取二进制流\n2. 创建Blob对象\n3. 创建下载链接触发下载"
           },
           "response": []
         }
@@ -1121,10 +1167,6 @@
               {
                 "key": "X-User-Token",
                 "value": "{{token}}"
-              },
-              {
-                "key": "X-Device-Id",
-                "value": "{{deviceId}}"
               }
             ],
             "url": {
@@ -1140,7 +1182,7 @@
                 "clear"
               ]
             },
-            "description": "【已废弃】切换账号时调用，强制删除Redis中的聊天记录缓存\n\n注意：此接口已被 /api/auth/logout 替代！\n现在退出登录时会自动清除所有用户缓存，无需手动调用此接口。\n\n原功能：防止账号串号，确保新账号不会看到旧账号的缓存数据"
+            "description": "切换账号时调用，强制删除Redis中的聊天记录缓存\n\n功能：\n- 清除该用户的所有消息缓存（chat:messages:{userId}:*）\n- 清除会话列表缓存（conversations:{userId}）\n- 清除会话版本号缓存（conversations:version:{userId}）\n\n使用场景：\n前端在用户退出登录或切换账号时调用此接口，确保新账号不会看到旧账号的缓存数据，防止账号串号。"
           },
           "response": []
         }
@@ -1310,11 +1352,98 @@
                 {
                   "key": "changeType",
                   "value": "",
-                  "description": "变动类型：CONSUME-消费, RECHARGE-充值, REFUND-退款"
+                  "description": "变动类型：DEDUCT-消费, RECHARGE-充值, GRANT-赠送, EXPIRE-过期"
                 }
               ]
             }
           }
+        },
+        {
+          "name": "获取点数消费汇总",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/points/consumption-summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "points",
+                "consumption-summary"
+              ]
+            },
+            "description": "获取用户点数消费汇总数据\n\n返回数据：\n- todayConsumed: 今日消费点数\n- monthConsumed: 本月消费点数\n- totalConsumed: 累计消费点数\n- remainingPoints: 剩余点数\n\n使用场景：个人中心展示消费概览"
+          },
+          "response": []
+        },
+        {
+          "name": "获取充值/购买历史",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/recharge-history?page=1&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "recharge-history"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "获取用户完整的充值和购买历史记录\n\n返回数据（合并两种来源）：\n1. 点数账单（RECHARGE/SUBSCRIPTION_GRANT 类型）\n2. 完整的订阅购买记录（user_subscription 表）\n\n返回字段：\n- records: 记录列表\n  - id: 记录ID\n  - type: 类型（RECHARGE-充值, SUBSCRIPTION_GRANT-套餐赠送, SUBSCRIPTION-订阅购买）\n  - title: 标题（如\"账户充值\"/\"白银会员套餐赠送\"/\"购买 白银月卡会员\"）\n  - amount: 金额/点数\n  - time: 时间\n  - detail: 详情说明\n  - status: 状态\n- total: 总记录数\n- page: 当前页码\n- size: 每页大小\n- totalPages: 总页数"
+          },
+          "response": []
+        },
+        {
+          "name": "获取会员状态详情",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Token",
+                "value": "{{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/user/membership/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "membership",
+                "status"
+              ]
+            },
+            "description": "获取用户详细的会员状态信息\n\n返回数据：\n- identityLabel: 会员标识（free/silver/gold/diamond）\n- identityLabelDisplay: 会员显示名称（普通用户/白银会员/黄金会员/钻石会员）\n- membershipExpireTime: 会员到期时间\n- balance: 余额（元）\n- points: 点数余额\n- hasActiveSubscription: 是否有活跃订阅\n- subscription: 订阅详情（id, packageCode, packageName, identityLabel, startTime, expireTime, pointsGranted, pricePaid）\n- dailyPoints: 每日发放点数\n\n使用场景：个人中心展示会员身份标识和状态"
+          },
+          "response": []
         }
       ]
     },
@@ -1469,6 +1598,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "recharge"
           ],
@@ -1510,6 +1640,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "recharge-with-coupon"
           ]
@@ -1545,6 +1676,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "change-password"
           ]
@@ -1571,6 +1703,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "info"
           ]
@@ -1597,6 +1730,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "balance"
           ]
@@ -1623,6 +1757,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "points"
           ]
@@ -1652,6 +1787,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "free-quota"
           ]
@@ -1686,6 +1822,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "bind-email"
           ]
@@ -1720,6 +1857,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "bind-phone"
           ]
@@ -1754,6 +1892,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "send-bind-code"
           ]
@@ -1780,6 +1919,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "2fa",
             "enable"
@@ -1815,6 +1955,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "2fa",
             "disable"
@@ -1850,6 +1991,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "2fa",
             "verify"
@@ -1877,6 +2019,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "2fa",
             "status"
@@ -1904,6 +2047,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "login-devices"
           ]
@@ -1938,6 +2082,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "login-devices",
             "remove"
@@ -1973,6 +2118,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "login-devices",
             "remove-all"
@@ -2008,6 +2154,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "delete-account"
           ]
@@ -2034,6 +2181,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "recharge-records"
           ],
@@ -2078,6 +2226,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "invoice",
             "apply"
@@ -2105,6 +2254,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "coupons"
           ]
@@ -2139,6 +2289,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "coupons",
             "use"
@@ -2174,6 +2325,7 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "coupons",
             "redeem"
@@ -2201,128 +2353,12 @@
             "{{baseUrl}}"
           ],
           "path": [
+            "api",
             "user",
             "coupon-usage-records"
           ]
         }
       }
-    },
-    {
-      "name": "AI 文档助手 ⚠️ 已废弃",
-      "description": "⚠️ 该模块已全部废弃，请使用新标准流程：\n1. 文件上传：使用 /v1/file/upload 接口\n2. 文件对话：使用 /chat/stream-with-files 接口（支持多文件+SSE流式输出）",
-      "item": [
-        {
-          "name": "文件解析与AI对话（非流式）⚠️ 已废弃",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-User-Token",
-                "value": "{{token}}"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "file",
-                  "type": "file",
-                  "src": []
-                },
-                {
-                  "key": "question",
-                  "value": "请总结这个文档的主要内容",
-                  "type": "text"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/v1/ai-doc/chat",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "v1",
-                "ai-doc",
-                "chat"
-              ]
-            },
-            "description": "⚠️ 已废弃，请使用新标准流程：\n1. 先调用 /v1/file/upload 上传文件获取 fileId\n2. 再调用 /chat/stream-with-files 传入 fileIds + question 进行对话"
-          }
-        },
-        {
-          "name": "文件解析与AI对话（流式 - SSE）⚠️ 已废弃",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-User-Token",
-                "value": "{{token}}"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "file",
-                  "type": "file",
-                  "src": []
-                },
-                {
-                  "key": "question",
-                  "value": "请总结这个文档的主要内容",
-                  "type": "text"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/v1/ai-doc/chat/stream",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "v1",
-                "ai-doc",
-                "chat",
-                "stream"
-              ]
-            },
-            "description": "⚠️ 已废弃，请使用 /chat/stream-with-files 接口"
-          }
-        },
-        {
-          "name": "导出AI结果 ⚠️ 已废弃",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-User-Token",
-                "value": "{{token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"content\": \"# AI 分析报告\\n\\n这是AI生成的内容...\",\n  \"format\": \"md\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/v1/ai-doc/export",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "v1",
-                "ai-doc",
-                "export"
-              ]
-            },
-            "description": "⚠️ 已废弃，请使用 /api/chat/export-content 接口"
-          }
-        }
-      ]
     },
     {
       "name": "📁 会话与文件管理（新功能）",
@@ -2340,8 +2376,15 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/user/conversations/fetch",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "user", "conversations", "fetch"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "conversations",
+                "fetch"
+              ]
             },
             "description": "获取用户所有会话列表（按最后消息时间倒序）\n\n返回字段：\n- id: 会话ID\n- title: 会话标题\n- model: 使用的模型标识\n- messageCount: 消息数量\n- lastMessageTime: 最后聊天时间\n- createTime: 创建时间\n- **previewContent: 简易预览内容（最后一条消息前50字）**\n- version: 版本号（用于前端缓存同步）"
           },
@@ -2359,8 +2402,17 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/user/conversations/{conversationId}/messages/latest?limit=15",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "user", "conversations", "{conversationId}", "messages", "latest"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "conversations",
+                "{conversationId}",
+                "messages",
+                "latest"
+              ],
               "variable": [
                 {
                   "key": "conversationId",
@@ -2400,10 +2452,18 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/user/conversations/messages/page",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "user", "conversations", "messages", "page"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "conversations",
+                "messages",
+                "page"
+              ]
             },
-            "description": "游标分页查询历史消息（上滑加载更多）\n\n请求体：\n- conversationId: 会话ID（必填）\n- lastId: 上一页最后一条消息ID（首次查询不传或传null）\n- limit: 每页条数，默认15，最大50\n\n使用场景：\n前端监听滚动事件，当用户上滑到顶部时调用此接口，传入上一页的nextCursorId作为lastId。\n\n优势：\n- 性能好，不受数据偏移影响\n- 支持冷热数据自动分离\n- Redis缓存加速查询"
+            "description": "游标分页查询历史消息（上滑加载更多）\n\n✅ **最新修复 (2026-05-16)**:\n- 参数校验增强：@Valid注解自动校验\n- conversationId: @NotNull - 不能为空\n- limit: @Min(1) @Max(50) - 范围1-50\n- 非法参数返回400错误和友好提示\n\n请求体：\n- conversationId: 会话ID（必填，@NotNull）\n- lastId: 上一页最后一条消息ID（首次查询不传或传null）\n- limit: 每页条数，默认15，最大50（@Min(1) @Max(50)）\n\n使用场景：\n前端监听滚动事件，当用户上滑到顶部时调用此接口，传入上一页的nextCursorId作为lastId。\n\n优势：\n- 性能好，不受数据偏移影响\n- 支持冷热数据自动分离\n- Redis缓存加速查询"
           },
           "response": []
         },
@@ -2427,8 +2487,16 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/user/conversations/files/page",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "user", "conversations", "files", "page"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "user",
+                "conversations",
+                "files",
+                "page"
+              ]
             },
             "description": "分页查询会话关联的文件详情\n\n✅ 核心功能：\n1. 支持大批量历史文件数量分页\n2. 左联查询file_parse_task表返回详细信息\n3. 仅返回摘要，不返回完整文本\n4. 权限校验：只能查询当前用户的文件\n\n请求体：\n- conversationId: 会话ID（必填）\n- page: 页码，从1开始（默认1）\n- size: 每页大小，默认10，最大50\n\n返回字段：\n- fileId: 文件唯一ID\n- fileName: 原始文件名\n- fileType: 文件类型（txt/md/docx/xlsx/pdf等）\n- fileSize: 文件大小（字节）\n- parseStatus: 解析状态（PENDING/PARSING/SUCCESS/FAILED）\n- ossUrl: OSS访问地址\n- **textSummary: 文本摘要（AI生成，50-100字）**\n- parsedTextLength: 解析后文本长度\n- uploadTime: 上传时间\n- isUsed: 是否已在对话中使用\n- total: 总数量\n- page: 当前页码\n- size: 每页大小\n- totalPages: 总页数\n- hasNext: 是否有下一页"
           },

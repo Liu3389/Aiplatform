@@ -22,6 +22,6 @@ public interface StatisticsCounterMapper extends BaseMapper<StatisticsCounter> {
     /**
      * 根据类型查询计数器
      */
-    @Select("SELECT * FROM statistics_counter WHERE counter_type = #{counterType}")
+    @Select("SELECT id, counter_type, counter_value, update_time FROM statistics_counter WHERE counter_type = #{counterType}")
     StatisticsCounter selectByType(@Param("counterType") String counterType);
 }

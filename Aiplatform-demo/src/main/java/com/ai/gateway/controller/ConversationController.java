@@ -4,26 +4,29 @@ import com.ai.gateway.common.Result;
 import com.ai.gateway.dto.ChatMessagePageRequest;
 import com.ai.gateway.dto.ConversationFilePageRequest;
 import com.ai.gateway.entity.ChatMessage;
+import com.ai.gateway.entity.Conversation;
 import com.ai.gateway.service.ChatMessageService;
 import com.ai.gateway.service.FileParseTaskService;
 import com.ai.gateway.service.TokenService;
 import com.ai.gateway.service.UserService;
+import com.ai.gateway.util.RedisScanUtil;
 import com.ai.gateway.vo.ChatMessagePageVO;
 import com.ai.gateway.vo.ConversationFilePageVO;
+import com.ai.gateway.vo.ConversationVO;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.stream.Collectors;
 
-/**
- * 对话控制器 - 支持游标分页和冷热分离
- * 
- * @author AI Gateway Platform
- */
 @Slf4j
 @RestController
 @RequestMapping("/user/conversations")
@@ -34,6 +37,9 @@ public class ConversationController {
     private final TokenService tokenService;
     private final ChatMessageService chatMessageService;
     private final FileParseTaskService fileParseTaskService;
+    private final StringRedisTemplate redisTemplate;
+    private final RedisScanUtil redisScanUtil;
+    private final com.ai.gateway.mapper.ConversationMapper conversationMapper;
 
     private Long resolveUserId(String token) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -41,7 +47,7 @@ public class ConversationController {
         return userId;
     }
 
-    // ==================== 原有会话管理接口 ====================
+    // ==================== 会话列表（MySQL + Redis 双源） ====================
 
     @PostMapping("/sync")
     public Result<Map<String, Object>> syncConversations(
@@ -57,13 +63,73 @@ public class ConversationController {
 
     @GetMapping("/fetch")
     public Result<Map<String, Object>> fetchConversations(
-            @RequestHeader("X-User-Token") String token) {
+            @RequestHeader("X-User-Token") String token,
+            HttpServletRequest request) {
         Long userId = resolveUserId(token);
-        List<Map<String, Object>> conversations = userService.fetchConversations(userId);
+
+        // 修复 P2-1: 添加IP日志记录，便于审计
+        log.info("获取会话列表: userId={}, ip={}", userId, request.getRemoteAddr());
+
+        // 1. 从 MySQL 查询该用户的所有会话（按最后消息时间倒序）
+        LambdaQueryWrapper<Conversation> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Conversation::getUserId, userId)
+                .eq(Conversation::getIsDeleted, 0)
+                .orderByDesc(Conversation::getLastMessageTime)
+                .last("LIMIT 100");
+
+        List<Conversation> convList = conversationMapper.selectList(wrapper);
+
+        // 修复 P2-7: 批量查询每个会话的最新消息，避免 N+1 查询问题
+        Map<Long, ChatMessage> latestMessageMap = new HashMap<>();
+        if (!convList.isEmpty()) {
+            for (Conversation conv : convList) {
+                try {
+                    List<ChatMessage> latest = chatMessageService.getLatestMessages(conv.getId(), userId, 1);
+                    if (!latest.isEmpty()) {
+                        latestMessageMap.put(conv.getId(), latest.get(0));
+                    }
+                } catch (Exception e) {
+                    log.debug("获取会话预览失败: conversationId={}", conv.getId());
+                }
+            }
+        }
+
+        // 2. 为每个会话获取最后一条消息作为预览
+        List<ConversationVO> voList = convList.stream().map(conv -> {
+            ConversationVO vo = new ConversationVO();
+            vo.setId(conv.getId());
+            vo.setTitle(conv.getTitle());
+            vo.setModel(conv.getModel());
+            vo.setMessageCount(conv.getMessageCount());
+            vo.setCreateTime(conv.getCreateTime() != null
+                    ? conv.getCreateTime().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    : null);
+            vo.setLastMessageTime(conv.getLastMessageTime() != null
+                    ? conv.getLastMessageTime().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    : null);
+
+            // 从缓存中获取预览内容（最后一条消息的前50字）
+            ChatMessage latestMsg = latestMessageMap.get(conv.getId());
+            if (latestMsg != null) {
+                String content = latestMsg.getContent();
+                vo.setPreviewContent(content != null && content.length() > 50
+                        ? content.substring(0, 50) + "..."
+                        : content);
+            }
+
+            return vo;
+        }).collect(Collectors.toList());
+
+        // 3. Redis中的客户端同步数据
+        List<Map<String, Object>> redisConvs = userService.fetchConversations(userId);
         long version = userService.getConversationVersion(userId);
+
         Map<String, Object> result = new HashMap<>();
-        result.put("conversations", conversations);
+        result.put("conversations", voList);
+        result.put("redisConversations", redisConvs);
         result.put("version", version);
+
+        log.info("获取会话列表: userId={}, count={}", userId, voList.size());
         return Result.success(result);
     }
 
@@ -81,172 +147,129 @@ public class ConversationController {
     public Result<Void> clearConversations(
             @RequestHeader("X-User-Token") String token) {
         Long userId = resolveUserId(token);
+
+        // 修复 P0-4: 添加空值保护，防止误删所有数据
+        if (userId == null) {
+            return Result.error("用户认证失败");
+        }
+        
         userService.syncConversations(userId, List.of());
+
+        // 同时逻辑删除 MySQL 中的会话
+        LambdaQueryWrapper<Conversation> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Conversation::getUserId, userId);
+        Conversation update = new Conversation();
+        update.setIsDeleted(1);
+        int affectedRows = conversationMapper.update(update, wrapper);
+
+        log.info("清除会话完成: userId={}, affectedRows={}", userId, affectedRows);
         return Result.success("清除成功", null);
     }
 
-    // ==================== 新增：游标分页接口 ====================
+    // ==================== 游标分页消息接口 ====================
 
-    /**
-     * 获取会话的最新N条消息（首页加载）
-     * 默认只加载最新15条，按时间倒序展示
-     * 
-     * @param token 用户Token
-     * @param conversationId 会话ID
-     * @param limit 条数（默认15，可动态调节）
-     * @return 消息列表
-     */
     @GetMapping("/{conversationId}/messages/latest")
     public Result<ChatMessagePageVO> getLatestMessages(
             @RequestHeader("X-User-Token") String token,
             @PathVariable Long conversationId,
             @RequestParam(defaultValue = "15") Integer limit) {
-        
         Long userId = resolveUserId(token);
-        
-        // 限制最大条数，防止一次性加载过多
-        if (limit > 50) {
-            limit = 50;
+        if (limit > 50) limit = 50;
+
+        // 校验会话归属
+        Conversation conv = conversationMapper.selectById(conversationId);
+        if (conv == null || !conv.getUserId().equals(userId)) {
+            return Result.error("会话不存在或无权访问");
         }
-        
+
         List<ChatMessage> messages = chatMessageService.getLatestMessages(conversationId, userId, limit);
-        
         ChatMessagePageVO vo = convertToPageVO(messages, limit);
-        
-        log.info("获取最新消息: userId={}, conversationId={}, limit={}, count={}", 
-                userId, conversationId, limit, messages.size());
-        
+        log.info("获取最新消息: userId={}, conversationId={}, count={}", userId, conversationId, messages.size());
         return Result.success(vo);
     }
 
-    /**
-     * 游标分页查询历史消息（上翻加载）
-     * 以lastId为游标，查询更早的N条记录
-     * 
-     * @param token 用户Token
-     * @param request 分页请求（包含conversationId、lastId、limit）
-     * @return 分页结果
-     */
     @PostMapping("/messages/page")
     public Result<ChatMessagePageVO> getMessagesByCursor(
             @RequestHeader("X-User-Token") String token,
-            @RequestBody ChatMessagePageRequest request) {
-        
+            @Valid @RequestBody ChatMessagePageRequest request) {
         Long userId = resolveUserId(token);
-        
-        // 参数校验
-        if (request.getConversationId() == null) {
-            return Result.error("会话ID不能为空");
+
+        if (request.getConversationId() == null) return Result.error("会话ID不能为空");
+
+        // 校验会话归属
+        Conversation conv = conversationMapper.selectById(request.getConversationId());
+        if (conv == null || !conv.getUserId().equals(userId)) {
+            return Result.error("会话不存在或无权访问");
         }
-        
-        // 限制最大条数
+
         Integer limit = request.getLimit();
-        if (limit == null || limit <= 0) {
-            limit = 15;
-        }
-        if (limit > 50) {
-            limit = 50;
-        }
-        
+        if (limit == null || limit <= 0) limit = 15;
+        if (limit > 50) limit = 50;
+
         List<ChatMessage> messages = chatMessageService.getMessagesByCursor(
-                request.getConversationId(), 
-                request.getLastId(), 
-                limit, 
-                userId
-        );
-        
+                request.getConversationId(), request.getLastId(), limit, userId);
         ChatMessagePageVO vo = convertToPageVO(messages, limit);
-        
-        log.info("游标分页查询: userId={}, conversationId={}, lastId={}, limit={}, count={}", 
-                userId, request.getConversationId(), request.getLastId(), limit, messages.size());
-        
+        log.info("游标分页: userId={}, convId={}, lastId={}, count={}", userId, request.getConversationId(), request.getLastId(), messages.size());
         return Result.success(vo);
     }
 
-    /**
-     * 切换账号时清除本地缓存
-     * 前端在切换账号后调用此接口，强制删除Redis中的聊天记录缓存
-     * 
-     * @param token 旧用户的Token（切换前）
-     * @return 操作结果
-     */
     @PostMapping("/cache/clear")
-    public Result<Void> clearUserCache(
-            @RequestHeader("X-User-Token") String token) {
-        
+    public Result<Void> clearUserCache(@RequestHeader("X-User-Token") String token) {
         Long userId = resolveUserId(token);
-        
-        // TODO: 实现清除用户所有会话缓存的逻辑
-        // redisTemplate.delete(redisTemplate.keys("chat:messages:" + userId + ":*"));
-        
-        log.info("清除用户缓存: userId={}", userId);
-        
+        String pattern = "chat:messages:" + userId + ":*";
+        redisScanUtil.deleteByPattern(pattern);
+        redisTemplate.delete("conversations:" + userId);
+        redisTemplate.delete("conversations:version:" + userId);
+        log.info("清除用户缓存完成: userId={}", userId);
         return Result.success("缓存已清除", null);
     }
 
-    // ==================== 新增：文件详情查询接口 ====================
+    // ==================== 文件详情查询 ====================
 
-    /**
-     * 分页查询会话关联的文件详情
-     * 支持大批量历史文件数量分页，避免一次性查询数据量过大
-     * 
-     * @param token 用户Token
-     * @param request 分页请求（conversationId、page、size）
-     * @return 文件分页结果
-     */
     @PostMapping("/files/page")
-    public Result<ConversationFilePageVO> getFilesByConversationId(
+    public Result<?> getFilesByConversationId(
             @RequestHeader("X-User-Token") String token,
             @RequestBody ConversationFilePageRequest request) {
-        
         Long userId = resolveUserId(token);
-        
-        // 参数校验
-        if (request.getConversationId() == null) {
-            return Result.error("会话ID不能为空");
+
+        if (request.getConversationId() == null) return Result.error("会话ID不能为空");
+
+        // 校验会话归属
+        Conversation conv = conversationMapper.selectById(request.getConversationId());
+        if (conv == null || !conv.getUserId().equals(userId)) {
+            return Result.error("会话不存在或无权访问");
         }
-        
-        ConversationFilePageVO vo = fileParseTaskService.getFileDetailsByConversationId(userId, request);
-        
-        log.info("查询会话文件: userId={}, conversationId={}, page={}, size={}, total={}", 
-                userId, request.getConversationId(), request.getPage(), request.getSize(), vo.getTotal());
-        
-        return Result.success(vo);
+
+        try {
+            ConversationFilePageVO vo = fileParseTaskService.getFileDetailsByConversationId(userId, request);
+            log.info("查询会话文件: userId={}, convId={}, total={}", userId, request.getConversationId(), vo.getTotal());
+            return Result.success(vo);
+        } catch (Exception e) {
+            log.error("查询会话文件失败: userId={}, convId={}", userId, request.getConversationId(), e);
+            return Result.error("查询文件详情失败: " + e.getMessage());
+        }
     }
 
     // ==================== 辅助方法 ====================
 
-    /**
-     * 转换为分页VO
-     */
     private ChatMessagePageVO convertToPageVO(List<ChatMessage> messages, Integer limit) {
         ChatMessagePageVO vo = new ChatMessagePageVO();
-        
-        // 转换消息列表
-        List<ChatMessagePageVO.ChatMessageVO> messageVOs = messages.stream()
-                .map(msg -> {
-                    ChatMessagePageVO.ChatMessageVO msgVO = new ChatMessagePageVO.ChatMessageVO();
-                    msgVO.setId(msg.getId());
-                    msgVO.setRole(msg.getRole());
-                    msgVO.setContent(msg.getContent());
-                    msgVO.setModel(msg.getModel());
-                    msgVO.setTokens(msg.getTokens());
-                    msgVO.setCreateTime(msg.getCreateTime());
-                    return msgVO;
-                })
-                .collect(Collectors.toList());
-        
+        List<ChatMessagePageVO.ChatMessageVO> messageVOs = messages.stream().map(msg -> {
+            ChatMessagePageVO.ChatMessageVO msgVO = new ChatMessagePageVO.ChatMessageVO();
+            msgVO.setId(msg.getId());
+            msgVO.setRole(msg.getRole());
+            msgVO.setContent(msg.getContent());
+            msgVO.setModel(msg.getModel());
+            msgVO.setTokens(msg.getTokens());
+            msgVO.setCreateTime(msg.getCreateTime());
+            return msgVO;
+        }).collect(Collectors.toList());
         vo.setMessages(messageVOs);
-        
-        // 判断是否有更多数据
         boolean hasMore = messages.size() >= limit;
         vo.setHasMore(hasMore);
-        
-        // 设置下一页游标（最后一条记录的ID）
         if (hasMore && !messages.isEmpty()) {
             vo.setNextCursorId(messages.get(messages.size() - 1).getId());
         }
-        
         return vo;
     }
 }

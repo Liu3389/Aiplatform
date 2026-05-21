@@ -86,6 +86,7 @@ public class PackageTemplate implements Serializable {
      * @deprecated 使用 maxInputTokens 和 maxOutputTokens 替代
      */
     @Deprecated
+    @TableField(exist = false)
     private Integer maxTokensPerCall;
 
     /**

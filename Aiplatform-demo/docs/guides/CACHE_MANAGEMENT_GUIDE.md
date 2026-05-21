@@ -35,6 +35,7 @@
 **接口**: `GET /api/user/conversations/fetch`
 
 **流程**:
+
 ```
 用户进入对话页面
     ↓
@@ -51,9 +52,11 @@
 └──────────────┴────────────────┘
 ```
 
-**代码位置**: [UserService.java#fetchConversations()](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/service/UserService.java#L770-L836)
+**代码位置
+**: [UserService.java#fetchConversations()](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/service/UserService.java#L770-L836)
 
 **关键特性**:
+
 - ✅ 首次加载自动从数据库读取并缓存
 - ✅ 后续加载直接从Redis读取（毫秒级响应）
 - ✅ 缓存90天过期
@@ -66,6 +69,7 @@
 **接口**: `GET /api/user/conversations/{conversationId}/messages/latest?limit=10`
 
 **特性**:
+
 - 默认加载最新10条消息
 - 按时间倒序排列
 - 支持冷热数据自动分离
@@ -76,6 +80,7 @@
 **接口**: `POST /api/user/conversations/messages/page`
 
 **请求体**:
+
 ```json
 {
   "conversationId": 101,
@@ -85,12 +90,14 @@
 ```
 
 **特性**:
+
 - 基于游标的分页（性能优于OFFSET）
 - 查询比 `lastId` 更早的消息
 - 自动判断是否有更多数据
 - 返回 `hasMore` 和 `nextCursorId`
 
-**代码位置**: 
+**代码位置**:
+
 - [ConversationController.java#getLatestMessages()](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/controller/ConversationController.java#L95-L116)
 - [ConversationController.java#getMessagesByCursor()](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/controller/ConversationController.java#L126-L160)
 - [ChatMessageService.java](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/service/ChatMessageService.java)
@@ -100,6 +107,7 @@
 **接口**: `POST /api/auth/logout`
 
 **清除的缓存类型**:
+
 1. ✅ Token本身
 2. ✅ 会话信息（单设备登录机制）
 3. ✅ 对话列表缓存 (`conversations:{userId}`)
@@ -108,15 +116,18 @@
 6. ✅ 免费配额缓存 (`free:limit:*:{userId}:*`)
 7. ✅ 会员等级缓存 (`membership:{userId}`)
 
-**代码位置**: [TokenService.java#revokeToken()](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/service/TokenService.java#L88-L135)
+**代码位置
+**: [TokenService.java#revokeToken()](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/service/TokenService.java#L88-L135)
 
 **关键特性**:
+
 - ✅ 撤销Token时自动清除所有用户相关缓存
 - ✅ 使用SCAN方式删除，避免KEYS阻塞Redis
 - ✅ 异常不影响Token撤销（保证退出成功）
 - ✅ 详细的日志记录
 
 **实现细节**:
+
 ```java
 public void revokeToken(String token) {
     // 1. 获取userId
@@ -151,21 +162,22 @@ public void revokeToken(String token) {
 
 ### 防止账号串号
 
-1. **单设备登录机制**: 
-   - 同一用户只能在一个设备上保持登录状态
-   - 新登录会踢掉旧设备的会话
+1. **单设备登录机制**:
+    - 同一用户只能在一个设备上保持登录状态
+    - 新登录会踢掉旧设备的会话
 
 2. **退出登录清除缓存**:
-   - 防止下一个用户看到前一个用户的数据
-   - 清除所有Redis中的用户相关缓存
+    - 防止下一个用户看到前一个用户的数据
+    - 清除所有Redis中的用户相关缓存
 
 3. **权限校验**:
-   - 所有接口都验证 `X-User-Token`
-   - 查询消息时验证 `userId` 匹配
+    - 所有接口都验证 `X-User-Token`
+    - 查询消息时验证 `userId` 匹配
 
 ### 缓存隔离
 
 每个用户的缓存都有独立的Key：
+
 ```
 conversations:50       → 用户50的对话列表
 conversations:51       → 用户51的对话列表
@@ -175,11 +187,11 @@ chat:messages:51:*     → 用户51的消息缓存
 
 ## 📊 性能对比
 
-| 操作 | 无缓存 | 有缓存 | 提升 |
-|------|--------|--------|------|
-| 对话列表加载 | 50-100ms | 1-5ms | **10-20倍** |
-| 消息加载（首页） | 20-50ms | 5-15ms | **3-5倍** |
-| 消息加载（分页） | 30-80ms | 10-20ms | **3-4倍** |
+| 操作       | 无缓存      | 有缓存     | 提升         |
+|----------|----------|---------|------------|
+| 对话列表加载   | 50-100ms | 1-5ms   | **10-20倍** |
+| 消息加载（首页） | 20-50ms  | 5-15ms  | **3-5倍**   |
+| 消息加载（分页） | 30-80ms  | 10-20ms | **3-4倍**   |
 
 ## 🧪 测试场景
 
@@ -240,21 +252,25 @@ curl -X GET http://localhost:8080/api/user/conversations/fetch \
 ## ⚠️ 注意事项
 
 ### 1. 首次加载可能稍慢
+
 - 原因：需要从数据库查询并写入Redis
 - 影响：仅首次或缓存过期时
 - 优化：可以在登录成功后异步预加载
 
 ### 2. 缓存一致性
+
 - 创建新会话时：同步更新Redis
 - 删除会话时：同步更新Redis
 - 修改会话标题时：异步更新Redis
 
 ### 3. 缓存过期策略
+
 - 对话列表：90天过期
 - 消息缓存：30分钟过期
 - 会员等级：1小时 + 随机抖动
 
 ### 4. 异常处理
+
 - Redis连接失败：降级到数据库查询
 - 反序列化失败：自动重建缓存
 - 清除缓存失败：不影响Token撤销
@@ -334,27 +350,33 @@ async function logout() {
 ### 后端开发建议
 
 1. **添加新缓存时**：
-   - 在 `revokeToken()` 中添加清除逻辑
-   - 设置合理的过期时间
-   - 添加详细的日志
+    - 在 `revokeToken()` 中添加清除逻辑
+    - 设置合理的过期时间
+    - 添加详细的日志
 
 2. **修改缓存Key命名**：
-   - 遵循统一规范：`模块:子模块:{userId}:*`
-   - 便于批量清除
+    - 遵循统一规范：`模块:子模块:{userId}:*`
+    - 便于批量清除
 
 3. **性能优化**：
-   - 使用SCAN而非KEYS
-   - 大批量删除时分批处理
-   - 考虑使用Lua脚本保证原子性
+    - 使用SCAN而非KEYS
+    - 大批量删除时分批处理
+    - 考虑使用Lua脚本保证原子性
 
 ## 📝 相关文件
 
-- [TokenService.java](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/service/TokenService.java) - Token管理和缓存清理
-- [UserService.java](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/service/UserService.java) - 对话列表懒加载
-- [ConversationController.java](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/controller/ConversationController.java) - 对话相关接口
-- [ChatMessageService.java](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/service/ChatMessageService.java) - 消息分页查询
-- [SessionService.java](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/service/SessionService.java) - 会话管理
-- [RedisScanUtil.java](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/util/RedisScanUtil.java) - SCAN工具类
+- [TokenService.java](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/service/TokenService.java) -
+  Token管理和缓存清理
+- [UserService.java](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/service/UserService.java) -
+  对话列表懒加载
+- [ConversationController.java](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/controller/ConversationController.java) -
+  对话相关接口
+- [ChatMessageService.java](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/service/ChatMessageService.java) -
+  消息分页查询
+- [SessionService.java](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/service/SessionService.java) -
+  会话管理
+- [RedisScanUtil.java](file://$HOME/Documents/Aiplatform/Aiplatform-demo/src/main/java/com/ai/gateway/util/RedisScanUtil.java) -
+  SCAN工具类
 
 ## 🔗 相关文档
 

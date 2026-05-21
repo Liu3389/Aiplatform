@@ -76,34 +76,34 @@ public class AsyncConfig {
     @Bean("fileParseExecutor")
     public Executor fileParseExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        
+
         // 核心线程数（同时处理5个文件解析）
         executor.setCorePoolSize(5);
-        
+
         // 最大线程数
         executor.setMaxPoolSize(20);
-        
+
         // 队列容量
         executor.setQueueCapacity(100);
-        
+
         // 线程名称前缀
         executor.setThreadNamePrefix("file-parse-");
-        
+
         // 线程空闲时间（秒）
         executor.setKeepAliveSeconds(60);
-        
+
         // 拒绝策略：调用者运行，确保不丢失任务
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
-        
+
         // 等待所有任务结束后再关闭线程池
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(60);
-        
+
         executor.initialize();
-        
-        log.info("文件解析线程池初始化完成: corePoolSize={}, maxPoolSize={}, queueCapacity={}", 
+
+        log.info("文件解析线程池初始化完成: corePoolSize={}, maxPoolSize={}, queueCapacity={}",
                 executor.getCorePoolSize(), executor.getMaxPoolSize(), executor.getQueueCapacity());
-        
+
         return executor;
     }
 }

@@ -7,7 +7,9 @@ import com.ai.gateway.mapper.CallLogMapper;
 import com.ai.gateway.mapper.ConversationMapper;
 import com.ai.gateway.mapper.DailyStatisticsMapper;
 import com.ai.gateway.mapper.UserMapper;
-import com.ai.gateway.vo.*;
+import com.ai.gateway.vo.ConversationStatsVO;
+import com.ai.gateway.vo.DashboardStatsVO;
+import com.ai.gateway.vo.UserStatsVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -96,7 +98,7 @@ public class StatisticsService {
         quickStats.setTotalPointsConsumed(totalPointsConsumed != null ? totalPointsConsumed : BigDecimal.ZERO);
         
         // 计算平均对话长度
-        Long totalConv = conversationMapper.selectCount(null);
+        Long totalConv = counterService.getCounterValue("CONVERSATION_TOTAL");
         if (totalConv != null && totalConv > 0) {
             quickStats.setAvgConversationLength((int) (quickStats.getTotalMessages() * 1.0 / totalConv));
         }
@@ -132,7 +134,8 @@ public class StatisticsService {
         UserStatsVO stats = new UserStatsVO();
         
         // 基础统计
-        stats.setTotalUsers(userMapper.selectCount(null).intValue());
+        Long totalUsers = counterService.getCounterValue("USER_TOTAL");
+        stats.setTotalUsers(totalUsers != null ? totalUsers.intValue() : 0);
         
         // 从数据库查询详细数据
         LocalDate today = LocalDate.now();
@@ -195,7 +198,8 @@ public class StatisticsService {
         ConversationStatsVO stats = new ConversationStatsVO();
         
         // 总量统计
-        stats.setTotalConversations(conversationMapper.selectCount(null));
+        Long totalConversations = counterService.getCounterValue("CONVERSATION_TOTAL");
+        stats.setTotalConversations(totalConversations != null ? totalConversations : 0L);
         stats.setTotalMessages(counterService.getCounterValue("MESSAGE_TOTAL"));
         
         // 计算平均值
@@ -246,9 +250,8 @@ public class StatisticsService {
         stats.setModelUsage(modelUsage);
         
         // 平均对话时长（简单估算：总消息数 / 总会话数 * 2分钟）
-        Long totalConv = conversationMapper.selectCount(null);
-        if (totalConv != null && totalConv > 0) {
-            stats.setAvgDuration((int) ((stats.getTotalMessages() * 1.0 / totalConv) * 2));
+        if (totalConversations != null && totalConversations > 0) {
+            stats.setAvgDuration((int) ((stats.getTotalMessages() * 1.0 / totalConversations) * 2));
         }
         
         return stats;

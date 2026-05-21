@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 
 /**
  * 测试数据控制器 - 用于初始化和修复测试数据
- * 
+ *
  * @author AI Gateway Platform
  */
 @Slf4j
@@ -27,16 +27,15 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TestDataController {
 
+    private static final String CONVERSATIONS_KEY = "conversations:";
+    private static final String CONVERSATIONS_VERSION_KEY = "conversations:version:";
     private final ConversationMapper conversationMapper;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private static final String CONVERSATIONS_KEY = "conversations:";
-    private static final String CONVERSATIONS_VERSION_KEY = "conversations:version:";
-
     /**
      * 初始化用户对话缓存（从数据库同步到Redis）
-     * 
+     *
      * @param userId 用户ID
      * @return 操作结果
      */
@@ -45,42 +44,42 @@ public class TestDataController {
         try {
             // 1. 从数据库查询用户的所有会话
             List<Conversation> conversations = conversationMapper.selectList(
-                new LambdaQueryWrapper<Conversation>()
-                    .eq(Conversation::getUserId, userId)
-                    .eq(Conversation::getIsDeleted, 0)
-                    .orderByDesc(Conversation::getLastMessageTime)
+                    new LambdaQueryWrapper<Conversation>()
+                            .eq(Conversation::getUserId, userId)
+                            .eq(Conversation::getIsDeleted, 0)
+                            .orderByDesc(Conversation::getLastMessageTime)
             );
 
             // 2. 转换为前端需要的格式
             List<Map<String, Object>> convList = conversations.stream()
-                .map(conv -> {
-                    Map<String, Object> map = new HashMap<>();
-                    map.put("id", String.valueOf(conv.getId()));
-                    map.put("title", conv.getTitle());
-                    map.put("model", conv.getModel());
-                    map.put("messageCount", conv.getMessageCount());
-                    map.put("lastMessageTime", conv.getLastMessageTime());
-                    map.put("createTime", conv.getCreateTime());
-                    return map;
-                })
-                .collect(Collectors.toList());
+                    .map(conv -> {
+                        Map<String, Object> map = new HashMap<>();
+                        map.put("id", String.valueOf(conv.getId()));
+                        map.put("title", conv.getTitle());
+                        map.put("model", conv.getModel());
+                        map.put("messageCount", conv.getMessageCount());
+                        map.put("lastMessageTime", conv.getLastMessageTime());
+                        map.put("createTime", conv.getCreateTime());
+                        return map;
+                    })
+                    .collect(Collectors.toList());
 
             // 3. 写入Redis
             String json = objectMapper.writeValueAsString(convList);
             redisTemplate.opsForValue().set(
-                CONVERSATIONS_KEY + userId, 
-                json, 
-                90, 
-                TimeUnit.DAYS
+                    CONVERSATIONS_KEY + userId,
+                    json,
+                    90,
+                    TimeUnit.DAYS
             );
 
             // 4. 设置版本号
             long version = System.currentTimeMillis();
             redisTemplate.opsForValue().set(
-                CONVERSATIONS_VERSION_KEY + userId,
-                String.valueOf(version),
-                90,
-                TimeUnit.DAYS
+                    CONVERSATIONS_VERSION_KEY + userId,
+                    String.valueOf(version),
+                    90,
+                    TimeUnit.DAYS
             );
 
             Map<String, Object> result = new HashMap<>();
@@ -89,7 +88,7 @@ public class TestDataController {
             result.put("version", version);
 
             log.info("✅ 用户{}的对话缓存初始化完成，共{}个会话", userId, convList.size());
-            
+
             return Result.success("缓存初始化成功", result);
 
         } catch (Exception e) {
@@ -100,7 +99,7 @@ public class TestDataController {
 
     /**
      * 批量初始化所有用户的对话缓存
-     * 
+     *
      * @return 操作结果
      */
     @PostMapping("/init-all-conversation-cache")
@@ -108,10 +107,10 @@ public class TestDataController {
         try {
             // 查询所有有会话的用户
             List<Long> userIds = conversationMapper.selectObjs(
-                new LambdaQueryWrapper<Conversation>()
-                    .select(Conversation::getUserId)
-                    .eq(Conversation::getIsDeleted, 0)
-                    .groupBy(Conversation::getUserId)
+                    new LambdaQueryWrapper<Conversation>()
+                            .select(Conversation::getUserId)
+                            .eq(Conversation::getIsDeleted, 0)
+                            .groupBy(Conversation::getUserId)
             ).stream().map(obj -> (Long) obj).collect(Collectors.toList());
 
             int successCount = 0;
@@ -121,44 +120,44 @@ public class TestDataController {
             for (Long userId : userIds) {
                 try {
                     List<Conversation> conversations = conversationMapper.selectList(
-                        new LambdaQueryWrapper<Conversation>()
-                            .eq(Conversation::getUserId, userId)
-                            .eq(Conversation::getIsDeleted, 0)
-                            .orderByDesc(Conversation::getLastMessageTime)
+                            new LambdaQueryWrapper<Conversation>()
+                                    .eq(Conversation::getUserId, userId)
+                                    .eq(Conversation::getIsDeleted, 0)
+                                    .orderByDesc(Conversation::getLastMessageTime)
                     );
 
                     List<Map<String, Object>> convList = conversations.stream()
-                        .map(conv -> {
-                            Map<String, Object> map = new HashMap<>();
-                            map.put("id", String.valueOf(conv.getId()));
-                            map.put("title", conv.getTitle());
-                            map.put("model", conv.getModel());
-                            map.put("messageCount", conv.getMessageCount());
-                            map.put("lastMessageTime", conv.getLastMessageTime());
-                            map.put("createTime", conv.getCreateTime());
-                            return map;
-                        })
-                        .collect(Collectors.toList());
+                            .map(conv -> {
+                                Map<String, Object> map = new HashMap<>();
+                                map.put("id", String.valueOf(conv.getId()));
+                                map.put("title", conv.getTitle());
+                                map.put("model", conv.getModel());
+                                map.put("messageCount", conv.getMessageCount());
+                                map.put("lastMessageTime", conv.getLastMessageTime());
+                                map.put("createTime", conv.getCreateTime());
+                                return map;
+                            })
+                            .collect(Collectors.toList());
 
                     String json = objectMapper.writeValueAsString(convList);
                     redisTemplate.opsForValue().set(
-                        CONVERSATIONS_KEY + userId, 
-                        json, 
-                        90, 
-                        TimeUnit.DAYS
+                            CONVERSATIONS_KEY + userId,
+                            json,
+                            90,
+                            TimeUnit.DAYS
                     );
 
                     long version = System.currentTimeMillis();
                     redisTemplate.opsForValue().set(
-                        CONVERSATIONS_VERSION_KEY + userId,
-                        String.valueOf(version),
-                        90,
-                        TimeUnit.DAYS
+                            CONVERSATIONS_VERSION_KEY + userId,
+                            String.valueOf(version),
+                            90,
+                            TimeUnit.DAYS
                     );
 
                     userConvCount.put(userId, convList.size());
                     successCount++;
-                    
+
                     log.info("✅ 用户{}的对话缓存初始化完成，共{}个会话", userId, convList.size());
 
                 } catch (Exception e) {
@@ -174,7 +173,7 @@ public class TestDataController {
             result.put("userConversationCount", userConvCount);
 
             log.info("✅ 批量初始化完成: 总用户数={}, 成功={}, 失败={}", userIds.size(), successCount, failCount);
-            
+
             return Result.success("批量初始化完成", result);
 
         } catch (Exception e) {
@@ -185,7 +184,7 @@ public class TestDataController {
 
     /**
      * 查看用户的对话缓存状态
-     * 
+     *
      * @param userId 用户ID
      * @return 缓存状态
      */
@@ -197,11 +196,11 @@ public class TestDataController {
 
             Map<String, Object> result = new HashMap<>();
             result.put("userId", userId);
-            
+
             if (conversationsJson != null) {
                 List<Map<String, Object>> conversations = objectMapper.readValue(
-                    conversationsJson, 
-                    List.class
+                        conversationsJson,
+                        List.class
                 );
                 result.put("hasCache", true);
                 result.put("conversationCount", conversations.size());
@@ -214,9 +213,9 @@ public class TestDataController {
 
             // 查询数据库中的实际数量
             long dbCount = conversationMapper.selectCount(
-                new LambdaQueryWrapper<Conversation>()
-                    .eq(Conversation::getUserId, userId)
-                    .eq(Conversation::getIsDeleted, 0)
+                    new LambdaQueryWrapper<Conversation>()
+                            .eq(Conversation::getUserId, userId)
+                            .eq(Conversation::getIsDeleted, 0)
             );
             result.put("dbConversationCount", dbCount);
 
@@ -230,7 +229,7 @@ public class TestDataController {
 
     /**
      * 清除用户的对话缓存
-     * 
+     *
      * @param userId 用户ID
      * @return 操作结果
      */
@@ -239,9 +238,9 @@ public class TestDataController {
         try {
             redisTemplate.delete(CONVERSATIONS_KEY + userId);
             redisTemplate.delete(CONVERSATIONS_VERSION_KEY + userId);
-            
+
             log.info("✅ 用户{}的对话缓存已清除", userId);
-            
+
             return Result.success("缓存已清除", null);
 
         } catch (Exception e) {
