@@ -64,7 +64,7 @@
 
 ### 批次 E：配置、凭据与部署边界
 
-- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；模板占位符与当前暂存/跟踪/未跟踪内容的凭据扫描通过（42 个暂存变更、349 个跟踪文件、157 个未跟踪文件、2 个环境模板）。用户已授权并完成本地 `main` 历史脱敏，目标分支推送扫描通过。远端 `origin/main` 和本地回滚备份仍保留旧历史，需由凭据所有者协调远端引用清理与备份保留；不因格式命中推断密钥仍有效，也未撤销或轮换凭据。生产密钥注入与服务器部署配置仍待凭据所有者完成。
+- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；当前暂存/跟踪/未跟踪内容凭据扫描通过（42 个暂存变更、350 个跟踪文件、156 个未跟踪文件、2 个环境模板）。用户已授权并完成本地 `main` 历史脱敏，当前目标分支推送扫描通过。远端 `origin/main` 和本地回滚备份仍保留旧历史，需由凭据所有者协调远端引用清理与备份保留；不因格式命中推断密钥仍有效，也未撤销或轮换凭据。生产密钥注入与服务器部署配置仍待凭据所有者完成。
 - [x] **E2 前端 API 路由不被静态扩展规则截获（P2-19）**：`/api/`、`/chat/`、`/v1/` 已使用 `^~` 前缀优先匹配。临时 Nginx 与 mock 后端验证了带 `.png`、`.pdf`、`.svg`、`.json` 后缀的 API/SSE 请求均转发到后端，SSE 未缓冲，静态资源缓存保持正常；`nginx -t` 通过。
 - [x] **E3 聊天页首屏包体过大（本地构建新发现，P3-21）**：聊天页 Markdown、Mermaid、代码高亮、公式渲染已按需加载。构建后 ChatPage 入口为 94.97 KB（gzip 25.97 KB），较整改前约减少 93%；浏览器回归确认 Markdown、代码高亮、KaTeX 和 Mermaid 均正常。ECharts 与其他页面共享 chunk 仍超过 500 KB，但不在 ChatPage 静态依赖图中，作为独立页面优化跟踪。
 
@@ -316,7 +316,7 @@
 - [x] 2026-10-19 本地浏览器只读视觉复验：`/login` 实际渲染用户名/密码、验证码输入框与图片、刷新按钮、“5 分钟内有效”提示、登录与 Google 登录入口；页面结构与截图显示一致。本次未填写账号、解答验证码或提交登录。
 - [x] 2026-10-19 完整 `scripts/local-release-preflight.sh` 复验：本地 `verify` 通过；后端 34 个 Surefire suite 共 101 项、0 失败、0 错误、2 项 Rabbit opt-in 跳过；`npm run build` 通过；`verify-chat` 覆盖登录验证码错误/重放拒绝、模型可用性、联系方式、路径权限、充值关闭、聊天幂等与持久化、SSE、限流、管理员权限、结算重放及 B4 故障恢复，模拟上游收到 12 次请求（3 次 SSE），20 条消息持久化、11 笔结算完成。最后在生产配置门禁因缺少 `MYSQL_PASSWORD`、`REDIS_PASSWORD`、`SECONDARY_PASSWORD` 退出码 1；未连接、推送或部署远端。
 - [x] 随后单独重跑 `RabbitEventPublisherIntegrationTest`：使用隔离的 RabbitMQ 4.2.9 容器和随机 loopback 端口，两项测试均通过（publisher confirm/持久化/mandatory unroutable return；listener 分派后 ACK），Surefire 记录 2 项、0 失败/错误/跳过。测试容器已删除，没有修改默认本地栈或接触生产 broker。
-- [x] 复验后本地 MySQL/Redis、后端、前端和 mock 均运行，前端 API 代理仍指向 `http://127.0.0.1:18080`；`.runtime/local.env` 权限 `600`。`scripts/check-staged-env-secrets.py` 通过；针对当前 `main` 的 pre-push 扫描通过（1 个引用、1,369 个文件对象、28 个提交）。远端 `origin/main` 仍为旧历史，因此这些本地检查不授权推送。
+- [x] 复验后本地 MySQL/Redis、后端、前端和 mock 均运行，前端 API 代理仍指向 `http://127.0.0.1:18080`；`.runtime/local.env` 权限 `600`。`scripts/check-staged-env-secrets.py` 通过；本地检查点提交后针对当前 `main` 的 pre-push 扫描通过（1 个引用、1,372 个文件对象、29 个提交）。远端 `origin/main` 仍为旧历史，因此这些本地检查不授权推送。
 
 - [x] C3 会话过期恢复单测复验通过：`npm run test:auth-session`，7 项通过、0 失败，覆盖首次 HTTP 401、刷新后重试仍为 HTTP 401 时清理会话，以及非认证错误保留会话；`npm run build` 和 `git diff --check` 通过。构建仍提示独立图表 chunk 超过 500 KB，E3 已记录这些 chunk 不在聊天入口静态依赖图内。
 - [x] 本轮 `./scripts/ai-local-env.sh verify` 通过：MySQL/Redis 健康、后端启用模型列表、未登录聊天 401 边界、前端首页和本地代理模型列表均正常。
@@ -329,4 +329,5 @@
 - [x] 2026-10-19 DeepSeek 凭据复用路径：模型记录凭据优先；记录为空时仅 `deepseek` provider 可回退读取后端环境变量 `DEEPSEEK_API_KEY`。单测 9 项通过；新源码已由 `switch local` 构建并加载；基础 `verify`、默认完整 `verify-chat`、全量 Maven 101 项（0 失败/错误，2 项 Rabbit opt-in 因未设 `rabbit.it` 跳过）均通过；两份 Compose 解析、脚本语法和差异检查通过。该次验证仅覆盖本地 mock；后续真实本地供应商端到端验收见上方“真实 DeepSeek 本地上游验收（2026-10-19）”。
 - [x] DeepSeek 环境回退 HTTP 验收：新增 `AI_VERIFY_DEEPSEEK_FALLBACK=true ./scripts/ai-local-env.sh verify-chat` 专项模式及本地 `/responses` mock。测试临时停用原 3 条 DeepSeek 模型、插入空 `api_key` 的本地测试模型并只注入合成 Key；HTTP 确认模型 `chatEnabled=true` 且响应不含凭据字段，非流式与 SSE 聊天均以 Bearer 认证到达 `/responses`、携带 `max_output_tokens=256`，两轮回复均落库并各结算一次。退出清理删除测试模型、恢复原模型状态并重启后端；随后 DB 确认测试模型数为 0、原 3 条 DeepSeek 状态恢复启用，基础 `verify` 回到 17 个启用、1 个可对话、16 个未接入。本地模式完整回归通过：14 次 mock 请求、4 次 SSE，24 条消息、13 笔结算。测试 Key 只在测试进程内使用，不访问真实上游。
 - [x] 2026-10-19 当前工作区全量复验：后端 `mvn -Dapp.messaging.rabbit-enabled=false test` 为 99 项、0 失败、0 错误、0 跳过；前端 `test:auth-session` 7 项、`test:model-availability` 3 项通过，`npm run build` 成功；登录页 CAPTCHA API 与错误码实测通过；`./scripts/ai-local-env.sh verify` 通过。后端测试使用临时 MySQL 数据库副本和独立 Redis 容器，二者均已清理，本地开发栈仍健康且代理保持 local。
-- [ ] 未提交、未推送、未部署；发布仍受 E1 中生产凭据门禁及各项真实外部服务验收约束。
+- [x] 2026-10-19 本地检查点提交为 `802f5ed`，仅包含本计划与删除含非占位密码字段的旧 `.env.example`；现有其他代码/配置改动保持在工作区。
+- [ ] 其余工作区变更尚未提交、未推送、未部署；发布仍受 E1 中生产凭据门禁、远端历史协调及各项真实外部服务验收约束。
