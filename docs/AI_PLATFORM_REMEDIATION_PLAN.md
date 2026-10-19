@@ -291,6 +291,7 @@
 - [ ] 服务器 Compose 只读校验已于 2026-10-19 通过；同次 `docker ps` 确认现有 7 个容器均运行，其中 MySQL/Redis 报健康。此证据验证 Compose 配置解析和容器状态，不等同于应用接口或生产模型端到端验收；真实生产模型供应商仍需单独确认与验收。
 - [x] 2026-10-19 根据用户确认“生产凭据已在服务器受控环境配置”，将部署流程拆分为本地功能验收与目标服务器密钥校验：`local-release-preflight.sh --local-only` 不要求把服务器密钥复制到开发机；`server-deploy.sh` 仍在任何镜像传输前执行目标机 `docker compose ... config -q`。`test-deploy-preflight-routing.py`、Bash 语法检查及完整 `--local-only` 本地预检通过（后端 101 项、0 失败/错误、2 项 Rabbit opt-in 跳过；前端构建与 `verify-chat` 通过）。
 - [x] 2026-10-19 使用用户提供的主机、用户和本机私钥路径完成严格主机校验下的远端只读 Compose 检查，并列出现有容器状态；未输出密钥值，未执行镜像或容器变更。当前 shell 尚未常驻设置部署脚本所需环境变量；获准部署时再按需注入。
+- [x] 2026-10-19 远程校验后再次扫描当前本地 `main` 的完整推送历史：1 个目标引用、1,387 个文件对象、34 个提交，`scripts/check-push-history-secrets.py` 通过。`origin/main` 未修改且仍保留旧历史；本次没有推送。
 
 ### E2 Nginx API 路由优先级验收（2026-10-19）
 
