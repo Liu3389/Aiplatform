@@ -64,7 +64,7 @@
 
 ### 批次 E：配置、凭据与部署边界
 
-- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；本机暂存/工作区凭据扫描通过。用户已授权并完成本地 `main` 历史脱敏，本地目标分支推送扫描通过。远端 `origin/main` 和本地回滚备份仍保留重写前历史，远端历史协调仍待完成；不因格式命中推断密钥当前有效，也未撤销或轮换凭据。生产 Redis 密码当前为空且 Redis 未启用认证；旧远端 Compose 校验曾因默认允许空密码而通过，新的严格 Compose 已在远端 `.env.prod` 上正确拒绝。E1 仍待启用现有 Redis 认证、远端历史协调及其他生产服务/模型配置核验；服务器凭据不应复制到开发机或聊天中。
+- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；本机暂存/工作区凭据扫描通过。用户已授权并完成本地 `main` 历史脱敏；2026-10-19 已将脱敏后的历史推送到远端 `main`，并验证本地 `main` 与 `origin/main` 一致。本地回滚引用仍保留重写前历史；不因格式命中推断密钥当前有效，也未撤销或轮换凭据。生产 Redis 密码当前为空且 Redis 未启用认证；旧远端 Compose 校验曾因默认允许空密码而通过，新的严格 Compose 已在远端 `.env.prod` 上正确拒绝。E1 仍待启用现有 Redis 认证及其他生产服务/模型配置核验；服务器凭据不应复制到开发机或聊天中。
 - [x] **E2 前端 API 路由不被静态扩展规则截获（P2-19）**：`/api/`、`/chat/`、`/v1/` 已使用 `^~` 前缀优先匹配。临时 Nginx 与 mock 后端验证了带 `.png`、`.pdf`、`.svg`、`.json` 后缀的 API/SSE 请求均转发到后端，SSE 未缓冲，静态资源缓存保持正常；`nginx -t` 通过。
 - [x] **E3 聊天页首屏包体过大（本地构建新发现，P3-21）**：聊天页 Markdown、Mermaid、代码高亮、公式渲染已按需加载。构建后 ChatPage 入口为 94.97 KB（gzip 25.97 KB），较整改前约减少 93%；浏览器回归确认 Markdown、代码高亮、KaTeX 和 Mermaid 均正常。ECharts 与其他页面共享 chunk 仍超过 500 KB，但不在 ChatPage 静态依赖图中，作为独立页面优化跟踪。
 
@@ -342,5 +342,5 @@
 - [x] 2026-10-19 当前工作区全量复验：后端 `mvn -Dapp.messaging.rabbit-enabled=false test` 为 99 项、0 失败、0 错误、0 跳过；前端 `test:auth-session` 7 项、`test:model-availability` 3 项通过，`npm run build` 成功；登录页 CAPTCHA API 与错误码实测通过；`./scripts/ai-local-env.sh verify` 通过。后端测试使用临时 MySQL 数据库副本和独立 Redis 容器，二者均已清理，本地开发栈仍健康且代理保持 local。
 - [x] 2026-10-19 本地检查点提交为 `802f5ed`，仅包含本计划与删除含非占位密码字段的旧 `.env.example`；现有其他代码/配置改动保持在工作区。
 - [x] 2026-10-19 最新本地全链路复验：`./scripts/local-release-preflight.sh --local-only` 通过；34 个 Surefire suite 共 101 项（0 失败、0 错误、2 项 Rabbit opt-in 跳过），前端生产构建通过；`verify-chat` 覆盖 CAPTCHA 错误/重放、模型可用性、联系方式、充值关闭、越权路径、幂等/SSE、限流/管理员权限及 B4 恢复，12 次模拟上游请求（3 次 SSE）、20 条消息持久化、11 笔结算。结束后 MySQL、Redis、backend、web、mock 仍运行，代理为 local。
-- [ ] 其余工作区变更尚未提交、未推送、未部署；发布仍受服务器 Redis 认证配置与现有容器受控重启、远端历史协调、Google 生产域名与 OAuth 配置、生产 RabbitMQ/OSS/邮件/短信联调、旧数据完整性核验等门禁约束。MySQL 与二级口令已确认非空；Redis 密码当前为空，不可按已配置处理。
-- [x] 2026-10-19 本地 `main` 两个整改检查点已提交（`38e6ef7` 与 `fe78fa0`，后续因远端拒绝大文件推送而重写提交 ID）。首次安全推送被 GitHub 拒绝：历史中的根目录 `mysql8.tar` 为 244,640,256 bytes，远端 `main` 未改变。用户当前工作区没有该归档文件；本地 `main` 历史已移除该文件并保留 `refs/backup/main-before-large-file-removal` 回退引用。全历史扫描确认只发现该一个超过 95 MiB 的对象；更新后的 pre-push 检查会在传输前拒绝超过 100 MiB 的 blob，模拟回归通过。尚未重试推送。
+- [ ] 剩余未提交工作区文件包含 IDE/旧文档/其他运维与游戏文件，本轮未纳入整改提交；整改代码已推送但尚未部署。线上发布仍受服务器 Redis 认证配置、现有容器替换授权、Google 生产域名与 OAuth 配置、生产 RabbitMQ/OSS/邮件/短信联调及旧数据完整性核验等门禁约束。MySQL 与二级口令已确认非空；Redis 密码当前为空，不可按已配置处理。
+- [x] 2026-10-19 本地 `main` 整改提交已推送。首次安全推送被 GitHub 拒绝：历史中的根目录 `mysql8.tar` 为 244,640,256 bytes，远端 `main` 未改变。用户当前工作区没有该归档文件；本地 `main` 历史已移除该文件并保留 `refs/backup/main-before-large-file-removal` 回退引用；pre-push 检查新增 100 MiB blob 限制，模拟回归通过。随后使用 `--force-with-lease` 成功更新远端 `main`，并通过 `git ls-remote` 与 `git fetch` 确认远端、本地分支均为 `d4e4a63`。尚未部署。
