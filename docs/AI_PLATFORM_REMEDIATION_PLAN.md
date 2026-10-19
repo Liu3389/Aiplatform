@@ -17,7 +17,7 @@
 - **DeepSeek 上游**：现有配置凭据已通过官方 `GET /models` 鉴权，并完成本地非流式与 SSE 真实聊天验收；无需为本地联调申请新 Key。凭据仅存于权限 `600` 的 Git 忽略文件 `.runtime/local.env`。用户已授权清理本地 `main` 历史，当前 `main` 的推送扫描通过；`origin/main` 与本地备份引用仍保留重写前历史，因此远端推送门禁尚未解除。没有撤销或轮换现有 Key；生产仍需由凭据所有者安全配置并单独验收。
 - **邮件与短信**：真实邮件需配置 SMTP `SPRING_MAIL_*`；真实短信需配置 `VERIFICATION_DELIVERY_MODE=external`、`VERIFICATION_SMS_URL`、`VERIFICATION_SMS_TOKEN`、`VERIFICATION_SMS_TEMPLATE_ID`，之后分别验收投递与验证绑定。
 - **真实 RabbitMQ 与 OSS**：部署环境需配置 `RABBITMQ_HOST`、`RABBITMQ_PORT`、`RABBITMQ_USERNAME`、`RABBITMQ_PASSWORD`、`RABBITMQ_VHOST`，并联调队列、监控和重启恢复；OSS 使用 `ALIYUN_OSS_ENDPOINT`、`ALIYUN_OSS_ACCESS_KEY_ID`、`ALIYUN_OSS_ACCESS_KEY_SECRET`、`ALIYUN_OSS_BUCKET`、`ALIYUN_OSS_DOMAIN`。本地 RabbitMQ 与本地文件存储已各自验证，不能替代生产联调。
-- **线上发布配置**：当前 `.env.prod` 发布预检缺少 `MYSQL_PASSWORD`、`REDIS_PASSWORD`、`SECONDARY_PASSWORD`，并要求有效的 `API_ENCRYPTION_KEY`、精确的 `ALLOWED_ORIGINS`；部署还需提供 `AI_PLATFORM_DEPLOY_HOST`、`AI_PLATFORM_DEPLOY_SSH_KEY` 和可信 `known_hosts` 指纹。值应由部署凭据所有者写入受控环境，不经聊天传递。
+- **线上发布配置**：用户已确认服务器受控环境中的 `MYSQL_PASSWORD`、`REDIS_PASSWORD`、`SECONDARY_PASSWORD` 已配置；它们应保存在服务器 `/root/lingdian/.env.prod`，不需要复制到开发机，也不需要从 Google 或 DeepSeek 申请。此前失败的是本机仓库 `.env.prod` 门禁。`server-deploy.sh` 会在任何镜像传输前，通过 SSH 对服务器 Compose 配置执行只读 `config -q`，同时检查 `API_ENCRYPTION_KEY` 与精确的 `ALLOWED_ORIGINS`。当前开发机尚无可用的 `AI_PLATFORM_DEPLOY_HOST`、`AI_PLATFORM_DEPLOY_SSH_KEY` 与可信 `known_hosts` 组合，因此线上配置仍待远程只读验证。
 - **历史数据/凭据人工核验**：上线前需按 B3、B5、C1-C4、E1 各节盘点旧 Redis 结算快照、临时赠点、伪 TOTP/OAuth 数据、旧 Token、历史联系方式与已暴露密钥；涉及用户余额、身份或联系方式的迁移/冲销不能自动猜测。
 - **支付**：按用户决定暂不接支付接口；直充路径继续关闭，待以后另选渠道并单独验收。
 
@@ -64,7 +64,7 @@
 
 ### 批次 E：配置、凭据与部署边界
 
-- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；当前暂存/跟踪/未跟踪内容凭据扫描通过（42 个暂存变更、350 个跟踪文件、156 个未跟踪文件、2 个环境模板）。用户已授权并完成本地 `main` 历史脱敏，当前目标分支推送扫描通过。远端 `origin/main` 和本地回滚备份仍保留旧历史，需由凭据所有者协调远端引用清理与备份保留；不因格式命中推断密钥仍有效，也未撤销或轮换凭据。生产密钥注入与服务器部署配置仍待凭据所有者完成。
+- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；当前暂存/跟踪/未跟踪内容凭据扫描通过（42 个暂存变更、350 个跟踪文件、156 个未跟踪文件、2 个环境模板）。用户已授权并完成本地 `main` 历史脱敏，当前目标分支推送扫描通过。远端 `origin/main` 和本地回滚备份仍保留旧历史，需由凭据所有者协调远端引用清理与备份保留；不因格式命中推断密钥仍有效，也未撤销或轮换凭据。用户已确认服务器受控环境中的三个生产密码配置完成；由于本机没有可用的服务器 SSH 入口，远端 Compose 只读校验仍待执行。服务器凭据不应复制到开发机或聊天中。
 - [x] **E2 前端 API 路由不被静态扩展规则截获（P2-19）**：`/api/`、`/chat/`、`/v1/` 已使用 `^~` 前缀优先匹配。临时 Nginx 与 mock 后端验证了带 `.png`、`.pdf`、`.svg`、`.json` 后缀的 API/SSE 请求均转发到后端，SSE 未缓冲，静态资源缓存保持正常；`nginx -t` 通过。
 - [x] **E3 聊天页首屏包体过大（本地构建新发现，P3-21）**：聊天页 Markdown、Mermaid、代码高亮、公式渲染已按需加载。构建后 ChatPage 入口为 94.97 KB（gzip 25.97 KB），较整改前约减少 93%；浏览器回归确认 Markdown、代码高亮、KaTeX 和 Mermaid 均正常。ECharts 与其他页面共享 chunk 仍超过 500 KB，但不在 ChatPage 静态依赖图中，作为独立页面优化跟踪。
 
@@ -102,6 +102,7 @@
 - [x] `mvn -q -Dtest=AuthControllerCaptchaTest,CaptchaServiceTest test` 通过；错误验证码不进入账号锁定/密码校验，正确验证码可以建立登录会话，注册验证码不能作为登录验证码使用。
 - [x] `npm run build` 通过；本地浏览器确认验证码图片与输入框显示正常。
 - [x] `./scripts/ai-local-env.sh verify` 与 `./scripts/ai-local-env.sh verify-chat` 通过；脚本覆盖错误验证码拒绝、错误尝试后的答案重放拒绝、有效验证码登录，以及后续非流式聊天、Token/API Key SSE 和结算。
+- [x] 2026-10-19 再次运行 `mvn -q -Dapp.messaging.rabbit-enabled=false -Dtest=CaptchaServiceTest,AuthControllerCaptchaTest test`；两个 Surefire 报告合计 5 项测试、0 失败、0 错误、0 跳过，覆盖验证码错误拒绝、一次消费/重放拒绝、注册与登录验证码隔离、有效验证码建立会话，以及 2FA 挑战不提前签发 Token。
 - [x] 只在本地环境验证，未切换线上代理、未部署。
 
 ### A1 文件路径边界验收（2026-10-18）
@@ -150,7 +151,8 @@
 - [x] 2026-10-19 本地审计补齐优惠券接口语义：`/user/coupons` 改为读取当前用户持久化优惠券，不再随机生成假券；未实现的单独使用与兑换码接口明确返回 503，不伪报成功；前端 API 类型不再暴露无法成功的使用/兑换方法。
 - [x] `UserRechargeSecurityTest` 覆盖真实优惠券列表、独立使用/兑换拒绝及无服务副作用；全量 `mvn -q -Dapp.messaging.rabbit-enabled=false test` 在加载隔离本地配置后通过（83 项，0 失败、0 错误、0 跳过），`npm run build` 通过。
 - [x] 扩展 `./scripts/ai-local-env.sh verify-chat` 回归优惠券列表为空时不生成虚假券，独立使用/兑换返回 503，余额、充值流水、券记录与使用记录均无变化；整条本地模拟聊天、验证码、SSE 与计费验证通过。
-- [x] 用户已决定暂不接入支付接口，后续另行选择可信支付渠道；当前继续关闭普通用户自助充值，不创建自定义验签协议。`UserRechargeSecurityTest` 5 项通过，完整 `verify-chat` 确认 1,000,000 元伪造直充及优惠券直充均返回 503，余额、充值流水、优惠券与使用记录不变。可信支付订单/验签/对账仍作为 B1 未完成门禁，未开放充值。
+- [x] 用户已决定暂不接入支付接口，后续另行选择可信支付渠道；当前继续关闭普通用户自助充值，不创建自定义验签协议。`UserRechargeSecurityTest` 5 项通过，并于 2026-10-19 再次独立复跑（0 失败/错误/跳过）；完整 `verify-chat` 确认 1,000,000 元伪造直充及优惠券直充均返回 503，余额、充值流水、优惠券与使用记录不变。可信支付订单/验签/对账仍作为 B1 未完成门禁，未开放充值。
+- [x] 2026-10-19 前端文案对齐关闭状态：会员页明确现有余额仍可用于开通/续费，自助充值未开放；余额不足提示联系管理员，不再提示用户先充值；Billing FAQ 同步说明自助充值不可用。`npm run build` 通过；本轮浏览器控制连接中断，未声称视觉验收。
 
 ### B2 点数余额并发与预扣一致性验收（2026-10-18）
 
@@ -281,12 +283,14 @@
 - [x] 2026-10-19 复核本地环境文件边界：`.env.prod` 与 `.runtime/local.env` 文件权限均为 `0600`；`.env.prod` 被 `.gitignore` 忽略且不在 Git 索引中，当前暂存/工作区凭据扫描通过，检查未回显任何值。此后已按用户授权重写本地 `main`；`origin/main` 与回滚备份引用仍保留旧历史，生产必需凭据和部署联调仍按下列门禁单独处理。
 - [x] 2026-10-19 增强模板扫描识别 `API_ENCRYPTION_KEY`，并修正 `.env.prod.example` 中高熵样式的示例值为明确占位符；只同步该模板到暂存区，未改动其他暂存文件。临时仓库回归确认未跟踪模板中的模拟密钥会被拒绝，诊断不回显值。
 - [x] 两份生产 Compose 配置要求显式提供 MySQL/Redis 密码、加密密钥、精确允许来源和系统二级口令；移除 `sk-placeholder`、通配跨域和 `5215` 等不安全默认值。`SystemControlController` 在二级口令缺失时失败关闭。模拟配置正反向校验通过。
-- [x] 新增 `scripts/check-production-env.py` 与 `scripts/local-release-preflight.sh`：部署前验证 `.env.prod` 权限/索引状态/必需值和 Compose 解析，再跑本地接口、全量后端测试、前端构建与完整聊天回归。`server-deploy.sh` 在镜像传输前调用该门禁并只读校验服务器 Compose；部署目标与 SSH 密钥改为显式环境变量，主机指纹检查启用；数据库迁移密码不再回传本机或拼入命令行。
+- [x] 新增 `scripts/check-production-env.py` 与 `scripts/local-release-preflight.sh`：验证 `.env.prod` 权限/索引状态/必需值和 Compose 解析，并跑本地接口、全量后端测试、前端构建与完整聊天回归。`server-deploy.sh` 在镜像传输前执行本地功能验收并只读校验服务器 Compose；部署目标与 SSH 密钥改为显式环境变量，主机指纹检查启用；数据库迁移密码不回传本机或拼入命令行。
 - [x] `scripts/test-production-security-guards.py` 覆盖密钥文件权限、缺失/占位/弱值、Git 索引、通配来源、未跟踪环境模板和两份 Compose 的必填变量；全量 `mvn -q -Dapp.messaging.rabbit-enabled=false test` 通过：84 项、0 失败、0 错误、0 跳过；本地基础验证通过。没有连接或部署到线上。
-- [ ] 2026-10-19 当前本机 `.env.prod` 预检因 `MYSQL_PASSWORD`、`REDIS_PASSWORD` 和 `SECONDARY_PASSWORD` 缺失或未通过强度校验而拒绝发布。用户确认服务器受控环境中的生产凭据已配置完成；此确认未提供或读取凭据值，也不能代替本机发布门禁和服务器 Compose 的只读验证。部署还需设置 `AI_PLATFORM_DEPLOY_HOST`、`AI_PLATFORM_DEPLOY_SSH_KEY` 并确认可信 `known_hosts` 指纹。
+- [ ] 2026-10-19 历史上的完整本机 `.env.prod` 预检曾因开发机没有 `MYSQL_PASSWORD`、`REDIS_PASSWORD`、`SECONDARY_PASSWORD` 而拒绝；用户已确认服务器受控环境中的这三项已配置。部署流程现运行 `--local-only` 本地功能验收，再通过 SSH 只读校验服务器 Compose，不要求将服务器密码复制到开发机。远程验收仍缺 `AI_PLATFORM_DEPLOY_HOST`、`AI_PLATFORM_DEPLOY_SSH_KEY` 与可信 `known_hosts`。
 - [x] 2026-10-19 经用户授权，仅重写本地 `main` 历史以脱敏扫描器命中的高置信度凭据格式；重写后同一 pre-push 扫描器通过（1 个目标引用、1,369 个带路径文件对象、28 个提交），`scripts/test-push-history-secrets.py` 通过。当前工作区凭据扫描也通过（42 个暂存变更、349 个跟踪文件、157 个未跟踪文件、2 个环境模板）；为避免旧索引中的测试 Key 再次进入暂存区，将初始化器和 `rebuild.sql` 的索引项恢复到已脱敏 `main`，对应工作区文件字节未变。`.runtime/local.env` 权限仍为 `600`，DeepSeek 与 Google OIDC 配置仍存在；没有撤销本地凭据。
-- [ ] 远端 `origin/main` 仍保留旧历史，本次未推送或改写远端；原历史也保存在本地 `refs/backup`、`refs/original` 和工作区恢复 stash 中以便回退。用户已确认服务器受控环境的生产凭据配置完成，但本机 `.env.prod` 门禁仍拒绝发布；部署主机/SSH 配置、服务器 Compose 只读校验及联调尚未完成，不能发布线上。
-- [ ] 生产密钥注入与服务器 Compose 只读校验已具备本地门禁，但真实服务器配置及模型供应商仍未联调；完成配置后需再运行整套发布前置验收和部署环境验证，才能标记 E1 完成。
+- [ ] 远端 `origin/main` 仍保留旧历史，本次未推送或改写远端；原历史也保存在本地 `refs/backup`、`refs/original` 和工作区恢复 stash 中以便回退。用户已确认服务器受控环境的生产凭据配置完成；远程 Compose 只读校验、部署主机/SSH 配置及联调尚未完成，不能发布线上。
+- [ ] 服务器 Compose 只读校验已加入部署流程；当前缺少可用的主机/SSH/可信主机指纹入口，尚未验证服务器配置。真实生产模型供应商仍需单独确认与验收；完成后再运行发布前置验收和部署环境验证，才能标记 E1 完成。
+- [x] 2026-10-19 根据用户确认“生产凭据已在服务器受控环境配置”，将部署流程拆分为本地功能验收与目标服务器密钥校验：`local-release-preflight.sh --local-only` 不要求把服务器密钥复制到开发机；`server-deploy.sh` 仍在任何镜像传输前执行目标机 `docker compose ... config -q`。`test-deploy-preflight-routing.py`、Bash 语法检查及完整 `--local-only` 本地预检通过（后端 101 项、0 失败/错误、2 项 Rabbit opt-in 跳过；前端构建与 `verify-chat` 通过）。
+- [ ] 当前本机没有加载 `AI_PLATFORM_DEPLOY_HOST`、`AI_PLATFORM_DEPLOY_SSH_KEY`，SSH 配置中也没有同时具备现存私钥与已信任主机指纹的可用目标；因此尚未连接或验证用户确认的线上 `.env.prod`。聊天记录此前只有本地检查，没有线上 SSH 检查证据。
 
 ### E2 Nginx API 路由优先级验收（2026-10-19）
 
