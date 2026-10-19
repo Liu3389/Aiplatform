@@ -129,7 +129,7 @@ api:
 
 # CORS 跨域配置
 cors:
-  allowed-origins: ${ALLOWED_ORIGINS:*}  # 允许的域名，多个用逗号分隔。生产环境建议明确指定域名
+  allowed-origins: ${ALLOWED_ORIGINS:http://127.0.0.1:13000,http://localhost:13000} # 必须使用明确来源；不要配置通配符
 
 logging:
   level:

@@ -89,6 +89,7 @@ def test_production_env_guard() -> None:
         ("weak_secrets", {**SYNTHETIC_VALUES, "MYSQL_PASSWORD": "short"}, 0o600, False, 1),
         ("placeholder", {**SYNTHETIC_VALUES, "SECONDARY_PASSWORD": "5215"}, 0o600, False, 1),
         ("wildcard_origin", {**SYNTHETIC_VALUES, "ALLOWED_ORIGINS": "*"}, 0o600, False, 1),
+        ("embedded_wildcard_origin", {**SYNTHETIC_VALUES, "ALLOWED_ORIGINS": "https://lingdian-ai.top,https://*.example"}, 0o600, False, 1),
         ("tracked_env", SYNTHETIC_VALUES.copy(), 0o600, True, 1),
     )
     for name, values, mode, tracked, expected in cases:

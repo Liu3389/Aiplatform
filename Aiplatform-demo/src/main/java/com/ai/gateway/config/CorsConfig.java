@@ -8,6 +8,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -17,23 +18,33 @@ import java.util.List;
 @Configuration
 public class CorsConfig {
 
-    @Value("${cors.allowed-origins:http://localhost:*,http://127.0.0.1:*}")
+    private static final List<String> OWNED_SITE_ORIGINS = List.of(
+            "https://lingdian-ai.top",
+            "https://www.lingdian-ai.top"
+    );
+
+    @Value("${cors.allowed-origins:http://localhost:13000,http://127.0.0.1:13000}")
     private String allowedOrigins;
 
     @Bean
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
         
-        // ✅ 生产环境：从配置文件读取允许的域名，禁止使用 "*"
-        if ("*".equals(allowedOrigins)) {
-            log.warn("⚠️ CORS 配置警告：生产环境不建议使用通配符 '*'，请在 application.yml 中明确指定允许域名");
-            config.addAllowedOriginPattern("*");
-        } else {
-            // 多个域名用逗号分隔
-            String[] origins = allowedOrigins.split(",");
-            for (String origin : origins) {
-                config.addAllowedOrigin(origin.trim());
-            }
+        if (allowedOrigins == null || allowedOrigins.isBlank()) {
+            throw new IllegalStateException("CORS allowed origins must be configured explicitly");
+        }
+
+        List<String> origins = Arrays.stream(allowedOrigins.split(",", -1))
+                .map(String::trim)
+                .toList();
+        if (origins.stream().anyMatch(origin -> origin.isEmpty() || origin.contains("*"))) {
+            // Keep the current application available when an older container still injects '*',
+            // but never reflect arbitrary origins while credentials are enabled.
+            log.error("CORS wildcard rejected; falling back to the platform's owned HTTPS origins. Update ALLOWED_ORIGINS.");
+            origins = OWNED_SITE_ORIGINS;
+        }
+        for (String origin : origins) {
+            config.addAllowedOrigin(origin);
         }
         
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));

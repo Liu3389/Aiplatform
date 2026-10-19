@@ -156,7 +156,7 @@ def main() -> int:
     ]
     if invalid:
         return fail("以下必需变量缺失或仍是占位值：" + ", ".join(invalid))
-    if any(origin.strip() == "*" for origin in values["ALLOWED_ORIGINS"].split(",")):
+    if any("*" in origin.strip() for origin in values["ALLOWED_ORIGINS"].split(",")):
         return fail("ALLOWED_ORIGINS 不得包含通配符")
 
     optional_invalid = validate_optional_services(values)
