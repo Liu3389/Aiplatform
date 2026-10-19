@@ -1,0 +1,159 @@
+# =============================================================================
+# 凌点 AI 平台 - 服务器部署专用 (使用预构建镜像, 无需源码)
+#
+# 用法:
+#   docker compose -f docker-compose.server.yml --env-file .env.prod up -d
+#   查看日志: docker compose -f docker-compose.server.yml logs -f
+#
+# 首次启动 MySQL 会自动执行 rebuild.sql 建表+测试数据
+# =============================================================================
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: lingdian-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD_required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_gateway}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./rebuild.sql:/docker-entrypoint-initdb.d/01-rebuild.sql:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - lingdian-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: lingdian-redis
+    restart: always
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - lingdian-net
+
+  # SearXNG 自建聚合搜索 — 暂时注释（Docker Hub 国内无法拉取镜像）
+  # 日后镜像可用时取消注释，并把 SEARXNG_ENGINE 改为 auto
+  # searxng:
+  #   image: searxng/searxng:latest
+  #   container_name: lingdian-searxng
+  #   restart: always
+  #   volumes:
+  #     - ./searxng-settings.yml:/etc/searxng/settings.yml:ro
+  #   ports:
+  #     - "127.0.0.1:8888:8080"
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/healthz"]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 10s
+  #   networks:
+  #     - lingdian-net
+
+  backend:
+    image: aiplatform-backend:latest
+    container_name: lingdian-backend
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_gateway}
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD_required}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD_required}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      API_ENCRYPTION_KEY: ${API_ENCRYPTION_KEY:?API_ENCRYPTION_KEY_required}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS_required}
+      JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx512m}
+      SECONDARY_PASSWORD: ${SECONDARY_PASSWORD:?SECONDARY_PASSWORD_required}
+      APP_STORAGE_PREFER_LOCAL: ${APP_STORAGE_PREFER_LOCAL:-true}
+      APP_STORAGE_LOCAL_PATH: ${APP_STORAGE_LOCAL_PATH:-./uploads}
+      # 搜索功能配置 (SearXNG 自建聚合 + Jina 备选 + Tavily 优先)
+      SEARXNG_ENABLED: ${SEARXNG_ENABLED:-true}
+      SEARXNG_ENGINE: ${SEARXNG_ENGINE:-auto}
+      SEARXNG_BASE_URL: http://searxng:8080
+      JINA_ENABLED: ${JINA_ENABLED:-true}
+      JINA_API_KEY: ${JINA_API_KEY:-}
+      TAVILY_ENABLED: ${TAVILY_ENABLED:-true}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      # Optional external services. Keep them disabled/empty until production values are configured.
+      RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-false}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-localhost}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      ALIYUN_OSS_ENDPOINT: ${ALIYUN_OSS_ENDPOINT:-}
+      ALIYUN_OSS_ACCESS_KEY_ID: ${ALIYUN_OSS_ACCESS_KEY_ID:-}
+      ALIYUN_OSS_ACCESS_KEY_SECRET: ${ALIYUN_OSS_ACCESS_KEY_SECRET:-}
+      ALIYUN_OSS_BUCKET: ${ALIYUN_OSS_BUCKET:-}
+      ALIYUN_OSS_DOMAIN: ${ALIYUN_OSS_DOMAIN:-}
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT:-587}
+      SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME:-}
+      SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD:-}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: ${SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH:-true}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: ${SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE:-true}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE: ${SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE:-false}
+      VERIFICATION_DELIVERY_MODE: ${VERIFICATION_DELIVERY_MODE:-disabled}
+      VERIFICATION_ALLOW_LOCAL_CAPTURE: ${VERIFICATION_ALLOW_LOCAL_CAPTURE:-false}
+      VERIFICATION_EMAIL_FROM: ${VERIFICATION_EMAIL_FROM:-}
+      VERIFICATION_SMS_URL: ${VERIFICATION_SMS_URL:-}
+      VERIFICATION_SMS_TOKEN: ${VERIFICATION_SMS_TOKEN:-}
+      VERIFICATION_SMS_TEMPLATE_ID: ${VERIFICATION_SMS_TEMPLATE_ID:-}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-}
+      TZ: Asia/Shanghai
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 本地文件存储持久化（OSS 降级时文件存储在此目录，容器重建不丢失）
+      - ./uploads:/app/uploads
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
+    networks:
+      - lingdian-net
+
+  frontend:
+    image: aiplatform-frontend:latest
+    container_name: lingdian-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      # 仅本机访问, 由宿主机 Nginx 反代(HTTPS 域名) -> 不直接暴露公网
+      - "127.0.0.1:8088:80"
+    networks:
+      - lingdian-net
+
+volumes:
+  mysql-data:
+  redis-data:
+
+networks:
+  lingdian-net:
+    driver: bridge
