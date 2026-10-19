@@ -216,7 +216,7 @@
 - [x] 2026-10-19 本地复验：`GoogleOidcClientTest` 3 项、`OAuthServiceLifecycleTest` 4 项均通过；生命周期测试使用临时 MySQL schema，结束后已删除。Google 凭据配置前授权入口按设计返回 503，配置后返回指向 `accounts.google.com` 的授权 URL，范围为 `openid email profile`，包含 PKCE S256、state、nonce，并设置 HttpOnly/SameSite=Lax 浏览器绑定 Cookie。
 - [x] Google Cloud `Gemini API` 开发项目已配置品牌“凌点 AI Gateway”，支持邮箱使用当前 Google 账号；受众为“外部/测试”，仅当前账号登记为测试用户。Web 客户端登记来源 `http://127.0.0.1:13000` 和回调 `http://127.0.0.1:13000/oauth/callback`。客户端凭据写入 `.runtime/local.env`（权限 `600`、Git 忽略），下载 JSON 副本已删除；未将密钥写入代码、计划文档或聊天。
 - [x] 真实本地浏览器 OAuth 端到端验收：从登录页跳转 Google，用户同意仅提供姓名/头像及邮箱后，Google 返回 `/oauth/callback` 并进入本地 `/chat`。个人中心显示 Google 已验证邮箱和绑定状态；Google 登录创建的邮箱同步写入已验证联系方式，绑定到现有密码账号时不覆盖其原邮箱。前端将内部 `oauth_*` 映射名改为显示登录邮箱，并修复 React StrictMode 重复消费一次性 state 的回调竞争。`GoogleOidcClientTest` 3 项和 `OAuthServiceLifecycleTest` 4 项在临时数据库通过；`test:oauth-callback` 2 项、`test:auth-session` 7 项、`test:model-availability` 3 项、`npm run build`、本地 `verify` 与 `verify-chat` 均通过。
-- [ ] 生产 Google 登录仍未开放：需独立生产项目和 Web 客户端，登记正式 HTTPS 来源/回调，补齐经核验的首页、隐私政策和服务条款，按 Google 要求完成发布/验证并单独验收。不得将旧版 `oauth:bind:*` Redis 值或旧伪 OAuth 用户名自动迁入身份表；上线前需盘点旧账号并安排经用户验证后的重新绑定。GitHub 和微信须各自完成真实提供方适配及验证后才能重新开放。
+- [ ] 2026-10-19 生产 Google 门禁复核：Nginx 配置域名为 `lingdian-ai.top` / `www.lingdian-ai.top`，两者 HTTPS 首页均返回 200。前端 `WelcomePage.tsx` 的“隐私政策/服务条款”目前只是无链接文本；线上 `/privacy`、`/terms` 返回同一 2554 字节 SPA 壳，不是可提交给 Google 的政策页面。`.env.prod` 中生产 OAuth client ID/secret/redirect URI 均缺失。用户称正式页面已准备并将补充链接；收到链接后再核对并完成独立生产 OAuth 客户端、来源/回调和 Google 发布验证。不得将旧版 `oauth:bind:*` Redis 值或旧伪 OAuth 用户名自动迁入身份表；GitHub 和微信仍须各自完成真实提供方适配及验证后才能开放。
 
 ### C3 会话撤销与 Token 失效验收（2026-10-18）
 
