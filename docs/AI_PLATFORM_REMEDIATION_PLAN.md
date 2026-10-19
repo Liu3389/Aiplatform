@@ -94,6 +94,7 @@
 - [ ] 生产 RabbitMQ、OSS 与支付渠道仍是独立外部验收门禁。本地 RabbitMQ 4.2.9 已于 2026-10-19 完成本地 broker/恢复验收，不代表生产 broker 已联通；支付接口按用户决定暂缓。Google OIDC 开发沙箱和真实浏览器登录已完成，生产 Google 客户端仍需独立配置、页面审核和验收。
 - [x] ChatPage 首屏入口已从约 1.4 MB 降至 94.97 KB；当前构建剩余的大 chunk 属于 ECharts 和其他页面共享依赖，不在聊天页静态依赖图中，按独立页面优化跟踪。
 - [x] 2026-10-19 账号停用行为本地验收：提交 `c41d935` 将账号操作统一为停用，保留用户资料与全部历史数据、撤销会话并禁用后续访问；旧 `/user/delete-account` 与新 `/user/deactivate-account` 均保留。`UserServiceTest` 3 项通过，覆盖密码错误不改变状态、正确密码停用、用户名/邮箱/手机号保留和会话撤销。随后 `./scripts/local-release-preflight.sh --local-only` 通过：35 个 Surefire suite 共 105 项，0 失败、0 错误、2 项 Rabbit opt-in 跳过；前端生产构建、本地基础验证及验证码/模拟模型/SSE/结算回归通过。浏览器核对停用文案及空密码按钮禁用状态；接口无效 Token 探测在新旧路径均返回业务码 401。模拟上游验收不代表真实供应商请求；本功能未部署。
+- [x] 2026-10-19 已验证的本地提交以普通快进方式推送：`origin/main` 与本地 `main` 均为 `541372b`，GitHub 端历史凭据扫描通过（58 个提交对象）；未强推或部署。
 
 ### 真实 DeepSeek 本地上游验收（2026-10-19）
 
@@ -231,7 +232,8 @@
 - [x] `./scripts/ai-local-env.sh verify` 与 `verify-chat` 通过；真实本地 HTTP 回归在全端退出后确认 `/api/user/info`、OpenAI 兼容 `/api/chat/completions` 和 SSE `/api/chat/stream` 均以业务码 401 拒绝旧 Token；本地模型流式聊天、结算与代理仍正常。
 - [x] `./scripts/ai-local-env.sh status` 确认为本地模式，MySQL、Redis、后端、前端和模拟模型均运行；只在本地环境验证，未切换线上代理、未推送或部署。
 - [x] 2026-10-19 前端失效会话提示与刷新恢复：Token 刷新成功后原请求只重试一次；仍收到 401 时清理旧会话，并在登录页一次性显示“登录状态已失效，请使用账号、密码和图形验证码重新登录”。Node 回归现为 7 项，覆盖首次 HTTP 401、刷新失败、刷新后重试仍 401、非认证错误保留会话、锁定账号和提示单次消费；`npm run build` 通过。
-- [ ] 旧 Redis Token 不含设备绑定映射，升级后按失败关闭策略需用户重新登录；线上发布前需安排重新登录提示并确认兼容窗口。
+- [x] 旧 Redis Token 不含设备绑定映射时按失败关闭策略需用户重新登录；前端已在续期/重试仍为 401 时清除失效会话，并一次性显示重新登录提示。`npm run test:auth-session` 7 项全部通过。
+- [ ] 生产发布前仍需安排重新登录公告并确认兼容窗口；部署后观察旧会话失效与重新登录反馈。
 
 ### C4 邮箱与手机号验证绑定验收（2026-10-18）
 
@@ -361,7 +363,7 @@
 - [x] 后端 JAR 与前端静态资源已部署到原有容器；后端在原容器内重启，未构建/加载镜像、未创建或替换容器。后端、前端、MySQL、Redis 容器 ID 与发布前一致；Redis/MySQL 未重启，Redis 认证按用户选择继续暂缓。
 - [x] 发布后两条正式 HTTPS 域名的 `/api/health` 与登录验证码接口均返回 200；前端首页及其引用的 15 个 JS/CSS 资源均返回 200；Nginx 配置检查成功。新文件恢复扫描将原先 2 个过期 `PARSING` 任务恢复为 `SUCCESS`，目前 58 个文件解析任务均为成功。
 - [ ] 本次没有发起新的线上模型请求或付费聊天；本地模拟上游和真实凭据验收记录仍按各自章节区分。Google 生产 OAuth 的域名、首页及隐私/条款 URL 已由用户提供；线上 `/privacy` 与 `/terms` 仍回退到欢迎页，本地页面目前是待确认草案，需完成数据删除流程、补齐运营主体/公开联系邮箱并确认法律内容后才能部署和配置独立生产客户端。SMTP/短信、RabbitMQ、OSS 尚未完成线上配置与联调。直充仍按用户决定关闭。
-- [ ] 旧 Token 因缺少设备绑定映射按失败关闭策略需要用户重新登录；历史邮箱不会自动视为已验证，用户需重新验证。旧伪 OAuth/TOTP Redis 数据不迁移。生产 Redis 仍无认证且未公开宿主机端口，`.env.prod` 权限为 `600`；Redis 认证保持暂缓，启用前需安排现有 Redis/backend 的一致配置和重启。
+- [ ] 旧 Token 因缺少设备绑定映射按失败关闭策略需要用户重新登录；前端本地失效提示已完成，生产发布前仍需安排公告和兼容窗口。历史邮箱不会自动视为已验证，用户需重新验证。旧伪 OAuth/TOTP Redis 数据不迁移。生产 Redis 仍无认证且未公开宿主机端口，`.env.prod` 权限为 `600`；Redis 认证保持暂缓，启用前需安排现有 Redis/backend 的一致配置和重启。
 - [x] 2026-10-19 可选 Rabbit 健康修复已发布：本地全量预检通过后，提交 `e435d70` 已推送；权限 `600` 的原 JAR 备份为 `/root/lingdian/backups/backend-pre-rabbit-health-20261019T073350Z.jar`，新 Jar SHA-256 与本地产物一致，只在原 `lingdian-backend` 容器内替换 `/app/app.jar` 并重启，未新建镜像/容器，也未重启 MySQL、Redis 或 frontend。backend 容器 ID 保持不变；发布后公网 `/api/actuator/health` 返回 HTTP 200、`status=UP`，验证码接口返回 HTTP 200、业务码 200、图片数据存在且 TTL 300 秒。本次未发起线上模型请求或付费聊天。Google 生产 URL 已收齐，但 `/privacy` 与 `/terms` 当前回退到欢迎页，发布真实法律正文并核验前不能配置生产 OAuth 客户端。
 - [x] 2026-10-19 CORS 加固已保存为本地 `main` 提交 `b14415c`；远端 `origin/main` 仍保留旧版引用，本次没有向远端推送。已备份旧 JAR `/root/lingdian/backups/backend-pre-cors-20261019T075800Z.jar` 和配置 `/root/lingdian/backups/env-prod-pre-cors-20261019T075800Z.bak`（均权限 `600`），候选 JAR SHA-256 为 `bbd040343ce9ddf417c5c6aefabe2abb1f76c9dbd2fde95410a165208ac647a0`；服务器 `.env.prod` 权限保持 `600`，`ALLOWED_ORIGINS` 已设为正式两个域名。由于 Redis 曾被正常 SIGTERM 停止，已启动同一 Redis 容器并确认数据集载入后 `PONG`；健康恢复后只在原 backend 容器内替换 JAR并重启，backend/Redis/MySQL/frontend 容器 ID 均保持不变。公网两个正式来源 OPTIONS 返回精确 ACAO 且 `ACAC=true`，陌生来源无 CORS 允许头并返回 403；Actuator `UP`、登录验证码接口业务码 200 且图像存在。没有发起线上模型请求或付费聊天。
 - [ ] Google 生产 OAuth 的域名、首页及隐私/条款 URL 已由用户提供，独立项目 `lingdian-ai-production` 已创建；但线上 `/privacy` 与 `/terms` 仍返回与首页相同的 SPA 壳，本地法律页仍是待确认草案。运营主体全称及公开客服/隐私邮箱待用户补充；账号暂按停用处理，数据删除范围待用户确认。完成真实法律内容和上述信息后再配置品牌及生产 OAuth 客户端。SMTP/短信、RabbitMQ、OSS 尚未完成线上配置与联调；直充仍按用户决定关闭。
