@@ -283,9 +283,9 @@
 - [x] 两份生产 Compose 配置要求显式提供 MySQL/Redis 密码、加密密钥、精确允许来源和系统二级口令；移除 `sk-placeholder`、通配跨域和 `5215` 等不安全默认值。`SystemControlController` 在二级口令缺失时失败关闭。模拟配置正反向校验通过。
 - [x] 新增 `scripts/check-production-env.py` 与 `scripts/local-release-preflight.sh`：部署前验证 `.env.prod` 权限/索引状态/必需值和 Compose 解析，再跑本地接口、全量后端测试、前端构建与完整聊天回归。`server-deploy.sh` 在镜像传输前调用该门禁并只读校验服务器 Compose；部署目标与 SSH 密钥改为显式环境变量，主机指纹检查启用；数据库迁移密码不再回传本机或拼入命令行。
 - [x] `scripts/test-production-security-guards.py` 覆盖密钥文件权限、缺失/占位/弱值、Git 索引、通配来源、未跟踪环境模板和两份 Compose 的必填变量；全量 `mvn -q -Dapp.messaging.rabbit-enabled=false test` 通过：84 项、0 失败、0 错误、0 跳过；本地基础验证通过。没有连接或部署到线上。
-- [ ] 2026-10-19 当前本机 `.env.prod` 预检因缺少 `MYSQL_PASSWORD`、`REDIS_PASSWORD` 和 `SECONDARY_PASSWORD` 而拒绝发布；凭据所有者需在受控本地及服务器配置并协调生效值。部署还需设置 `AI_PLATFORM_DEPLOY_HOST`、`AI_PLATFORM_DEPLOY_SSH_KEY` 并确认可信 `known_hosts` 指纹。当前没有输出或修改实际密钥值。
+- [ ] 2026-10-19 当前本机 `.env.prod` 预检因 `MYSQL_PASSWORD`、`REDIS_PASSWORD` 和 `SECONDARY_PASSWORD` 缺失或未通过强度校验而拒绝发布。用户确认服务器受控环境中的生产凭据已配置完成；此确认未提供或读取凭据值，也不能代替本机发布门禁和服务器 Compose 的只读验证。部署还需设置 `AI_PLATFORM_DEPLOY_HOST`、`AI_PLATFORM_DEPLOY_SSH_KEY` 并确认可信 `known_hosts` 指纹。
 - [x] 2026-10-19 经用户授权，仅重写本地 `main` 历史以脱敏扫描器命中的高置信度凭据格式；重写后同一 pre-push 扫描器通过（1 个目标引用、1,369 个带路径文件对象、28 个提交），`scripts/test-push-history-secrets.py` 通过。当前工作区凭据扫描也通过（42 个暂存变更、349 个跟踪文件、157 个未跟踪文件、2 个环境模板）；为避免旧索引中的测试 Key 再次进入暂存区，将初始化器和 `rebuild.sql` 的索引项恢复到已脱敏 `main`，对应工作区文件字节未变。`.runtime/local.env` 权限仍为 `600`，DeepSeek 与 Google OIDC 配置仍存在；没有撤销本地凭据。
-- [ ] 远端 `origin/main` 仍保留旧历史，本次未推送或改写远端；原历史也保存在本地 `refs/backup`、`refs/original` 和工作区恢复 stash 中以便回退。后续远端清理需由凭据所有者协调维护窗口与目标引用，确认后再处理旧备份引用。最近一次发布预检确认 `.env.prod` 仍缺少 `MYSQL_PASSWORD`、`REDIS_PASSWORD`、`SECONDARY_PASSWORD`，部署主机/SSH 配置与服务器联调也未完成，不能发布线上。
+- [ ] 远端 `origin/main` 仍保留旧历史，本次未推送或改写远端；原历史也保存在本地 `refs/backup`、`refs/original` 和工作区恢复 stash 中以便回退。用户已确认服务器受控环境的生产凭据配置完成，但本机 `.env.prod` 门禁仍拒绝发布；部署主机/SSH 配置、服务器 Compose 只读校验及联调尚未完成，不能发布线上。
 - [ ] 生产密钥注入与服务器 Compose 只读校验已具备本地门禁，但真实服务器配置及模型供应商仍未联调；完成配置后需再运行整套发布前置验收和部署环境验证，才能标记 E1 完成。
 
 ### E2 Nginx API 路由优先级验收（2026-10-19）
@@ -312,7 +312,7 @@
 
 ### 本地开发暂停检查点（2026-10-19）
 
-- [x] 2026-10-19 Google Cloud OAuth 只读核对：当前项目 OAuth 同意屏幕处于“外部/测试”，当前账号已在测试用户列表，品牌名与用户支持邮箱已设置；本地 Web 客户端登记 `http://127.0.0.1:13000` 和 `http://127.0.0.1:13000/oauth/callback`。品牌页的首页、隐私政策、服务条款仍空，适合当前本地测试状态；正式开放前必须由项目所有者确定正式域名和公开法律页面，再配置生产项目/客户端并完成 Google 审核。未更改或发布 Cloud Console 设置。
+- [x] 2026-10-19 Google Cloud OAuth 只读核对：当前项目 OAuth 同意屏幕处于“外部/测试”，当前账号已在测试用户列表，品牌名与用户支持邮箱已设置；本地 Web 客户端登记 `http://127.0.0.1:13000` 和 `http://127.0.0.1:13000/oauth/callback`。品牌页的首页、隐私政策、服务条款仍空，适合当前本地测试状态；用户确认正式域名及页面链接已准备、稍后补充，但具体域名和 URL 尚未提供。正式开放前必须由项目所有者提供并配置正式链接、生产客户端并完成 Google 审核。未更改或发布 Cloud Console 设置。
 - [x] 2026-10-19 本地浏览器只读视觉复验：`/login` 实际渲染用户名/密码、验证码输入框与图片、刷新按钮、“5 分钟内有效”提示、登录与 Google 登录入口；页面结构与截图显示一致。本次未填写账号、解答验证码或提交登录。
 - [x] 2026-10-19 完整 `scripts/local-release-preflight.sh` 复验：本地 `verify` 通过；后端 34 个 Surefire suite 共 101 项、0 失败、0 错误、2 项 Rabbit opt-in 跳过；`npm run build` 通过；`verify-chat` 覆盖登录验证码错误/重放拒绝、模型可用性、联系方式、路径权限、充值关闭、聊天幂等与持久化、SSE、限流、管理员权限、结算重放及 B4 故障恢复，模拟上游收到 12 次请求（3 次 SSE），20 条消息持久化、11 笔结算完成。最后在生产配置门禁因缺少 `MYSQL_PASSWORD`、`REDIS_PASSWORD`、`SECONDARY_PASSWORD` 退出码 1；未连接、推送或部署远端。
 - [x] 随后单独重跑 `RabbitEventPublisherIntegrationTest`：使用隔离的 RabbitMQ 4.2.9 容器和随机 loopback 端口，两项测试均通过（publisher confirm/持久化/mandatory unroutable return；listener 分派后 ACK），Surefire 记录 2 项、0 失败/错误/跳过。测试容器已删除，没有修改默认本地栈或接触生产 broker。
