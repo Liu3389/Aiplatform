@@ -168,7 +168,7 @@
 - [x] 将同一事件再次置为待处理后由扫描器重复投递；outbox 重新完成，扣费流水和点数流水均仍只有一条，余额不变。
 - [x] 新增 `points_version` 与 `migration-v8-points-settlement-version.sql`；本地启动时幂等执行迁移，`rebuild.sql` 包含新列。只在本地栈验证，未切换线上代理、未部署。
 - [x] 2026-10-19 复核失败关闭路径：Lua 对缺少 `databasePointsVersion` 或 `settledAt` 的旧快照返回 `legacy_settlement_metadata_missing`；`PointsService` 在写账单、点数流水或数据库余额前返回失败，outbox 保持待处理等待重试，不会应用旧余额快照。当前本地 MySQL/Redis 只读审计结果为 0 个待处理 outbox、0 个关联结算快照、0 个缺元数据或格式异常快照。
-- [ ] 升级前已存在且缺少版本元数据的 Redis 结算快照会失败关闭并需人工对账；上线前需确认没有此类悬挂 outbox，或另行完成逐笔对账。
+- [ ] 2026-10-19 生产复核：6 个 outbox 全部为 `SETTLED`，6 个 Redis 快照与 outbox requestId 一一对应；快照缺少 `databasePointsVersion`/`settledAt`，但均能对应到 billing_record 与 SETTLE points_bill，用户、实际扣点及 after 余额一致。另发现 6 条历史 `points_bill.balance_before` 均比对应 billing_record 少 Redis 预扣额；当前用户余额未受影响。待用户决定是否只修正这 6 条历史 before 快照；尚未修改账单数据。没有悬挂 outbox。
 
 ### B4 点数预扣崩溃恢复验收（2026-10-18）
 
@@ -197,7 +197,7 @@
 - [x] 全量 `mvn -q -Dapp.messaging.rabbit-enabled=false test` 通过：45 项测试，0 失败、0 错误、0 跳过。
 - [x] `./scripts/ai-local-env.sh verify-chat` 与 `./scripts/ai-local-env.sh verify` 均通过；本地 mock 聊天、计费恢复、前端代理、未认证边界正常，代理模式仍为 `local`。
 - [x] 2026-10-19 迁移路径只读审计：v10 只扩展账本类型注释并创建空的临时点数批次表，不回填余额；`scripts/server-deploy.sh` 不执行数据库迁移，只在门禁通过后更新 backend/frontend。常规应用部署不会自动运行 v10，但历史逐用户核账与迁移/冲销决策仍必须完成。
-- [ ] `migration-v10-points-temporary-lots.sql` 不会猜测性回填旧临时赠点：上线前必须先核对旧 `points_bill` 记录与余额，制定经业务确认的逐用户迁移/冲销方案；在完成之前，历史临时赠点余额的期限属性无法由新批次表准确恢复，禁止把该迁移直接用于线上。
+- [x] 2026-10-19 用户确认历史 6 笔、790 点旧限时赠点按永久点数保留。v10 迁移只创建空的临时批次表、不猜测性回填；迁移前后用户总点数与旧临时赠点账本均不变。新赠点由批次表逐笔追踪过期。
 
 ### C1 登录二次验证验收（2026-10-18）
 
@@ -205,7 +205,7 @@
 - [x] `UserTwoFactorServiceLifecycleTest` 使用本地 MySQL/Redis 验证启用确认、缺少二次验证码时 HTTP 428 且不创建会话、有效 TOTP 登录、时间步重放拒绝、备份码登录和重放拒绝、备份码哈希存储、状态接口不泄露备份码及安全关闭 2FA。
 - [x] 全量 `mvn -q -Dapp.messaging.rabbit-enabled=false test` 通过：50 项测试，0 失败、0 错误、0 跳过；`npm run build` 通过。
 - [x] `./scripts/ai-local-env.sh verify-chat` 与 `./scripts/ai-local-env.sh verify` 均通过；本地登录验证码、防重放、AI 聊天与 SSE、计费恢复、代理和未认证边界正常。`./scripts/ai-local-env.sh status` 确认本地模式，未切换线上代理、未推送或部署。
-- [ ] 线上迁移前必须通知持有旧版伪 TOTP Redis 密钥的用户重新绑定；旧 `2fa:secret:*` 值不可信，不得迁移为已启用状态。`API_ENCRYPTION_KEY` 必须稳定保管；如需轮换，先实现并验证 TOTP 密钥重加密流程，否则现存共享密钥将无法解密。
+- [x] 2026-10-19 生产 v11 迁移后核验：旧 Redis `2fa:secret:*` 键为 0，`user_two_factor` 记录为 0；没有旧版伪 TOTP 密钥需要迁移或通知。没有导入旧密钥，也没有轮换 `API_ENCRYPTION_KEY`。
 
 ### C2 OAuth/OIDC 验收（2026-10-19）
 
@@ -235,7 +235,7 @@
 - [x] `./scripts/ai-local-env.sh verify-chat` 通过真实本地 HTTP `/api/user/send-bind-code`、`/bind-email`、`/bind-phone`；仅从隔离 Redis 测试收件箱取码并核对 MySQL 持久化。原有聊天、流式聊天、计费恢复与 C3 旧 Token 回归也通过。
 - [x] 新增并在本地重复应用 `migration-v13-user-verified-contacts.sql`；`verify` 和 `status` 均确认前端代理仍为 `local`，MySQL、Redis、后端、前端与 mock 正常。未切换线上、未推送或部署。
 - [ ] 真实发信联调仍需配置 SMTP 沙箱与 HTTPS 短信网关（`VERIFICATION_DELIVERY_MODE=external`、SMTP `SPRING_MAIL_*`、`VERIFICATION_SMS_URL`、`VERIFICATION_SMS_TOKEN`、`VERIFICATION_SMS_TEMPLATE_ID`）。短信网关需接受 JSON `{phone, templateId, variables:{code, expiresInMinutes}}` 并以 2xx 表示提交成功；此处未声称真实邮件或短信已送达。
-- [ ] v13 不会把历史邮箱自动标记为已验证。上线前需盘点历史邮箱重复和来源；需验证的用户应重新完成绑定。历史冲突邮箱需先经业务核验处理，不能自动挑选一个账号保留。
+- [x] 2026-10-19 生产 v13 审计：10 个用户中重复邮箱组为 0，已验证联系方式表为空；旧邮箱未被自动标记为已验证，用户需要在邮件/短信投递配置完成后重新验证。没有发生邮箱冲突或账号合并。
 
 ### C4 前端契约与安全中心界面验收（2026-10-19）
 
