@@ -288,7 +288,7 @@
 - [x] 2026-10-19 澄清本机与服务器环境差异：本机完整 `.env.prod` 预检曾因服务器密码未复制到开发机而拒绝；用户确认线上三项已配置后，部署流程改为 `--local-only` 执行本地功能验收，再通过 SSH 只读校验服务器 Compose，不要求复制服务器密码。
 - [x] 2026-10-19 经用户授权，仅重写本地 `main` 历史以脱敏扫描器命中的高置信度凭据格式；重写后同一 pre-push 扫描器通过（1 个目标引用、1,369 个带路径文件对象、28 个提交），`scripts/test-push-history-secrets.py` 通过。当前工作区凭据扫描也通过（42 个暂存变更、349 个跟踪文件、157 个未跟踪文件、2 个环境模板）；为避免旧索引中的测试 Key 再次进入暂存区，将初始化器和 `rebuild.sql` 的索引项恢复到已脱敏 `main`，对应工作区文件字节未变。`.runtime/local.env` 权限仍为 `600`，DeepSeek 与 Google OIDC 配置仍存在；没有撤销本地凭据。
 - [ ] 远端 `origin/main` 仍保留旧历史，本次未推送或改写远端；原历史也保存在本地 `refs/backup`、`refs/original` 和工作区恢复 stash 中以便回退。用户已确认服务器生产凭据配置完成，远程 Compose 只读校验已通过；远端历史协调和真实生产模型/服务联调仍未完成。本轮没有部署。
-- [ ] 服务器 Compose 只读校验已于 2026-10-19 通过；同次 `docker ps` 确认现有 7 个容器均运行，其中 MySQL/Redis 报健康。此证据验证 Compose 配置解析和容器状态，不等同于应用接口或生产模型端到端验收；真实生产模型供应商仍需单独确认与验收。
+- [x] 服务器 Compose 只读校验已于 2026-10-19 通过；同次 `docker ps` 确认现有 7 个容器均运行，其中 MySQL/Redis 报健康。此证据验证 Compose 配置解析和容器状态，不等同于应用接口或生产模型端到端验收；真实生产模型供应商仍需单独确认与验收。
 - [x] 2026-10-19 根据用户确认“生产凭据已在服务器受控环境配置”，将部署流程拆分为本地功能验收与目标服务器密钥校验：`local-release-preflight.sh --local-only` 不要求把服务器密钥复制到开发机；`server-deploy.sh` 仍在任何镜像传输前执行目标机 `docker compose ... config -q`。`test-deploy-preflight-routing.py`、Bash 语法检查及完整 `--local-only` 本地预检通过（后端 101 项、0 失败/错误、2 项 Rabbit opt-in 跳过；前端构建与 `verify-chat` 通过）。
 - [x] 2026-10-19 使用用户提供的主机、用户和本机私钥路径完成严格主机校验下的远端只读 Compose 检查，并列出现有容器状态；未输出密钥值，未执行镜像或容器变更。当前 shell 尚未常驻设置部署脚本所需环境变量；获准部署时再按需注入。
 - [x] 2026-10-19 远程校验后再次扫描当前本地 `main` 的完整推送历史：1 个目标引用、1,387 个文件对象、34 个提交，`scripts/check-push-history-secrets.py` 通过。`origin/main` 未修改且仍保留旧历史；本次没有推送。
@@ -313,7 +313,7 @@
 - [x] 完整 `verify-chat` 通过：验证码及重放拒绝、模型输出 Token 上限、联系方式绑定、优惠券/充值未开放路径、权限与限流、幂等、消息持久化、SSE、旧 Token 撤销、B4 未持久化/响应后结算/未知上游结果恢复均通过。模拟上游收到 12 次请求，其中 3 次为流式；本地完成 20 条消息持久化和 11 笔结算。
 - [x] 复验后 `scripts/ai-local-env.sh status` 确认隔离 MySQL、Redis、后端、前端和模拟模型仍运行，代理指向 `http://127.0.0.1:18080` 的本地后端。
 - [x] 2026-10-19 后续再次运行 `bash scripts/local-release-preflight.sh`：后端全量 101 项测试、0 失败、0 错误、2 项 Rabbit opt-in 跳过；前端 `npm run build` 和默认完整 `verify-chat` 通过。脚本最后因生产密钥门禁退出，且没有连接服务器、传输镜像、推送或部署；`scripts/local-release-preflight.sh` 已设为可直接执行。
-- [ ] 发布前置脚本最终以退出码 1 停在生产环境密钥门禁；`.env.prod` 仍缺少 `MYSQL_PASSWORD`、`REDIS_PASSWORD`、`SECONDARY_PASSWORD`。这是预期的安全拒绝，未连接远端、未传输镜像、未推送或部署。补齐受控配置后需重跑整套门禁。
+- [x] 历史记录：2026-10-19 那次本机发布预检因开发机没有服务器专用 `.env.prod` 而停在密钥门禁；当时没有连接、传输镜像、推送或部署。之后用户确认服务器受控环境已配置 `MYSQL_PASSWORD`、`REDIS_PASSWORD`、`SECONDARY_PASSWORD`，并完成远端 Compose 只读校验（见本节上方记录），因此这三项不是当前待用户提供的内容；不要把服务器密码复制到开发机或聊天中。
 
 ### 本地开发暂停检查点（2026-10-19）
 
@@ -335,4 +335,4 @@
 - [x] DeepSeek 环境回退 HTTP 验收：新增 `AI_VERIFY_DEEPSEEK_FALLBACK=true ./scripts/ai-local-env.sh verify-chat` 专项模式及本地 `/responses` mock。测试临时停用原 3 条 DeepSeek 模型、插入空 `api_key` 的本地测试模型并只注入合成 Key；HTTP 确认模型 `chatEnabled=true` 且响应不含凭据字段，非流式与 SSE 聊天均以 Bearer 认证到达 `/responses`、携带 `max_output_tokens=256`，两轮回复均落库并各结算一次。退出清理删除测试模型、恢复原模型状态并重启后端；随后 DB 确认测试模型数为 0、原 3 条 DeepSeek 状态恢复启用，基础 `verify` 回到 17 个启用、1 个可对话、16 个未接入。本地模式完整回归通过：14 次 mock 请求、4 次 SSE，24 条消息、13 笔结算。测试 Key 只在测试进程内使用，不访问真实上游。
 - [x] 2026-10-19 当前工作区全量复验：后端 `mvn -Dapp.messaging.rabbit-enabled=false test` 为 99 项、0 失败、0 错误、0 跳过；前端 `test:auth-session` 7 项、`test:model-availability` 3 项通过，`npm run build` 成功；登录页 CAPTCHA API 与错误码实测通过；`./scripts/ai-local-env.sh verify` 通过。后端测试使用临时 MySQL 数据库副本和独立 Redis 容器，二者均已清理，本地开发栈仍健康且代理保持 local。
 - [x] 2026-10-19 本地检查点提交为 `802f5ed`，仅包含本计划与删除含非占位密码字段的旧 `.env.example`；现有其他代码/配置改动保持在工作区。
-- [ ] 其余工作区变更尚未提交、未推送、未部署；发布仍受 E1 中生产凭据门禁、远端历史协调及各项真实外部服务验收约束。
+- [ ] 其余工作区变更尚未提交、未推送、未部署；发布仍受远端历史协调、Google 生产域名与 OAuth 配置、生产 RabbitMQ/OSS/邮件/短信联调、旧数据完整性核验等门禁约束。服务器密码已由用户确认配置且远端 Compose 只读校验通过，不再列为当前缺项。
