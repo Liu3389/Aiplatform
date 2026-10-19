@@ -168,7 +168,7 @@
 - [x] 将同一事件再次置为待处理后由扫描器重复投递；outbox 重新完成，扣费流水和点数流水均仍只有一条，余额不变。
 - [x] 新增 `points_version` 与 `migration-v8-points-settlement-version.sql`；本地启动时幂等执行迁移，`rebuild.sql` 包含新列。只在本地栈验证，未切换线上代理、未部署。
 - [x] 2026-10-19 复核失败关闭路径：Lua 对缺少 `databasePointsVersion` 或 `settledAt` 的旧快照返回 `legacy_settlement_metadata_missing`；`PointsService` 在写账单、点数流水或数据库余额前返回失败，outbox 保持待处理等待重试，不会应用旧余额快照。当前本地 MySQL/Redis 只读审计结果为 0 个待处理 outbox、0 个关联结算快照、0 个缺元数据或格式异常快照。
-- [ ] 2026-10-19 生产复核：6 个 outbox 全部为 `SETTLED`，6 个 Redis 快照与 outbox requestId 一一对应；快照缺少 `databasePointsVersion`/`settledAt`，但均能对应到 billing_record 与 SETTLE points_bill，用户、实际扣点及 after 余额一致。另发现 6 条历史 `points_bill.balance_before` 均比对应 billing_record 少 Redis 预扣额；当前用户余额未受影响。待用户决定是否只修正这 6 条历史 before 快照；尚未修改账单数据。没有悬挂 outbox。
+- [x] 2026-10-19 生产复核与历史账本修正：6 个 outbox 全部为 `SETTLED`，均能对应到 `billing_record` 与 `SETTLE` `points_bill`，用户、实际扣点及 after 余额一致；旧 Redis 快照缺少 `databasePointsVersion`/`settledAt`，但没有悬挂 outbox。修正前发现 6 条历史 `points_bill.balance_before` 均比对应 `billing_record.balance_before` 少 Redis 预扣额。先创建并通过 `gzip -t` 校验权限 `600` 的当前数据库备份 `/root/lingdian/backups/ai_gateway-pre-b3-ledger-fix-20261019T071404Z.sql.gz`，再以 `SERIALIZABLE` 事务和行锁将 6 条 before 快照对齐，影响行数恰为 6。修正后 before/after/扣点金额差异均为 0；10 个用户的余额合计 `529000`、点数合计 `53934` 与修正前相同。
 
 ### B4 点数预扣崩溃恢复验收（2026-10-18）
 
