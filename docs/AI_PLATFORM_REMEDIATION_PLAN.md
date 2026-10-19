@@ -374,3 +374,10 @@
 - [x] 2026-10-19 新增复用现有容器的受控发布脚本：默认 `--plan` 不联网；`--apply` 先要求法律页确认并拒绝草案标记，再运行本地全量预检，远端只用 `docker inspect/cp/exec/restart`，备份原 JAR/静态资源、核验七个容器 ID 与非 backend 启动时间，并在健康/验证码/静态资源检查失败时回滚。`bash -n` 与 `python3 scripts/test-existing-container-deploy.py` 通过；当前法律页尚未完成，因此未连接服务器、未部署。
 - [x] 2026-10-19 最新本地与远端状态核验（提交 `d31d134`）：`./scripts/local-release-preflight.sh --local-only` 通过；35 个 Surefire suite 共 105 项、0 失败/错误、2 项 Rabbit opt-in 跳过；前端构建成功（ECharts 仍有既有大 chunk 警告）；`verify-chat` 通过 12 次模拟上游请求（3 次 SSE）、20 条消息和 11 笔结算，覆盖验证码错误/重放、幂等、权限/限流及 B4 故障恢复。随后 `./scripts/ai-local-env.sh verify` 通过，MySQL、Redis、backend、web、mock 仍健康，代理为 local；浏览器登录页显示图形验证码、刷新按钮和 5 分钟提示。远端只读核验确认 7 个容器均运行、`.env.prod` 为 `0600`；MySQL/二级口令已设，Redis 密码为空（按用户决定暂不认证），Google/RabbitMQ/OSS/SMTP/短信配置未设置。公网 health 为 200；浏览器访问 `/privacy`、`/terms` 均导航回 `/welcome`，故没有部署代码或法律草案。`origin/main` 与本地同步至 `d31d134`；没有读取或输出线上 API Key/密码，也没有发起线上 AI 或付费请求。
 - [x] 2026-10-19 Google 生产控制台复核：浏览器当前选中项目 `lingdian-ai-production`，Google Auth Platform 显示“尚未配置”，尚无生产 OAuth 客户端。生产项目与本地测试项目已分离；等待运营主体全称、公开联系邮箱和法律内容确认后再继续设置品牌、同意屏幕与回调。
+
+### 2026-10-19 本地复验续记
+
+- [x] 当前工作区复跑后端全量测试：35 个 Surefire suite、105 项测试、0 失败、0 错误、2 项 Rabbit opt-in 测试跳过。测试在停止本地 backend 期间通过；backend 同时运行时此前复现一次 `FileParseTaskRecoveryLifecycleTest` 数据库死锁，需把并发运行条件保留为测试稳定性注意项，不能声称该死锁已通过代码修复。
+- [x] `npm run build`、`./scripts/ai-local-env.sh verify` 和完整 `./scripts/ai-local-env.sh verify-chat` 均通过；后者覆盖验证码拒绝、模拟流式对话、权限/限流、持久化与点数结算。本地栈已恢复运行并保持 `local` 代理；这些聊天验收使用本地 mock，不代表 Google OAuth 或线上模型验收。
+- [x] 本地浏览器再次确认登录表单显示图形验证码、5 分钟有效提示和 Google 登录入口；`/privacy`、`/terms` 本地路由可见，但内容仍明确标为草案。
+- [ ] 生产 Google OAuth 仍未完成：测试受众和授权域名已在控制台保存；用户需亲自提交已预填的 Web 客户端表单并保管生成的 Client ID/Secret，再写入服务器受限 `.env.prod`。线上 OAuth 授权接口仍返回业务码 503；没有部署或改动线上容器。

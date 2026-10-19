@@ -33,6 +33,8 @@ AI 平台本地环境
   ./scripts/ai-local-env.sh status              查看本地容器、进程和代理模式
   ./scripts/ai-local-env.sh verify              验证数据库、Redis、后端 API、认证边界和前端代理
   ./scripts/ai-local-env.sh verify-chat         通过本地模拟模型验证注册、登录、聊天、SSE 和结算
+  ./scripts/ai-local-env.sh stop-backend        仅停止本脚本管理的后端进程，保留其他本地服务
+  ./scripts/ai-local-env.sh start-backend       仅启动/恢复本地后端，不切换前端代理
   AI_VERIFY_DEEPSEEK_FALLBACK=true ./scripts/ai-local-env.sh verify-chat
                                                额外以合成 Key 验收 DeepSeek 环境回退和本地 Responses mock
   ./scripts/ai-local-env.sh logs [backend|web|mock]
@@ -1325,6 +1327,18 @@ case "$command_name" in
     ;;
   verify-chat)
     verify_chat
+    ;;
+  stop-backend)
+    stop_managed_process backend "$BACKEND_JAR"
+    ;;
+  start-backend)
+    check_docker
+    [[ -n "$JAVA_BIN" ]] || { echo "未找到 Java。" >&2; exit 1; }
+    ensure_local_env
+    load_local_env
+    wait_container_healthy "$MYSQL_CONTAINER"
+    wait_container_healthy "$REDIS_CONTAINER"
+    start_backend
     ;;
   down)
     down
