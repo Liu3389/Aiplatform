@@ -10,6 +10,10 @@ management:
       enabled: ${app.messaging.rabbit-enabled:false}
 
 spring:
+  # 线上仍使用现有 backend 容器时，可将 OAuth 凭据安全地放在容器内独立配置文件中，避免重建容器注入环境变量。
+  config:
+    import: optional:file:${GOOGLE_OAUTH_CONFIG_FILE:/app/google-oauth.properties}
+
   application:
     name: ai-gateway-platform
 
