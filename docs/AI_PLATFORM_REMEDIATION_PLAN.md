@@ -295,6 +295,7 @@
 - [x] 2026-10-19 复核服务器 Compose 时发现 RabbitMQ、OSS、SMTP/短信和 Google OIDC 环境变量未传入后端容器；已在 `docker-compose.server.yml` 与 `docker-compose.prod.yml` 补齐透传，默认仍关闭 RabbitMQ、外发验证和 Google OAuth，敏感项默认空值。`scripts/test-deploy-preflight-routing.py` 用临时合成环境动态渲染服务器 Compose 并逐项断言变量可达；`scripts/test-production-security-guards.py` 同时验收两份 Compose 的 Redis 认证/健康检查和可选变量透传；`.env.prod.example` 字段完整，凭据扫描、测试及 `git diff --check` 通过。没有启动或修改容器；生产服务是否真实可用仍需单独联调。
 - [x] 2026-10-19 部署脚本不再只更新镜像而沿用服务器旧 Compose：先把本地 `docker-compose.server.yml` 通过 SSH stdin 与服务器 `.env.prod` 做只读解析，再传输并二次校验隐藏暂存文件；镜像加载成功后备份旧配置并原子替换，最后只 `up -d redis backend frontend`。部署前确认 MySQL、Redis、backend、frontend 四个指定现有容器都在运行；不会重启 MySQL、改动数据卷或新增服务。两个生产 Compose 均要求 Redis 密码并用 RedisCLI_AUTH 做认证健康检查；服务契约测试覆盖认证参数、持久化数据卷和部署顺序，未执行部署。
 - [x] 2026-10-19 远端只读核对仅输出变量名和存在状态，未读取或回传任何值：`/root/lingdian/.env.prod` 中 `REDIS_PASSWORD` 为空；`MYSQL_PASSWORD`、`SECONDARY_PASSWORD`、`API_ENCRYPTION_KEY`、`ALLOWED_ORIGINS` 非空。当前 Redis 无密码，backend 的 Redis 密码变量也为空。RabbitMQ、OSS、SMTP/短信和 Google OIDC 配置项在 `.env.prod` 和当前 backend 环境中均缺失。本次没有修改服务器文件或容器；各外部服务需由凭据所有者配置后按门禁验收。
+- [x] 2026-10-19 再次只读检查发现服务器 `.env.prod` 属主为 `root`、权限为 `644`；新的服务器环境检查器按预期拒绝该权限，要求改为 `600` 后才继续检查变量。`server-deploy.sh` 已增加 stdin 传送检查器源码的只读门禁，在镜像传输前依次检查现有容器运行状态、服务器环境文件权限/必需变量和 Compose 解析；检查只报告变量名，不输出任何配置值。没有 chmod、写入环境文件、传输镜像或变更容器。服务器当前需由所有者将 `.env.prod` 收紧至 `600` 并设置强 `REDIS_PASSWORD`；改完后再做只读复核。
 - [x] 2026-10-19 最新本地检查点 `39e66f1` 完成后，针对 `main` 再次扫描完整推送历史：1 个目标引用、1,399 个文件对象、37 个提交，通过；没有推送，远端历史仍未变更。
 
 ### E2 Nginx API 路由优先级验收（2026-10-19）

@@ -23,13 +23,18 @@ fi
 echo "===== 本地发布前置验收（通过后才允许传输镜像） ====="
 bash "$ROOT/scripts/local-release-preflight.sh" --local-only
 
-echo "===== 使用服务器 .env.prod 只读校验本地 Compose（不输出配置值） ====="
+echo "===== 只读校验服务器密钥配置和现有容器（不输出配置值） ====="
 ssh $SSH_OPTS -i "$KEY" "$HOST" \
   "docker inspect --format '{{.State.Running}}' lingdian-mysql | grep -qx true && \
    docker inspect --format '{{.State.Running}}' lingdian-redis | grep -qx true && \
    docker inspect --format '{{.State.Running}}' lingdian-backend | grep -qx true && \
    docker inspect --format '{{.State.Running}}' lingdian-frontend | grep -qx true && \
-   cd '$REMOTE_DIR' && docker compose --env-file .env.prod -f - config -q" \
+   cd '$REMOTE_DIR' && python3 - --server --env-file .env.prod" \
+  < "$ROOT/scripts/check-production-env.py"
+
+echo "===== 使用服务器 .env.prod 只读校验本地 Compose（不输出配置值） ====="
+ssh $SSH_OPTS -i "$KEY" "$HOST" \
+  "cd '$REMOTE_DIR' && docker compose --env-file .env.prod -f - config -q" \
   < "$ROOT/docker-compose.server.yml"
 
 echo "===== 1. 传输镜像 tar 到服务器 (后端217M + 前端27M) ====="

@@ -103,7 +103,35 @@ def test_production_env_guard() -> None:
             result = run(["python3", "scripts/check-production-env.py"], cwd=root, env=checker_env(root))
             assert (result.returncode == 0) == (expected == 0), (name, result.stdout, result.stderr)
             combined = result.stdout + result.stderr
-            assert all(value not in combined for value in values.values()), f"{name} leaked a value"
+            assert all(not value or value not in combined for value in values.values()), f"{name} leaked a value"
+
+
+def test_server_production_env_guard() -> None:
+    cases = (
+        ("valid_server_env", SYNTHETIC_VALUES.copy(), 0o600, 0),
+        ("missing_redis_password", {**SYNTHETIC_VALUES, "REDIS_PASSWORD": ""}, 0o600, 1),
+        ("partial_google_oidc", {**SYNTHETIC_VALUES, "GOOGLE_OAUTH_CLIENT_ID": "test-client-id"}, 0o600, 1),
+        ("weak_server_permissions", SYNTHETIC_VALUES.copy(), 0o640, 1),
+    )
+    with tempfile.TemporaryDirectory(prefix="remote-prod-env-") as temp:
+        root = Path(temp)
+        (root / "scripts").mkdir()
+        shutil.copy2(ROOT / "scripts/check-production-env.py", root / "scripts/check-production-env.py")
+        for name, values, mode, expected in cases:
+            env_path = root / f"{name}.env"
+            write_env(env_path, values)
+            env_path.chmod(mode)
+            result = run(
+                ["python3", "scripts/check-production-env.py", "--server", "--env-file", str(env_path)],
+                cwd=root,
+            )
+            assert (result.returncode == 0) == (expected == 0), (name, result.stdout, result.stderr)
+            combined = result.stdout + result.stderr
+            assert all(not value or value not in combined for value in values.values()), f"{name} leaked a value"
+            if name == "missing_redis_password":
+                assert "REDIS_PASSWORD" in combined, "server gate should identify the missing variable by name"
+            if name == "partial_google_oidc":
+                assert "GOOGLE_OAUTH_CLIENT_SECRET" in combined and "GOOGLE_OAUTH_REDIRECT_URI" in combined
 
 
 def test_untracked_encryption_template_gate() -> None:
@@ -178,6 +206,7 @@ def test_compose_requires_secrets() -> None:
 
 def main() -> int:
     test_production_env_guard()
+    test_server_production_env_guard()
     test_untracked_encryption_template_gate()
     test_compose_requires_secrets()
     print("生产密钥门禁通过：权限、索引、占位配置、未跟踪模板和 Compose 必填变量均有正反向回归。")
