@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   motion,
   useMotionValue,
@@ -1332,11 +1332,15 @@ function FooterSection({ isDark, isMobile, navigate }: { isDark: boolean; isMobi
                 鄂ICP备2025144762号
               </a>
             </div>
-            <div className="flex items-center gap-4 sm:gap-6">
-              {['隐私政策', '服务条款', 'Cookie 设置'].map((item, i) => (
-                <span key={i} className="text-[11px] sm:text-sm cursor-pointer transition-colors hover:text-[var(--accent-purple)]" style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(15,23,42,0.4)' }}>
-                  {item}
-                </span>
+            <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6">
+              {[
+                { label: '隐私政策', to: '/privacy' },
+                { label: '服务条款', to: '/terms' },
+                { label: 'Cookie 与本地存储', to: '/privacy#browser-storage' },
+              ].map((item) => (
+                <Link key={item.to} to={item.to} className="text-[11px] sm:text-sm transition-colors hover:text-[var(--accent-purple)]" style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(15,23,42,0.4)' }}>
+                  {item.label}
+                </Link>
               ))}
             </div>
           </div>

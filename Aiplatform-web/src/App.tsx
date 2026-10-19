@@ -6,6 +6,7 @@ import ErrorBoundary from '@/components/ErrorBoundary'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
 import WelcomePage from '@/pages/WelcomePage'
+import { PrivacyPolicyPage, TermsPage } from '@/pages/LegalDocumentPage'
 import PWAInstallPrompt from '@/components/PWAInstallPrompt'
 
 const ChatPage = lazy(() => import('@/pages/chat/ChatPage'))
@@ -81,6 +82,8 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/" element={<Navigate to="/welcome" replace />} />
         <Route path="/welcome" element={<WelcomePage />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
         <Route path="/oauth/callback" element={<LazyRoute><OAuthCallbackPage /></LazyRoute>} />
         <Route path="/home" element={<Navigate to="/dashboard" replace />} />
         <Route path="/home" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
