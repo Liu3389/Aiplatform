@@ -16,8 +16,8 @@
 - **Google OIDC 沙箱**：本地开发项目已创建 Web OAuth 客户端并完成真实登录验收；当前控制台为“外部/测试”，当前账号已列为测试用户，品牌支持邮箱已按用户选择设置，Web 来源与回调指向 `127.0.0.1:13000`。凭据仅保存在被 Git 忽略且权限为 `600` 的 `.runtime/local.env`。生产需使用独立项目/客户端、正式 HTTPS 域名与回调、经核验的首页/隐私政策/服务条款，并按 Google 要求完成发布/验证；不能复用本地客户端。
 - **DeepSeek 上游**：现有配置凭据已通过官方 `GET /models` 鉴权，并完成本地非流式与 SSE 真实聊天验收；无需为本地联调申请新 Key。凭据仅存于权限 `600` 的 Git 忽略文件 `.runtime/local.env`。用户已授权清理本地 `main` 历史，当前 `main` 的推送扫描通过；`origin/main` 与本地备份引用仍保留重写前历史，因此远端推送门禁尚未解除。没有撤销或轮换现有 Key；生产仍需由凭据所有者安全配置并单独验收。
 - **邮件与短信**：真实邮件需配置 SMTP `SPRING_MAIL_*`；真实短信需配置 `VERIFICATION_DELIVERY_MODE=external`、`VERIFICATION_SMS_URL`、`VERIFICATION_SMS_TOKEN`、`VERIFICATION_SMS_TEMPLATE_ID`，之后分别验收投递与验证绑定。
-- **真实 RabbitMQ 与 OSS**：部署环境需配置 `RABBITMQ_HOST`、`RABBITMQ_PORT`、`RABBITMQ_USERNAME`、`RABBITMQ_PASSWORD`、`RABBITMQ_VHOST`，并联调队列、监控和重启恢复；OSS 使用 `ALIYUN_OSS_ENDPOINT`、`ALIYUN_OSS_ACCESS_KEY_ID`、`ALIYUN_OSS_ACCESS_KEY_SECRET`、`ALIYUN_OSS_BUCKET`、`ALIYUN_OSS_DOMAIN`。本地 RabbitMQ 与本地文件存储已各自验证，不能替代生产联调。
-- **线上发布配置**：用户已确认服务器 `/root/lingdian/.env.prod` 中的 `MYSQL_PASSWORD`、`REDIS_PASSWORD`、`SECONDARY_PASSWORD` 已配置；不需要复制到开发机，也不需要从 Google 或 DeepSeek 申请。本机此前失败的是本地 `.env.prod` 门禁。2026-10-19 已使用用户提供的连接信息完成服务器只读校验：`docker compose -f docker-compose.server.yml --env-file .env.prod config -q` 通过，说明所需 Compose 变量齐全且配置可解析；未读取或输出值。现有 7 个容器均在运行，MySQL/Redis 健康。以后调用 `server-deploy.sh` 时需在该进程设置 `AI_PLATFORM_DEPLOY_HOST` 和 `AI_PLATFORM_DEPLOY_SSH_KEY`；本轮没有传输镜像、重建/重启容器、推送或部署。
+- **真实 RabbitMQ 与 OSS**：部署环境需配置 `RABBITMQ_HOST`、`RABBITMQ_PORT`、`RABBITMQ_USERNAME`、`RABBITMQ_PASSWORD`、`RABBITMQ_VHOST`，并联调队列、监控和重启恢复；OSS 使用 `ALIYUN_OSS_ENDPOINT`、`ALIYUN_OSS_ACCESS_KEY_ID`、`ALIYUN_OSS_ACCESS_KEY_SECRET`、`ALIYUN_OSS_BUCKET`、`ALIYUN_OSS_DOMAIN`。若要实际使用 OSS，还需将 `APP_STORAGE_PREFER_LOCAL=false`；模板默认 true 会继续优先本地存储。本地 RabbitMQ 与本地文件存储已各自验证，不能替代生产联调。
+- **线上发布配置**：用户此前确认服务器 `/root/lingdian/.env.prod` 中三项密码已配置；但 2026-10-19 最新只读核验发现 `MYSQL_PASSWORD`、`SECONDARY_PASSWORD` 已设置而 `REDIS_PASSWORD` 为空。无密码执行 Redis `PING` 返回 `PONG`，当前 backend 的 Redis 密码变量也为空。此前远端旧 Compose 的 `config -q` 允许 Redis 密码为空，因此不能据此认定 Redis 凭据齐全。更新后的本地 Compose 已要求非空 Redis 密码，并通过 SSH stdin 对服务器 `.env.prod` 做只读解析时按预期拒绝；没有读取或输出密码值。后续需由凭据所有者在服务器设置强 Redis 密码，并安排现有 Redis/backend 使用同一密码；该操作会重启现有 Redis，当前没有执行。其他服务器必需密码不需要复制到开发机，也不需要从 Google 或 DeepSeek 获取。以后部署需设置 `AI_PLATFORM_DEPLOY_HOST` 和 `AI_PLATFORM_DEPLOY_SSH_KEY`。
 - **历史数据/凭据人工核验**：上线前需按 B3、B5、C1-C4、E1 各节盘点旧 Redis 结算快照、临时赠点、伪 TOTP/OAuth 数据、旧 Token、历史联系方式与已暴露密钥；涉及用户余额、身份或联系方式的迁移/冲销不能自动猜测。
 - **支付**：按用户决定暂不接支付接口；直充路径继续关闭，待以后另选渠道并单独验收。
 
@@ -64,7 +64,7 @@
 
 ### 批次 E：配置、凭据与部署边界
 
-- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；本机暂存/工作区凭据扫描通过。用户已授权并完成本地 `main` 历史脱敏，本地目标分支推送扫描通过。远端 `origin/main` 和本地回滚备份仍保留重写前历史，远端历史协调仍待完成；不因格式命中推断密钥当前有效，也未撤销或轮换凭据。服务器三个生产密码已由用户确认，且 2026-10-19 远程 Compose 只读校验通过。E1 仍待远端历史协调及其他生产服务/模型配置核验；服务器凭据不应复制到开发机或聊天中。
+- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；本机暂存/工作区凭据扫描通过。用户已授权并完成本地 `main` 历史脱敏，本地目标分支推送扫描通过。远端 `origin/main` 和本地回滚备份仍保留重写前历史，远端历史协调仍待完成；不因格式命中推断密钥当前有效，也未撤销或轮换凭据。生产 Redis 密码当前为空且 Redis 未启用认证；旧远端 Compose 校验曾因默认允许空密码而通过，新的严格 Compose 已在远端 `.env.prod` 上正确拒绝。E1 仍待启用现有 Redis 认证、远端历史协调及其他生产服务/模型配置核验；服务器凭据不应复制到开发机或聊天中。
 - [x] **E2 前端 API 路由不被静态扩展规则截获（P2-19）**：`/api/`、`/chat/`、`/v1/` 已使用 `^~` 前缀优先匹配。临时 Nginx 与 mock 后端验证了带 `.png`、`.pdf`、`.svg`、`.json` 后缀的 API/SSE 请求均转发到后端，SSE 未缓冲，静态资源缓存保持正常；`nginx -t` 通过。
 - [x] **E3 聊天页首屏包体过大（本地构建新发现，P3-21）**：聊天页 Markdown、Mermaid、代码高亮、公式渲染已按需加载。构建后 ChatPage 入口为 94.97 KB（gzip 25.97 KB），较整改前约减少 93%；浏览器回归确认 Markdown、代码高亮、KaTeX 和 Mermaid 均正常。ECharts 与其他页面共享 chunk 仍超过 500 KB，但不在 ChatPage 静态依赖图中，作为独立页面优化跟踪。
 
@@ -285,15 +285,16 @@
 - [x] 两份生产 Compose 配置要求显式提供 MySQL/Redis 密码、加密密钥、精确允许来源和系统二级口令；移除 `sk-placeholder`、通配跨域和 `5215` 等不安全默认值。`SystemControlController` 在二级口令缺失时失败关闭。模拟配置正反向校验通过。
 - [x] 新增 `scripts/check-production-env.py` 与 `scripts/local-release-preflight.sh`：验证 `.env.prod` 权限/索引状态/必需值和 Compose 解析，并跑本地接口、全量后端测试、前端构建与完整聊天回归。`server-deploy.sh` 在镜像传输前执行本地功能验收并只读校验服务器 Compose；部署目标与 SSH 密钥改为显式环境变量，主机指纹检查启用；数据库迁移密码不回传本机或拼入命令行。
 - [x] `scripts/test-production-security-guards.py` 覆盖密钥文件权限、缺失/占位/弱值、Git 索引、通配来源、未跟踪环境模板和两份 Compose 的必填变量；全量 `mvn -q -Dapp.messaging.rabbit-enabled=false test` 通过：84 项、0 失败、0 错误、0 跳过；本地基础验证通过。没有连接或部署到线上。
-- [x] 2026-10-19 澄清本机与服务器环境差异：本机完整 `.env.prod` 预检曾因服务器密码未复制到开发机而拒绝；用户确认线上三项已配置后，部署流程改为 `--local-only` 执行本地功能验收，再通过 SSH 只读校验服务器 Compose，不要求复制服务器密码。
+- [x] 2026-10-19 澄清本机与服务器环境差异：本机完整 `.env.prod` 预检曾因服务器密码未复制到开发机而拒绝；用户当时确认线上三项已配置，因此部署流程改为 `--local-only` 执行本地功能验收，再通过 SSH 只读校验服务器 Compose，不要求复制服务器密码。后续严格配置检查发现服务器 Redis 密码实际为空，见本节最新核验记录。
 - [x] 2026-10-19 经用户授权，仅重写本地 `main` 历史以脱敏扫描器命中的高置信度凭据格式；重写后同一 pre-push 扫描器通过（1 个目标引用、1,369 个带路径文件对象、28 个提交），`scripts/test-push-history-secrets.py` 通过。当前工作区凭据扫描也通过（42 个暂存变更、349 个跟踪文件、157 个未跟踪文件、2 个环境模板）；为避免旧索引中的测试 Key 再次进入暂存区，将初始化器和 `rebuild.sql` 的索引项恢复到已脱敏 `main`，对应工作区文件字节未变。`.runtime/local.env` 权限仍为 `600`，DeepSeek 与 Google OIDC 配置仍存在；没有撤销本地凭据。
-- [ ] 远端 `origin/main` 仍保留旧历史，本次未推送或改写远端；原历史也保存在本地 `refs/backup`、`refs/original` 和工作区恢复 stash 中以便回退。用户已确认服务器生产凭据配置完成，远程 Compose 只读校验已通过；远端历史协调和真实生产模型/服务联调仍未完成。本轮没有部署。
-- [x] 服务器 Compose 只读校验已于 2026-10-19 通过；同次 `docker ps` 确认现有 7 个容器均运行，其中 MySQL/Redis 报健康。此证据验证 Compose 配置解析和容器状态，不等同于应用接口或生产模型端到端验收；真实生产模型供应商仍需单独确认与验收。
+- [ ] 远端 `origin/main` 仍保留旧历史，本次未推送或改写远端；原历史也保存在本地 `refs/backup`、`refs/original` 和工作区恢复 stash 中以便回退。先前用户确认服务器生产凭据已配置，但最新只读核验发现 Redis 密码为空；远端历史协调和真实生产模型/服务联调也仍未完成。本轮没有部署。
+- [x] 服务器旧 Compose 只读校验曾通过，同次 `docker ps` 确认现有 7 个容器均运行，其中 MySQL/Redis 报健康；该旧 Compose 允许 Redis 密码为空。2026-10-19 使用更新后的本地 Compose 对远端 `.env.prod` 做 stdin 只读解析时，因 `REDIS_PASSWORD` 为空而按预期拒绝。旧容器健康状态不证明 Redis 已启用认证；现有 Redis 无密码 `PING` 返回 `PONG`，backend Redis 密码环境变量为空。
 - [x] 2026-10-19 根据用户确认“生产凭据已在服务器受控环境配置”，将部署流程拆分为本地功能验收与目标服务器密钥校验：`local-release-preflight.sh --local-only` 不要求把服务器密钥复制到开发机；`server-deploy.sh` 仍在任何镜像传输前执行目标机 `docker compose ... config -q`。`test-deploy-preflight-routing.py`、Bash 语法检查及完整 `--local-only` 本地预检通过（后端 101 项、0 失败/错误、2 项 Rabbit opt-in 跳过；前端构建与 `verify-chat` 通过）。
 - [x] 2026-10-19 使用用户提供的主机、用户和本机私钥路径完成严格主机校验下的远端只读 Compose 检查，并列出现有容器状态；未输出密钥值，未执行镜像或容器变更。当前 shell 尚未常驻设置部署脚本所需环境变量；获准部署时再按需注入。
 - [x] 2026-10-19 远程校验后再次扫描当前本地 `main` 的完整推送历史：1 个目标引用、1,387 个文件对象、34 个提交，`scripts/check-push-history-secrets.py` 通过。`origin/main` 未修改且仍保留旧历史；本次没有推送。
-- [x] 2026-10-19 复核服务器 Compose 时发现 RabbitMQ、OSS、SMTP/短信和 Google OIDC 环境变量未传入后端容器；已在 `docker-compose.server.yml` 补齐显式透传，默认仍关闭 RabbitMQ、外发验证和 Google OAuth，敏感项默认空值。`scripts/test-deploy-preflight-routing.py` 用临时合成环境动态渲染 Compose 并逐项断言变量可达、检查 `.env.prod.example` 字段齐全和部署命令指引有效，同时验证默认关闭；凭据扫描、测试及 `git diff --check` 通过。没有启动或修改容器；生产服务是否真实可用仍需单独联调。
-- [x] 2026-10-19 远端只读核对仅输出变量名和存在状态，未读取或回传任何值：`/root/lingdian/.env.prod` 中 RabbitMQ、OSS、SMTP/短信和 Google OIDC 配置项均缺失；当前 `lingdian-backend` 容器中对应环境变量也均不存在。因此这些生产外部能力当前确实未配置；本次没有修改服务器文件或容器，待凭据所有者将非敏感配置及密钥安全写入服务器后，再按受控发布门禁验收。
+- [x] 2026-10-19 复核服务器 Compose 时发现 RabbitMQ、OSS、SMTP/短信和 Google OIDC 环境变量未传入后端容器；已在 `docker-compose.server.yml` 与 `docker-compose.prod.yml` 补齐透传，默认仍关闭 RabbitMQ、外发验证和 Google OAuth，敏感项默认空值。`scripts/test-deploy-preflight-routing.py` 用临时合成环境动态渲染服务器 Compose 并逐项断言变量可达；`scripts/test-production-security-guards.py` 同时验收两份 Compose 的 Redis 认证/健康检查和可选变量透传；`.env.prod.example` 字段完整，凭据扫描、测试及 `git diff --check` 通过。没有启动或修改容器；生产服务是否真实可用仍需单独联调。
+- [x] 2026-10-19 部署脚本不再只更新镜像而沿用服务器旧 Compose：先把本地 `docker-compose.server.yml` 通过 SSH stdin 与服务器 `.env.prod` 做只读解析，再传输并二次校验隐藏暂存文件；镜像加载成功后备份旧配置并原子替换，最后只 `up -d redis backend frontend`。部署前确认 MySQL、Redis、backend、frontend 四个指定现有容器都在运行；不会重启 MySQL、改动数据卷或新增服务。两个生产 Compose 均要求 Redis 密码并用 RedisCLI_AUTH 做认证健康检查；服务契约测试覆盖认证参数、持久化数据卷和部署顺序，未执行部署。
+- [x] 2026-10-19 远端只读核对仅输出变量名和存在状态，未读取或回传任何值：`/root/lingdian/.env.prod` 中 `REDIS_PASSWORD` 为空；`MYSQL_PASSWORD`、`SECONDARY_PASSWORD`、`API_ENCRYPTION_KEY`、`ALLOWED_ORIGINS` 非空。当前 Redis 无密码，backend 的 Redis 密码变量也为空。RabbitMQ、OSS、SMTP/短信和 Google OIDC 配置项在 `.env.prod` 和当前 backend 环境中均缺失。本次没有修改服务器文件或容器；各外部服务需由凭据所有者配置后按门禁验收。
 - [x] 2026-10-19 最新本地检查点 `39e66f1` 完成后，针对 `main` 再次扫描完整推送历史：1 个目标引用、1,399 个文件对象、37 个提交，通过；没有推送，远端历史仍未变更。
 
 ### E2 Nginx API 路由优先级验收（2026-10-19）
@@ -316,7 +317,7 @@
 - [x] 完整 `verify-chat` 通过：验证码及重放拒绝、模型输出 Token 上限、联系方式绑定、优惠券/充值未开放路径、权限与限流、幂等、消息持久化、SSE、旧 Token 撤销、B4 未持久化/响应后结算/未知上游结果恢复均通过。模拟上游收到 12 次请求，其中 3 次为流式；本地完成 20 条消息持久化和 11 笔结算。
 - [x] 复验后 `scripts/ai-local-env.sh status` 确认隔离 MySQL、Redis、后端、前端和模拟模型仍运行，代理指向 `http://127.0.0.1:18080` 的本地后端。
 - [x] 2026-10-19 后续再次运行 `bash scripts/local-release-preflight.sh`：后端全量 101 项测试、0 失败、0 错误、2 项 Rabbit opt-in 跳过；前端 `npm run build` 和默认完整 `verify-chat` 通过。脚本最后因生产密钥门禁退出，且没有连接服务器、传输镜像、推送或部署；`scripts/local-release-preflight.sh` 已设为可直接执行。
-- [x] 历史记录：2026-10-19 那次本机发布预检因开发机没有服务器专用 `.env.prod` 而停在密钥门禁；当时没有连接、传输镜像、推送或部署。之后用户确认服务器受控环境已配置 `MYSQL_PASSWORD`、`REDIS_PASSWORD`、`SECONDARY_PASSWORD`，并完成远端 Compose 只读校验（见本节上方记录），因此这三项不是当前待用户提供的内容；不要把服务器密码复制到开发机或聊天中。
+- [x] 历史记录：2026-10-19 那次本机发布预检因开发机没有服务器专用 `.env.prod` 而停在密钥门禁；当时没有连接、传输镜像、推送或部署。用户随后确认三项密码已在服务器配置，但最新只读核验发现 `REDIS_PASSWORD` 为空；更新后的 Compose 严格拒绝空值，须由凭据所有者在服务器配置后再做发布前验收。不要把服务器密码复制到开发机或聊天中。
 
 ### 本地开发暂停检查点（2026-10-19）
 
@@ -339,4 +340,4 @@
 - [x] 2026-10-19 当前工作区全量复验：后端 `mvn -Dapp.messaging.rabbit-enabled=false test` 为 99 项、0 失败、0 错误、0 跳过；前端 `test:auth-session` 7 项、`test:model-availability` 3 项通过，`npm run build` 成功；登录页 CAPTCHA API 与错误码实测通过；`./scripts/ai-local-env.sh verify` 通过。后端测试使用临时 MySQL 数据库副本和独立 Redis 容器，二者均已清理，本地开发栈仍健康且代理保持 local。
 - [x] 2026-10-19 本地检查点提交为 `802f5ed`，仅包含本计划与删除含非占位密码字段的旧 `.env.example`；现有其他代码/配置改动保持在工作区。
 - [x] 2026-10-19 最新本地全链路复验：`./scripts/local-release-preflight.sh --local-only` 通过；34 个 Surefire suite 共 101 项（0 失败、0 错误、2 项 Rabbit opt-in 跳过），前端生产构建通过；`verify-chat` 覆盖 CAPTCHA 错误/重放、模型可用性、联系方式、充值关闭、越权路径、幂等/SSE、限流/管理员权限及 B4 恢复，12 次模拟上游请求（3 次 SSE）、20 条消息持久化、11 笔结算。结束后 MySQL、Redis、backend、web、mock 仍运行，代理为 local。
-- [ ] 其余工作区变更尚未提交、未推送、未部署；发布仍受远端历史协调、Google 生产域名与 OAuth 配置、生产 RabbitMQ/OSS/邮件/短信联调、旧数据完整性核验等门禁约束。服务器密码已由用户确认配置且远端 Compose 只读校验通过，不再列为当前缺项。
+- [ ] 其余工作区变更尚未提交、未推送、未部署；发布仍受服务器 Redis 认证配置与现有容器受控重启、远端历史协调、Google 生产域名与 OAuth 配置、生产 RabbitMQ/OSS/邮件/短信联调、旧数据完整性核验等门禁约束。MySQL 与二级口令已确认非空；Redis 密码当前为空，不可按已配置处理。

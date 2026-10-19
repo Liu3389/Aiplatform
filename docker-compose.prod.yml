@@ -1,0 +1,141 @@
+# =============================================================================
+# 凌点 AI 平台 - 线上服务器全栈部署 (Docker)
+# 包含: MySQL + Redis + 后端 + 前端, 全部容器化
+#
+# 用法:
+#   1. cp .env.prod.example .env.prod  并修改其中的密码/密钥
+#   2. docker-compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#   3. 查看日志: docker-compose -f docker-compose.prod.yml logs -f
+#
+# 首次启动 MySQL 会自动执行 rebuild.sql 建表+测试数据
+# =============================================================================
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: lingdian-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD_required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_gateway}
+      TZ: Asia/Shanghai
+    # 线上不暴露端口, 仅容器内网访问(如需外部连接取消注释)
+    # ports:
+    #   - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./Aiplatform-demo/src/main/resources/sql/rebuild.sql:/docker-entrypoint-initdb.d/01-rebuild.sql:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - lingdian-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: lingdian-redis
+    restart: always
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD_required}
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD_required}"]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - lingdian-net
+
+  backend:
+    build: ./Aiplatform-demo
+    container_name: lingdian-backend
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # 容器内网通过服务名访问
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_gateway}
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD_required}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD_required}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      API_ENCRYPTION_KEY: ${API_ENCRYPTION_KEY:?API_ENCRYPTION_KEY_required}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS_required}
+      JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx512m}
+      SECONDARY_PASSWORD: ${SECONDARY_PASSWORD:?SECONDARY_PASSWORD_required}
+      APP_STORAGE_PREFER_LOCAL: ${APP_STORAGE_PREFER_LOCAL:-true}
+      APP_STORAGE_LOCAL_PATH: ${APP_STORAGE_LOCAL_PATH:-./uploads}
+      # Optional external services; features stay off until real production values are supplied.
+      RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-false}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-localhost}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      ALIYUN_OSS_ENDPOINT: ${ALIYUN_OSS_ENDPOINT:-}
+      ALIYUN_OSS_ACCESS_KEY_ID: ${ALIYUN_OSS_ACCESS_KEY_ID:-}
+      ALIYUN_OSS_ACCESS_KEY_SECRET: ${ALIYUN_OSS_ACCESS_KEY_SECRET:-}
+      ALIYUN_OSS_BUCKET: ${ALIYUN_OSS_BUCKET:-}
+      ALIYUN_OSS_DOMAIN: ${ALIYUN_OSS_DOMAIN:-}
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT:-587}
+      SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME:-}
+      SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD:-}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: ${SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH:-true}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: ${SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE:-true}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE: ${SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE:-false}
+      VERIFICATION_DELIVERY_MODE: ${VERIFICATION_DELIVERY_MODE:-disabled}
+      VERIFICATION_ALLOW_LOCAL_CAPTURE: ${VERIFICATION_ALLOW_LOCAL_CAPTURE:-false}
+      VERIFICATION_EMAIL_FROM: ${VERIFICATION_EMAIL_FROM:-}
+      VERIFICATION_SMS_URL: ${VERIFICATION_SMS_URL:-}
+      VERIFICATION_SMS_TOKEN: ${VERIFICATION_SMS_TOKEN:-}
+      VERIFICATION_SMS_TEMPLATE_ID: ${VERIFICATION_SMS_TEMPLATE_ID:-}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-}
+      TZ: Asia/Shanghai
+    volumes:
+      # 挂载 Docker socket, 使后端可控制其他容器启停
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 本地文件存储持久化（OSS 降级时文件存储在此目录，容器重建不丢失）
+      - ./uploads:/app/uploads
+    ports:
+      # 仅本机访问, 外部通过 Nginx 反代 /api 访问
+      - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
+    networks:
+      - lingdian-net
+
+  frontend:
+    build: ./Aiplatform-web
+    container_name: lingdian-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    networks:
+      - lingdian-net
+
+volumes:
+  mysql-data:
+  redis-data:
+
+networks:
+  lingdian-net:
+    driver: bridge
