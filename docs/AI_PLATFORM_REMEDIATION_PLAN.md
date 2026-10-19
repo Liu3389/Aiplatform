@@ -216,7 +216,7 @@
 - [x] 2026-10-19 本地复验：`GoogleOidcClientTest` 3 项、`OAuthServiceLifecycleTest` 4 项均通过；生命周期测试使用临时 MySQL schema，结束后已删除。Google 凭据配置前授权入口按设计返回 503，配置后返回指向 `accounts.google.com` 的授权 URL，范围为 `openid email profile`，包含 PKCE S256、state、nonce，并设置 HttpOnly/SameSite=Lax 浏览器绑定 Cookie。
 - [x] Google Cloud `Gemini API` 开发项目已配置品牌“凌点 AI Gateway”，支持邮箱使用当前 Google 账号；受众为“外部/测试”，仅当前账号登记为测试用户。Web 客户端登记来源 `http://127.0.0.1:13000` 和回调 `http://127.0.0.1:13000/oauth/callback`。客户端凭据写入 `.runtime/local.env`（权限 `600`、Git 忽略），下载 JSON 副本已删除；未将密钥写入代码、计划文档或聊天。
 - [x] 真实本地浏览器 OAuth 端到端验收：从登录页跳转 Google，用户同意仅提供姓名/头像及邮箱后，Google 返回 `/oauth/callback` 并进入本地 `/chat`。个人中心显示 Google 已验证邮箱和绑定状态；Google 登录创建的邮箱同步写入已验证联系方式，绑定到现有密码账号时不覆盖其原邮箱。前端将内部 `oauth_*` 映射名改为显示登录邮箱，并修复 React StrictMode 重复消费一次性 state 的回调竞争。`GoogleOidcClientTest` 3 项和 `OAuthServiceLifecycleTest` 4 项在临时数据库通过；`test:oauth-callback` 2 项、`test:auth-session` 7 项、`test:model-availability` 3 项、`npm run build`、本地 `verify` 与 `verify-chat` 均通过。
-- [ ] 2026-10-19 生产 Google 门禁复核：Nginx 配置域名为 `lingdian-ai.top` / `www.lingdian-ai.top`，两者 HTTPS 首页均返回 200。前端 `WelcomePage.tsx` 的“隐私政策/服务条款”目前只是无链接文本；线上 `/privacy`、`/terms` 返回同一 2554 字节 SPA 壳，不是可提交给 Google 的政策页面。`.env.prod` 中生产 OAuth client ID/secret/redirect URI 均缺失。用户称正式页面已准备并将补充链接；收到链接后再核对并完成独立生产 OAuth 客户端、来源/回调和 Google 发布验证。不得将旧版 `oauth:bind:*` Redis 值或旧伪 OAuth 用户名自动迁入身份表；GitHub 和微信仍须各自完成真实提供方适配及验证后才能开放。
+- [ ] 2026-10-19 生产 Google 门禁复核：Nginx 配置域名为 `lingdian-ai.top` / `www.lingdian-ai.top`，两者 HTTPS 首页、`/api/health`、`/api/auth/login/captcha` 均返回 200。前端 `WelcomePage.tsx` 的“隐私政策/服务条款”目前只是无链接文本；线上 `/privacy`、`/terms` 响应哈希与首页完全相同，是 SPA 壳而非可提交给 Google 的政策正文。`.env.prod` 中生产 OAuth client ID/secret/redirect URI 均缺失。用户称正式页面已准备并将补充链接；收到链接后再核对并完成独立生产 OAuth 客户端、来源/回调和 Google 发布验证。预计回调路径为 `https://<正式域名>/oauth/callback`，源码前端路由已存在。不得将旧版 `oauth:bind:*` Redis 值或旧伪 OAuth 用户名自动迁入身份表；GitHub 和微信仍须各自完成真实提供方适配及验证后才能开放。
 
 ### C3 会话撤销与 Token 失效验收（2026-10-18）
 
@@ -353,6 +353,6 @@
 - [x] 线上先在权限 `700` 的 `/root/lingdian/backups` 备份数据库、当前后端 JAR 与前端静态文件；备份文件均为 `600`，数据库与前端压缩包通过完整性检查。备份时间为 `20261019T065519Z`。
 - [x] 线上现有 MySQL 容器内执行 v8→v17 迁移并核对结构。用户确认旧限时赠点按永久点数保留；迁移前后用户点数合计均为 `53934.000`，旧限时账本均为 6 笔、`790.000` 点，未回填或改写旧余额。
 - [x] 后端 JAR 与前端静态资源已部署到原有容器；后端在原容器内重启，未构建/加载镜像、未创建或替换容器。后端、前端、MySQL、Redis 容器 ID 与发布前一致；Redis/MySQL 未重启，Redis 认证按用户选择继续暂缓。
-- [x] 发布后后端 `/api/health` 与登录验证码接口均返回 200；前端首页返回 200，页面引用的 15 个 JS/CSS 资源均返回 200；Nginx 配置检查成功。新文件恢复扫描将原先 2 个过期 `PARSING` 任务恢复为 `SUCCESS`，目前 58 个文件解析任务均为成功。
+- [x] 发布后两条正式 HTTPS 域名的 `/api/health` 与登录验证码接口均返回 200；前端首页及其引用的 15 个 JS/CSS 资源均返回 200；Nginx 配置检查成功。新文件恢复扫描将原先 2 个过期 `PARSING` 任务恢复为 `SUCCESS`，目前 58 个文件解析任务均为成功。
 - [ ] 本次没有发起新的线上模型请求或付费聊天；本地模拟上游和真实凭据验收记录仍按各自章节区分。Google 生产 OAuth 尚需正式 HTTPS 来源/回调、首页/隐私政策/服务条款 URL 和独立生产客户端；SMTP/短信、RabbitMQ、OSS 尚未完成线上配置与联调。直充仍按用户决定关闭。
 - [ ] 旧 Token 因缺少设备绑定映射按失败关闭策略需要用户重新登录；历史邮箱不会自动视为已验证，用户需重新验证。旧伪 OAuth/TOTP Redis 数据不迁移。生产 Redis 仍无认证且未公开宿主机端口，`.env.prod` 权限为 `600`；Redis 认证保持暂缓，启用前需安排现有 Redis/backend 的一致配置和重启。
