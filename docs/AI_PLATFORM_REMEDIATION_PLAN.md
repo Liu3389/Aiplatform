@@ -343,3 +343,4 @@
 - [x] 2026-10-19 本地检查点提交为 `802f5ed`，仅包含本计划与删除含非占位密码字段的旧 `.env.example`；现有其他代码/配置改动保持在工作区。
 - [x] 2026-10-19 最新本地全链路复验：`./scripts/local-release-preflight.sh --local-only` 通过；34 个 Surefire suite 共 101 项（0 失败、0 错误、2 项 Rabbit opt-in 跳过），前端生产构建通过；`verify-chat` 覆盖 CAPTCHA 错误/重放、模型可用性、联系方式、充值关闭、越权路径、幂等/SSE、限流/管理员权限及 B4 恢复，12 次模拟上游请求（3 次 SSE）、20 条消息持久化、11 笔结算。结束后 MySQL、Redis、backend、web、mock 仍运行，代理为 local。
 - [ ] 其余工作区变更尚未提交、未推送、未部署；发布仍受服务器 Redis 认证配置与现有容器受控重启、远端历史协调、Google 生产域名与 OAuth 配置、生产 RabbitMQ/OSS/邮件/短信联调、旧数据完整性核验等门禁约束。MySQL 与二级口令已确认非空；Redis 密码当前为空，不可按已配置处理。
+- [x] 2026-10-19 本地 `main` 两个整改检查点已提交（`38e6ef7` 与 `fe78fa0`，后续因远端拒绝大文件推送而重写提交 ID）。首次安全推送被 GitHub 拒绝：历史中的根目录 `mysql8.tar` 为 244,640,256 bytes，远端 `main` 未改变。用户当前工作区没有该归档文件；本地 `main` 历史已移除该文件并保留 `refs/backup/main-before-large-file-removal` 回退引用。全历史扫描确认只发现该一个超过 95 MiB 的对象；更新后的 pre-push 检查会在传输前拒绝超过 100 MiB 的 blob，模拟回归通过。尚未重试推送。

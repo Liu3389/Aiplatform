@@ -3,8 +3,13 @@
 
 from __future__ import annotations
 
+import contextlib
+import importlib.util
+import io
+import os
 import subprocess
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -12,6 +17,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCANNER = ROOT / "scripts" / "check-push-history-secrets.py"
 ZERO_SHA = "0" * 40
+SPEC = importlib.util.spec_from_file_location("push_history_scanner", SCANNER)
+assert SPEC and SPEC.loader
+SCANNER_MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(SCANNER_MODULE)
 
 
 def run(cwd: Path, *args: str, input_data: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -119,7 +128,38 @@ def main() -> None:
         assert still_unsafe.returncode == 1, diagnostic
         assert synthetic_value not in diagnostic
 
-    print("推送历史扫描通过：真实 Git 推送可通过干净历史；文件、提交说明、标签及其后续历史中的模拟凭据均被拒；诊断不回显凭据值。")
+        # Exercise the GitHub-sized-blob gate with a small fixture and a lowered test threshold.
+        size_repo = repo / "size-check"
+        size_repo.mkdir()
+        run(size_repo, "git", "init", "--quiet", "--initial-branch=main")
+        git(size_repo, "config", "user.name", "Local Scanner Test")
+        git(size_repo, "config", "user.email", "scanner@example.test")
+        (size_repo / "large-fixture.bin").write_bytes(b"x" * 1024)
+        git(size_repo, "add", "large-fixture.bin")
+        git(size_repo, "commit", "--quiet", "-m", "oversize fixture")
+        size_tip = git(size_repo, "rev-parse", "HEAD")
+        update = f"refs/heads/main {size_tip} refs/heads/main {ZERO_SHA}\n".encode()
+        old_cwd = Path.cwd()
+        old_stdin = sys.stdin
+        old_limit = SCANNER_MODULE.MAX_GIT_BLOB_BYTES
+        output = io.StringIO()
+        errors = io.StringIO()
+        try:
+            os.chdir(size_repo)
+            SCANNER_MODULE.MAX_GIT_BLOB_BYTES = 512
+            sys.stdin = type("Input", (), {"buffer": io.BytesIO(update)})()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                size_result = SCANNER_MODULE.main()
+        finally:
+            sys.stdin = old_stdin
+            SCANNER_MODULE.MAX_GIT_BLOB_BYTES = old_limit
+            os.chdir(old_cwd)
+        size_diagnostic = errors.getvalue()
+        assert size_result == 1, size_diagnostic
+        assert "large-fixture.bin" in size_diagnostic
+        assert "1024 bytes" in size_diagnostic, size_diagnostic
+
+    print("推送历史扫描通过：凭据命中、超大文件会拒绝推送；安全历史可通过且诊断不回显凭据值。")
 
 
 if __name__ == "__main__":
