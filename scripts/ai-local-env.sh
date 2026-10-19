@@ -418,7 +418,17 @@ verify() {
   check_docker
   wait_container_healthy "$MYSQL_CONTAINER" 2
   wait_container_healthy "$REDIS_CONTAINER" 2
-  local backend_body proxy_body auth_code web_code temp_file
+  local backend_body proxy_body auth_code web_code temp_file health_file health_http proxy_health_file proxy_health_http
+  health_file="$RUNTIME/logs/verify-actuator-health.json"
+  health_http="$(curl --silent --show-error --max-time 10 -o "$health_file" -w '%{http_code}' "$LOCAL_TARGET/api/actuator/health" || true)"
+  [[ "$health_http" == 200 ]] || { echo "后端 Actuator 健康接口预期 HTTP 200，实际：${health_http:-无响应}" >&2; return 1; }
+  python3 - "$health_file" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    payload = json.load(source)
+assert payload.get("status") == "UP", payload.get("status")
+print("后端 Actuator 健康检查通过：status=UP。")
+PY
   backend_body="$(curl --silent --show-error --fail --max-time 10 "$LOCAL_TARGET/api/platform-model/list")"
   verify_json_models "$backend_body" "后端模型列表"
   temp_file="$RUNTIME/logs/verify-auth.json"
@@ -435,6 +445,16 @@ print("聊天认证边界通过：缺少 Token/API Key 时返回业务码 401。
 PY
   web_code="$(curl --silent --show-error --max-time 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$WEB_PORT/" || true)"
   [[ "$web_code" == 200 ]] || { echo "前端首页预期 HTTP 200，实际：$web_code" >&2; return 1; }
+  proxy_health_file="$RUNTIME/logs/verify-proxy-actuator-health.json"
+  proxy_health_http="$(curl --silent --show-error --max-time 10 -o "$proxy_health_file" -w '%{http_code}' "http://127.0.0.1:$WEB_PORT/api/actuator/health" || true)"
+  [[ "$proxy_health_http" == 200 ]] || { echo "前端代理 Actuator 健康接口预期 HTTP 200，实际：${proxy_health_http:-无响应}" >&2; return 1; }
+  python3 - "$proxy_health_file" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    payload = json.load(source)
+assert payload.get("status") == "UP", payload.get("status")
+print("前端代理 Actuator 健康检查通过：status=UP。")
+PY
   proxy_body="$(curl --silent --show-error --fail --max-time 10 "http://127.0.0.1:$WEB_PORT/api/platform-model/list")"
   verify_json_models "$proxy_body" "前端代理模型列表"
   echo "本地基础验证全部通过。"

@@ -13,7 +13,7 @@
 
 以下列出仍需完成的真实依赖或发布前人工核验；具体完成状态以各整改批次的证据为准。未完成相应门禁前不得开放线上功能或发布。凭据放入权限受限的本地/服务器环境文件或密钥管理器，不要提交 Git，也不要粘贴到聊天。
 
-- **Google OIDC 沙箱**：本地开发项目已创建 Web OAuth 客户端并完成真实登录验收；当前控制台为“外部/测试”，当前账号已列为测试用户，品牌支持邮箱已按用户选择设置，Web 来源与回调指向 `127.0.0.1:13000`。凭据仅保存在被 Git 忽略且权限为 `600` 的 `.runtime/local.env`。生产需使用独立项目/客户端、正式 HTTPS 域名与回调、经核验的首页/隐私政策/服务条款，并按 Google 要求完成发布/验证；不能复用本地客户端。
+- **Google OIDC 沙箱**：本地开发项目已创建 Web OAuth 客户端并完成真实登录验收；当前控制台为“外部/测试”，当前账号已列为测试用户，品牌支持邮箱已按用户选择设置，Web 来源与回调指向 `127.0.0.1:13000`。凭据仅保存在被 Git 忽略且权限为 `600` 的 `.runtime/local.env`。用户已提供生产域名 `https://lingdian-ai.top/`、首页 `/welcome`、隐私 `/privacy`、条款 `/terms`；但当前前端仅注册 `/welcome`，未知路由会返回欢迎页，隐私与条款尚无独立正文，故仍不能作为 Google 生产 OAuth 法律页面。生产需使用独立项目/客户端、正式 HTTPS 域名与回调、可访问且内容真实的法律页面，并按 Google 要求完成发布/验证；不能复用本地客户端。
 - **DeepSeek 上游**：现有配置凭据已通过官方 `GET /models` 鉴权，并完成本地非流式与 SSE 真实聊天验收；无需为本地联调申请新 Key。凭据仅存于权限 `600` 的 Git 忽略文件 `.runtime/local.env`。用户已授权清理本地 `main` 历史，当前 `main` 的推送扫描通过；`origin/main` 与本地备份引用仍保留重写前历史，因此远端推送门禁尚未解除。没有撤销或轮换现有 Key；生产仍需由凭据所有者安全配置并单独验收。
 - **邮件与短信**：真实邮件需配置 SMTP `SPRING_MAIL_*`；真实短信需配置 `VERIFICATION_DELIVERY_MODE=external`、`VERIFICATION_SMS_URL`、`VERIFICATION_SMS_TOKEN`、`VERIFICATION_SMS_TEMPLATE_ID`，之后分别验收投递与验证绑定。
 - **真实 RabbitMQ 与 OSS**：部署环境需配置 `RABBITMQ_HOST`、`RABBITMQ_PORT`、`RABBITMQ_USERNAME`、`RABBITMQ_PASSWORD`、`RABBITMQ_VHOST`，并联调队列、监控和重启恢复；OSS 使用 `ALIYUN_OSS_ENDPOINT`、`ALIYUN_OSS_ACCESS_KEY_ID`、`ALIYUN_OSS_ACCESS_KEY_SECRET`、`ALIYUN_OSS_BUCKET`、`ALIYUN_OSS_DOMAIN`。若要实际使用 OSS，还需将 `APP_STORAGE_PREFER_LOCAL=false`；模板默认 true 会继续优先本地存储。本地 RabbitMQ 与本地文件存储已各自验证，不能替代生产联调。
@@ -30,6 +30,7 @@
 ### 本地运行复核新增项
 
 - [x] **模型接入状态与聊天可用性（本地审计新增）**：`/platform-model/list` 与 `/platform-model/available` 用不含凭据的 `chatEnabled` 布尔字段反映 provider、实际模型、上游地址和 API Key 是否配置齐全；聊天页、设置面板与模型商城禁止选择未接入模型并说明原因；首页只展示已接入模型且使用真实 `displayName/provider` 契约。后端对缺少上游配置的请求在预扣和调用上游前拒绝。验收：接口不泄露密钥；用户模型列表正确返回接入状态；本地 mock 可正常聊天，未配置模型不会误选、不会扣点或调用上游。
+- [x] **可选 RabbitMQ 令 Actuator 健康误报（运行复核新增）**：`RABBITMQ_ENABLED=false` 时 Spring Boot 仍探测默认 RabbitMQ 并使 `/api/actuator/health` 返回 503；已将 Rabbit 健康指示器绑定到 `app.messaging.rabbit-enabled`，并让本地代理/后端验收断言 `status=UP`。2026-10-19 `./scripts/local-release-preflight.sh --local-only` 通过：34 个 Surefire suite、101 项测试、0 失败/错误、2 项 Rabbit opt-in 跳过；前端生产构建、验证码与模拟聊天/SSE/结算回归通过；结束后 `./scripts/ai-local-env.sh verify` 再次确认后端与前端代理健康为 UP。Rabbit 显式启用时仍须检查真实 Broker。
 
 ### 批次 A：AI 请求边界与模型访问安全（最高优先级）
 
@@ -356,3 +357,4 @@
 - [x] 发布后两条正式 HTTPS 域名的 `/api/health` 与登录验证码接口均返回 200；前端首页及其引用的 15 个 JS/CSS 资源均返回 200；Nginx 配置检查成功。新文件恢复扫描将原先 2 个过期 `PARSING` 任务恢复为 `SUCCESS`，目前 58 个文件解析任务均为成功。
 - [ ] 本次没有发起新的线上模型请求或付费聊天；本地模拟上游和真实凭据验收记录仍按各自章节区分。Google 生产 OAuth 尚需正式 HTTPS 来源/回调、首页/隐私政策/服务条款 URL 和独立生产客户端；SMTP/短信、RabbitMQ、OSS 尚未完成线上配置与联调。直充仍按用户决定关闭。
 - [ ] 旧 Token 因缺少设备绑定映射按失败关闭策略需要用户重新登录；历史邮箱不会自动视为已验证，用户需重新验证。旧伪 OAuth/TOTP Redis 数据不迁移。生产 Redis 仍无认证且未公开宿主机端口，`.env.prod` 权限为 `600`；Redis 认证保持暂缓，启用前需安排现有 Redis/backend 的一致配置和重启。
+- [x] 2026-10-19 可选 Rabbit 健康修复：`RABBITMQ_ENABLED=false` 时 Actuator 不再因未部署的可选 Broker 误报 DOWN；基础验证与全量本地发布预检通过，相关变更尚待提交/部署。生产 Google URL 已收齐，但 `/privacy` 与 `/terms` 当前回退到欢迎页，必须先发布真实法律正文并核验后，才可配置生产 OAuth 客户端。

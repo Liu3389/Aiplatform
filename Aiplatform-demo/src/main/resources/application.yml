@@ -3,6 +3,12 @@ server:
   servlet:
     context-path: /api
 
+management:
+  health:
+    # RabbitMQ 是可选消息后端；仅显式启用时才纳入整体健康状态。
+    rabbit:
+      enabled: ${app.messaging.rabbit-enabled:false}
+
 spring:
   application:
     name: ai-gateway-platform
