@@ -37,7 +37,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // IP限流拦截器
         registry.addInterceptor(ipRateLimitInterceptor)
                 .addPathPatterns("/**")
-                .excludePathPatterns("/auth/**", "/static/**", "/uploads/**")
+                // 认证业务仍跳过常规 IP 限流，但验证码签发由拦截器内部单独限流。
+                .excludePathPatterns("/static/**", "/uploads/**")
                 .excludePathPatterns(DOC_PATHS);
 
         // 用户限流拦截器（防止恶意刷接口）

@@ -13,7 +13,7 @@
 
 以下列出仍需完成的真实依赖或发布前人工核验；具体完成状态以各整改批次的证据为准。未完成相应门禁前不得开放线上功能或发布。凭据放入权限受限的本地/服务器环境文件或密钥管理器，不要提交 Git，也不要粘贴到聊天。
 
-- **Google OIDC 沙箱与生产门禁**：本地开发项目已创建 Web OAuth 客户端并完成真实登录验收；本地凭据仅保存在被 Git 忽略且权限为 `600` 的 `.runtime/local.env`。独立生产项目 `lingdian-ai-production` 已创建；2026-10-19 经用户授权后，Google Auth Platform 品牌配置已保存为“凌点 AI”，受众为“外部/测试”，用户指定的 Google 账号已登记为唯一测试用户，授权域名为 `lingdian-ai.top`，首页为 `https://lingdian-ai.top/welcome`。生产项目尚无 Web OAuth 客户端；服务器 `.env.prod` 中 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GOOGLE_OAUTH_REDIRECT_URI` 均缺失，公网授权入口返回业务码 503。安全配置加载路径已加入 `application.yml`（可从容器内 `/app/google-oauth.properties` 读取）并推送到 `main` 提交 `f028fe7`，但尚未部署。客户端必须在独立生产项目创建，不能复用本地客户端。隐私/服务条款页面与运营主体信息仍未完成正式发布，因此目前仅限测试用户登录，不代表可向公众发布或通过 OAuth 审核。
+- **Google OIDC 沙箱与生产门禁**：本地开发项目已创建 Web OAuth 客户端并完成真实登录验收；本地凭据仅保存在被 Git 忽略且权限为 `600` 的 `.runtime/local.env`。独立生产项目 `lingdian-ai-production` 已创建；2026-10-19 经用户授权后，品牌显示名为“凌点 AI”，受众为“外部/测试”，用户指定的 Google 账号已登记为唯一测试用户，授权域名为 `lingdian-ai.top`，首页为 `https://lingdian-ai.top/welcome`。用户已创建并附上生产 Web 客户端 JSON；脱敏核验确认项目正确，但当前授权来源额外包含 HTTP 域名，回调登记为站点根路径而非应用的 `/oauth/callback`，因此不得写入服务器。用户本机附件副本权限为 `600`，密钥没有输出到聊天。修正来源/回调并重新导出后，才可写入服务器 `.env.prod` 的 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GOOGLE_OAUTH_REDIRECT_URI`；线上授权入口仍返回业务码 503。安全配置加载路径已加入 `application.yml`（可从容器内 `/app/google-oauth.properties` 读取）并推送到 `main` 提交 `f028fe7`，但尚未部署。隐私/服务条款页面与运营主体信息仍未完成正式发布，因此目前仅限测试用户登录，不代表可向公众发布或通过 OAuth 审核。
 - **DeepSeek 上游**：现有配置凭据已通过官方 `GET /models` 鉴权，并完成本地非流式与 SSE 真实聊天验收；无需为本地联调申请新 Key。凭据仅存于权限 `600` 的 Git 忽略文件 `.runtime/local.env`。用户已授权清理本地 `main` 历史；当前 `main` 与 `origin/main` 同步，推送扫描通过。本地回滚引用仍保留重写前对象；没有撤销或轮换现有 Key。线上数据库中的模型 Key 未在本轮读取；生产上游仍需单独进行脱敏联调验收。
 - **邮件与短信**：真实邮件需配置 SMTP `SPRING_MAIL_*`；真实短信需配置 `VERIFICATION_DELIVERY_MODE=external`、`VERIFICATION_SMS_URL`、`VERIFICATION_SMS_TOKEN`、`VERIFICATION_SMS_TEMPLATE_ID`，之后分别验收投递与验证绑定。
 - **真实 RabbitMQ 与 OSS**：部署环境需配置 `RABBITMQ_HOST`、`RABBITMQ_PORT`、`RABBITMQ_USERNAME`、`RABBITMQ_PASSWORD`、`RABBITMQ_VHOST`，并联调队列、监控和重启恢复；OSS 使用 `ALIYUN_OSS_ENDPOINT`、`ALIYUN_OSS_ACCESS_KEY_ID`、`ALIYUN_OSS_ACCESS_KEY_SECRET`、`ALIYUN_OSS_BUCKET`、`ALIYUN_OSS_DOMAIN`。若要实际使用 OSS，还需将 `APP_STORAGE_PREFER_LOCAL=false`；模板默认 true 会继续优先本地存储。本地 RabbitMQ 与本地文件存储已各自验证，不能替代生产联调。
@@ -25,7 +25,7 @@
 
 ### 用户要求优先项
 
-- [x] **登录图形验证码（优先实现）**：登录页加载可刷新、5分钟有效、一次消费的图形验证码；登录 API 强制校验，并与注册验证码分用途隔离。验收：错误/过期/重放验证码拒绝且不进入账号密码校验；有效验证码可正常登录；本地浏览器与接口冒烟通过。2026-10-19 复验：登录页结构包含验证码图片与刷新按钮；`GET /api/auth/login/captcha` 返回图片 data URI、有效期 300 秒；错误验证码的本地 HTTP 请求返回业务码 400；`AuthControllerCaptchaTest` 断言验证码失败时不调用账号或 Token 服务。
+- [x] **登录图形验证码（优先实现）**：登录页加载可刷新、5分钟有效、一次消费的图形验证码；登录 API 强制校验，并与注册验证码分用途隔离。验收：错误/过期/重放验证码拒绝且不进入账号密码校验；有效验证码可正常登录；本地浏览器与接口冒烟通过。2026-10-19 复验：登录验证码接口返回图片 data URI、有效期 300 秒；错误验证码返回业务码 400；验证码失败时不调用账号或 Token 服务。追加防刷门禁：登录/注册验证码共用每 IP 每分钟 10 次的 Redis 原子计数，超限返回 HTTP 429；限流身份使用 Nginx 覆写的 `X-Real-IP`，忽略客户端可控的 `X-Forwarded-For`。前端保留后端错误正文，登录页可显示限流提示。`IpRateLimitInterceptorTest` 覆盖超限拒绝、转发头伪造和其他认证路由；与登录/验证码服务、用户限流共 13 项定向测试通过。全量本地预检 108 项 Surefire 测试、0 失败/错误、2 项 RabbitMQ opt-in 跳过，前端生产构建和模拟聊天/SSE/结算回归通过；错误提示补充 `npm run test:api-errors`（2 项通过）后再次 `npm run build`、本地 `verify` 均通过。
 
 ### 本地运行复核新增项
 
@@ -380,4 +380,4 @@
 - [x] 当前工作区复跑后端全量测试：35 个 Surefire suite、105 项测试、0 失败、0 错误、2 项 Rabbit opt-in 测试跳过。测试在停止本地 backend 期间通过；backend 同时运行时此前复现一次 `FileParseTaskRecoveryLifecycleTest` 数据库死锁，需把并发运行条件保留为测试稳定性注意项，不能声称该死锁已通过代码修复。
 - [x] `npm run build`、`./scripts/ai-local-env.sh verify` 和完整 `./scripts/ai-local-env.sh verify-chat` 均通过；后者覆盖验证码拒绝、模拟流式对话、权限/限流、持久化与点数结算。本地栈已恢复运行并保持 `local` 代理；这些聊天验收使用本地 mock，不代表 Google OAuth 或线上模型验收。
 - [x] 本地浏览器再次确认登录表单显示图形验证码、5 分钟有效提示和 Google 登录入口；`/privacy`、`/terms` 本地路由可见，但内容仍明确标为草案。
-- [ ] 生产 Google OAuth 仍未完成：测试受众和授权域名已在控制台保存；用户需亲自提交已预填的 Web 客户端表单并保管生成的 Client ID/Secret，再写入服务器受限 `.env.prod`。线上 OAuth 授权接口仍返回业务码 503；没有部署或改动线上容器。
+- [ ] 生产 Google OAuth 仍未完成：测试受众和授权域名已在控制台保存；生产 Web 客户端 JSON 已收到但回调/来源登记不匹配。Google Auth Platform > Clients 中将授权来源设为 `https://lingdian-ai.top`，移除 HTTP 来源；将授权重定向 URI 设为 `https://lingdian-ai.top/oauth/callback`，然后重新导出 JSON。凭据未写入服务器；线上 OAuth 授权接口仍返回业务码 503，没有部署或改动线上容器。

@@ -1,5 +1,6 @@
 import type { ApiResult, ChatMessagePageVO, ChatRequest, SearchInfo } from '@/types';
 import { recordAuthSessionNotice, recoverUnauthorized } from './authResponseRecovery'
+import { readHttpApiError } from './httpApiError'
 
 const BASE_URL = '/api';
 
@@ -27,7 +28,8 @@ async function readApiResponse<T>(response: Response): Promise<ApiResult<T>> {
     } catch {}
     return httpUnauthorizedResult<T>()
   }
-  throw new ApiError(response.status, 'HTTP ' + response.status + ': ' + response.statusText)
+  const error = await readHttpApiError(response)
+  throw new ApiError(response.status, error.message, error.data)
 }
 
 async function refreshTokenIfNeeded(): Promise<boolean> {

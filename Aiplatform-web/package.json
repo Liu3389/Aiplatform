@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test:auth-session": "node --experimental-strip-types --test scripts/authResponseRecovery.test.mjs",
     "test:model-availability": "node --experimental-strip-types --test scripts/modelAvailability.test.mjs",
-    "test:oauth-callback": "node --experimental-strip-types --test scripts/oauthCallbackRequest.test.mjs"
+    "test:oauth-callback": "node --experimental-strip-types --test scripts/oauthCallbackRequest.test.mjs",
+    "test:api-errors": "node --experimental-strip-types --test scripts/httpApiError.test.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.2.2",
