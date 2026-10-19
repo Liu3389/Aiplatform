@@ -93,6 +93,7 @@
 - [x] `npm run build` 通过；`mvn -q -Dtest=SearchIntentServiceTest,TikaParseTest test` 通过。
 - [ ] 生产 RabbitMQ、OSS 与支付渠道仍是独立外部验收门禁。本地 RabbitMQ 4.2.9 已于 2026-10-19 完成本地 broker/恢复验收，不代表生产 broker 已联通；支付接口按用户决定暂缓。Google OIDC 开发沙箱和真实浏览器登录已完成，生产 Google 客户端仍需独立配置、页面审核和验收。
 - [x] ChatPage 首屏入口已从约 1.4 MB 降至 94.97 KB；当前构建剩余的大 chunk 属于 ECharts 和其他页面共享依赖，不在聊天页静态依赖图中，按独立页面优化跟踪。
+- [x] 2026-10-19 账号停用行为本地验收：提交 `c41d935` 将账号操作统一为停用，保留用户资料与全部历史数据、撤销会话并禁用后续访问；旧 `/user/delete-account` 与新 `/user/deactivate-account` 均保留。`UserServiceTest` 3 项通过，覆盖密码错误不改变状态、正确密码停用、用户名/邮箱/手机号保留和会话撤销。随后 `./scripts/local-release-preflight.sh --local-only` 通过：35 个 Surefire suite 共 105 项，0 失败、0 错误、2 项 Rabbit opt-in 跳过；前端生产构建、本地基础验证及验证码/模拟模型/SSE/结算回归通过。浏览器核对停用文案及空密码按钮禁用状态；接口无效 Token 探测在新旧路径均返回业务码 401。模拟上游验收不代表真实供应商请求；本功能未部署。
 
 ### 真实 DeepSeek 本地上游验收（2026-10-19）
 
