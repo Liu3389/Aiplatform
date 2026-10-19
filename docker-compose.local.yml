@@ -1,0 +1,45 @@
+# AI 平台专用本地依赖。请通过 scripts/ai-local-env.sh 管理。
+# 容器名、卷和仅本机端口均与 MiniMall/线上栈隔离。
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: aiplatform-local-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set in .runtime/local.env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_gateway_local}
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-13306}:3306"
+    volumes:
+      - local-mysql-data:/var/lib/mysql
+      - ./Aiplatform-demo/src/main/resources/sql/rebuild.sql:/docker-entrypoint-initdb.d/01-rebuild.sql:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: aiplatform-local-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-16380}:6379"
+    volumes:
+      - local-redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  local-mysql-data:
+  local-redis-data:

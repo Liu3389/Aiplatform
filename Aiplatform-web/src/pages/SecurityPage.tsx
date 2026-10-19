@@ -7,7 +7,7 @@ import {
 import { useAppStore } from '../stores/appStore'
 import { useToastStore } from '../stores/toastStore'
 
-type ProviderKey = 'github' | 'google' | 'wechat'
+type ProviderKey = 'google'
 
 interface OAuthItem {
   provider: ProviderKey
@@ -17,24 +17,19 @@ interface OAuthItem {
 }
 
 interface LoginDevice {
-  id: string
-  ip: string
-  region?: string
-  browser: string
-  os: string
-  loginTime: string
+  deviceId: string
+  info: string
+  lastActive: string
   isCurrent: boolean
 }
 
 const OAUTH_PROVIDERS: { key: ProviderKey; label: string }[] = [
-  { key: 'github', label: 'GitHub' },
   { key: 'google', label: 'Google' },
-  { key: 'wechat', label: '微信' },
 ]
 
 function SecurityPage() {
   const navigate = useNavigate()
-  const { token } = useAppStore()
+  const { token, user, fetchUserInfo } = useAppStore()
   const { showToast } = useToastStore()
 
   const showSuccess = (msg: string) => showToast({ title: '成功', message: msg, type: 'success' })
@@ -50,26 +45,30 @@ function SecurityPage() {
   const [pwd, setPwd] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' })
   const [pwdMsg, setPwdMsg] = useState('')
 
-  // ---- 点数充值 ----
-  const [rechargeAmount, setRechargeAmount] = useState<number>(10)
-
   // ---- 优惠券 ----
   const [coupons, setCoupons] = useState<any[]>([])
 
   // ---- 第三方绑定 ----
   const [oauthItems, setOauthItems] = useState<OAuthItem[]>([])
+  const [oauthState, setOauthState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [oauthError, setOauthError] = useState('')
 
   // ---- 两步验证 ----
   const [twoFAEnabled, setTwoFAEnabled] = useState(false)
+  const [twoFAState, setTwoFAState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [twoFAError, setTwoFAError] = useState('')
   const [twoFALoading, setTwoFALoading] = useState(false)
   const [show2FASetup, setShow2FASetup] = useState(false)
   const [twoFACode, setTwoFACode] = useState('')
   const [twoFASecret, setTwoFASecret] = useState('')
+  const [twoFABackupCodes, setTwoFABackupCodes] = useState<string[]>([])
   const [show2FADisable, setShow2FADisable] = useState(false)
   const [twoFADisableCode, setTwoFADisableCode] = useState('')
 
   // ---- 登录设备 ----
   const [devices, setDevices] = useState<LoginDevice[]>([])
+  const [devicesState, setDevicesState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [devicesError, setDevicesError] = useState('')
 
   // ---- 发票 ----
   const [invoiceForm, setInvoiceForm] = useState({ title: '', taxNumber: '', amount: '' })
@@ -81,7 +80,18 @@ function SecurityPage() {
   const [bindEmailForm, setBindEmailForm] = useState({ email: '', code: '' })
   const [bindPhoneForm, setBindPhoneForm] = useState({ phone: '', code: '' })
   const [bindCodeLoading, setBindCodeLoading] = useState<'email' | 'phone' | null>(null)
-  const [bindCountdown, setBindCountdown] = useState(0)
+  const [bindCountdown, setBindCountdown] = useState({ email: 0, phone: 0 })
+
+  useEffect(() => {
+    if (bindCountdown.email === 0 && bindCountdown.phone === 0) return
+    const timer = window.setTimeout(() => {
+      setBindCountdown(current => ({
+        email: Math.max(0, current.email - 1),
+        phone: Math.max(0, current.phone - 1),
+      }))
+    }, 1000)
+    return () => window.clearTimeout(timer)
+  }, [bindCountdown])
 
   // ---- 删除账号 ----
   const [deletePassword, setDeletePassword] = useState('')
@@ -122,16 +132,6 @@ function SecurityPage() {
     }
   }
 
-  // ==================== 充值 ====================
-  const handleRecharge = async () => {
-    try {
-      await userApi.recharge(rechargeAmount)
-      showSuccess(`成功充值 ${rechargeAmount} 元`)
-    } catch (e: any) {
-      showError(e.message || '充值失败')
-    }
-  }
-
   // ==================== 优惠券 ====================
   const loadCoupons = async () => {
     try {
@@ -144,33 +144,33 @@ function SecurityPage() {
 
   // ==================== 第三方绑定 ====================
   const loadOAuthBindings = async () => {
-    const items: OAuthItem[] = OAUTH_PROVIDERS.map(p => ({
-      provider: p.key,
-      label: p.label,
-      connected: false,
-    }))
+    setOauthState('loading')
+    setOauthError('')
     try {
-      const info = await userApi.getInfo()
-      type OAuthInfo = { providers?: Record<string, string>; oauth_providers?: Record<string, string>; oauthProviders?: Record<string, string> }
-      const typedInfo = info as unknown as OAuthInfo | null
-      const providers = typedInfo?.providers || typedInfo?.oauth_providers || typedInfo?.oauthProviders || {}
-      for (const item of items) {
-        if (providers[item.provider]) {
-          item.connected = true
-          item.account = providers[item.provider]
+      const bindings = await authApi.oauthBindings()
+      const byProvider = new Map(bindings.map(binding => [binding.provider, binding]))
+      setOauthItems(OAUTH_PROVIDERS.map(provider => {
+        const binding = byProvider.get(provider.key)
+        return {
+          provider: provider.key,
+          label: provider.label,
+          connected: Boolean(binding),
+          account: binding?.email || binding?.displayName,
         }
-      }
-    } catch {
-      // ignore
+      }))
+      setOauthState('ready')
+    } catch (e: any) {
+      setOauthError(e?.message || '第三方绑定状态暂时无法获取')
+      setOauthState('error')
     }
-    setOauthItems(items)
   }
 
   const handleBindOAuth = async (provider: string) => {
     try {
-      await authApi.oauthBind(provider, '')
-      showSuccess(`${OAUTH_PROVIDERS.find(p => p.key === provider)?.label || provider} 绑定成功`)
-      await loadOAuthBindings()
+      const result = await authApi.getOAuthUrl(provider, 'bind')
+      localStorage.setItem('oauth_provider', provider)
+      localStorage.setItem('oauth_return_to', window.location.pathname + window.location.search)
+      window.location.assign(result.url)
     } catch (e: any) {
       showError(e.message || '绑定失败')
     }
@@ -188,17 +188,22 @@ function SecurityPage() {
 
   // ==================== 两步验证 ====================
   const load2FAStatus = async () => {
+    setTwoFAState('loading')
+    setTwoFAError('')
     try {
       const data = await twoFAApi.getStatus()
       setTwoFAEnabled(data.enabled === true)
-    } catch {
-      // ignore
+      setTwoFAState('ready')
+    } catch (e: any) {
+      setTwoFAError(e?.message || '两步验证状态暂时无法获取')
+      setTwoFAState('error')
     }
   }
 
   const handleEnable2FA = async () => {
     try {
       setTwoFALoading(true)
+      setTwoFABackupCodes([])
       const data = await twoFAApi.enable()
       setTwoFASecret(data.secret || '')
       setShow2FASetup(true)
@@ -212,8 +217,9 @@ function SecurityPage() {
   const handleVerify2FA = async () => {
     try {
       setTwoFALoading(true)
-      await twoFAApi.verify(twoFACode)
+      const result = await twoFAApi.verify(twoFACode)
       setTwoFAEnabled(true)
+      setTwoFABackupCodes(result.backupCodes || [])
       setShow2FASetup(false)
       setTwoFACode('')
       showSuccess('两步验证已启用')
@@ -231,6 +237,7 @@ function SecurityPage() {
       setTwoFAEnabled(false)
       setShow2FADisable(false)
       setTwoFADisableCode('')
+      setTwoFABackupCodes([])
       showSuccess('两步验证已禁用')
     } catch (e: any) {
       showError(e.message || '验证码错误')
@@ -241,11 +248,15 @@ function SecurityPage() {
 
   // ==================== 登录设备 ====================
   const loadDevices = async () => {
+    setDevicesState('loading')
+    setDevicesError('')
     try {
       const list = await loginDeviceApi.list()
       setDevices(Array.isArray(list) ? list : [])
-    } catch {
-      setDevices([])
+      setDevicesState('ready')
+    } catch (e: any) {
+      setDevicesError(e?.message || '登录设备列表暂时无法获取')
+      setDevicesState('error')
     }
   }
 
@@ -291,7 +302,7 @@ function SecurityPage() {
   const loadRechargeRecords = async () => {
     try {
       const records = await rechargeApi.getRecords()
-      setRechargeRecords(Array.isArray(records) ? records : [])
+      setRechargeRecords(records?.records || [])
     } catch {
       setRechargeRecords([])
     }
@@ -308,16 +319,7 @@ function SecurityPage() {
       setBindCodeLoading(type)
       await bindApi.sendBindCode(type, target)
       showSuccess('验证码已发送')
-      setBindCountdown(60)
-      const timer = setInterval(() => {
-        setBindCountdown(prev => {
-          if (prev <= 1) {
-            clearInterval(timer)
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
+      setBindCountdown(current => ({ ...current, [type]: 60 }))
     } catch (e: any) {
       showError(e.message || '发送失败')
     } finally {
@@ -334,6 +336,7 @@ function SecurityPage() {
       await bindApi.bindEmail(bindEmailForm.email, bindEmailForm.code)
       showSuccess('邮箱绑定成功')
       setBindEmailForm({ email: '', code: '' })
+      await fetchUserInfo()
     } catch (e: any) {
       showError(e.message || '绑定失败')
     }
@@ -348,6 +351,7 @@ function SecurityPage() {
       await bindApi.bindPhone(bindPhoneForm.phone, bindPhoneForm.code)
       showSuccess('手机号绑定成功')
       setBindPhoneForm({ phone: '', code: '' })
+      await fetchUserInfo()
     } catch (e: any) {
       showError(e.message || '绑定失败')
     }
@@ -376,12 +380,18 @@ function SecurityPage() {
     })
   }
 
+  const copyBackupCodes = () => {
+    navigator.clipboard.writeText(twoFABackupCodes.join('\n')).then(() => {
+      showSuccess('备用码已复制，请保存到安全位置')
+    })
+  }
+
   if (!token) return null
 
   // ==================== Render ====================
   const tabs = [
     { key: 'password', label: '修改密码' },
-    { key: 'recharge', label: '点数充值' },
+    { key: 'recharge', label: '余额充值' },
     { key: 'coupons', label: '优惠券' },
     { key: 'bind', label: '三方绑定' },
     { key: '2fa', label: '两步验证' },
@@ -392,25 +402,33 @@ function SecurityPage() {
   ] as const
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
-      <h2 className="text-2xl font-bold mb-6">账户安全</h2>
+    <div className="page-scroll security-page h-full max-w-5xl mx-auto overflow-y-auto px-3 py-5 pb-24 sm:px-6 sm:py-8 sm:pb-8">
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>账户安全</h2>
+        <p className="mt-1 text-sm" style={{ color: 'var(--text-dim)' }}>管理登录方式、验证联系方式和当前会话。</p>
+      </div>
 
       {/* Tab 导航 */}
-      <div className="flex flex-wrap gap-2 mb-8 border-b border-gray-200 pb-3">
+      <nav aria-label="账户设置分类" className="flex flex-wrap gap-2 mb-8 pb-3" style={{ borderBottom: '1px solid var(--border-color)' }}>
         {tabs.map(t => (
           <button
             key={t.key}
+            type="button"
             onClick={() => setTab(t.key as typeof tab)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+            aria-pressed={tab === t.key}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors security-tab ${
               tab === t.key
-                ? 'bg-indigo-600 text-white shadow'
+                ? 'is-active text-white shadow'
                 : 'text-gray-600 hover:bg-gray-100'
             }`}
+            style={tab === t.key
+              ? { background: 'var(--accent-purple)' }
+              : { color: 'var(--text-dim)', border: '1px solid var(--border-color)' }}
           >
             {t.label}
           </button>
         ))}
-      </div>
+      </nav>
 
       {/* ---- 修改密码 ---- */}
       {tab === 'password' && (
@@ -420,6 +438,8 @@ function SecurityPage() {
             className="w-full border rounded-lg px-4 py-2"
             type="password"
             placeholder="旧密码"
+            aria-label="旧密码"
+            autoComplete="current-password"
             value={pwd.oldPassword}
             onChange={e => setPwd({ ...pwd, oldPassword: e.target.value })}
           />
@@ -427,6 +447,8 @@ function SecurityPage() {
             className="w-full border rounded-lg px-4 py-2"
             type="password"
             placeholder="新密码"
+            aria-label="新密码"
+            autoComplete="new-password"
             value={pwd.newPassword}
             onChange={e => setPwd({ ...pwd, newPassword: e.target.value })}
           />
@@ -434,31 +456,23 @@ function SecurityPage() {
             className="w-full border rounded-lg px-4 py-2"
             type="password"
             placeholder="确认新密码"
+            aria-label="确认新密码"
+            autoComplete="new-password"
             value={pwd.confirmPassword}
             onChange={e => setPwd({ ...pwd, confirmPassword: e.target.value })}
           />
-          {pwdMsg && <p className={`text-sm ${pwdMsg.includes('成功') ? 'text-green-600' : 'text-red-500'}`}>{pwdMsg}</p>}
-          <button onClick={handleChangePassword} className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition-colors">
+          {pwdMsg && <p role={pwdMsg.includes('成功') ? 'status' : 'alert'} className={`text-sm ${pwdMsg.includes('成功') ? 'text-green-600' : 'text-red-500'}`}>{pwdMsg}</p>}
+          <button type="button" onClick={handleChangePassword} className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition-colors">
             确认修改
           </button>
         </div>
       )}
 
-      {/* ---- 点数充值 ---- */}
+      {/* ---- 余额充值 ---- */}
       {tab === 'recharge' && (
-        <div className="max-w-md space-y-4">
-          <h3 className="text-lg font-semibold mb-2">点数充值</h3>
-          <label className="block text-sm font-medium text-gray-700">充值金额 (元)</label>
-          <input
-            className="w-full border rounded-lg px-4 py-2"
-            type="number"
-            min={1}
-            value={rechargeAmount}
-            onChange={e => setRechargeAmount(Number(e.target.value))}
-          />
-          <button onClick={handleRecharge} className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition-colors">
-            确认充值 {rechargeAmount} 元
-          </button>
+        <div className="max-w-md rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          <h3 className="mb-2 text-lg font-semibold">余额充值暂不可用</h3>
+          <p>支付渠道与验签回调尚未接入。此期间不会扣款、消费优惠券或增加账户余额。</p>
         </div>
       )}
 
@@ -499,28 +513,38 @@ function SecurityPage() {
       {tab === 'bind' && (
         <div className="space-y-6">
           <h3 className="text-lg font-semibold mb-2">第三方绑定</h3>
-          <div className="grid gap-3">
-            {oauthItems.map(item => (
-              <div key={item.provider} className="flex items-center justify-between border rounded-lg p-4">
-                <div>
-                  <span className="font-medium">{item.label}</span>
-                  {item.connected && item.account && (
-                    <span className="ml-2 text-xs text-gray-500">({item.account})</span>
-                  )}
+          {oauthState === 'loading' && <p className="text-sm text-gray-500" role="status">正在读取 Google 绑定状态…</p>}
+          {oauthState === 'error' && (
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border p-4 text-sm" role="alert">
+              <span>{oauthError}</span>
+              <button type="button" onClick={() => void loadOAuthBindings()} className="font-medium text-indigo-600">重试</button>
+            </div>
+          )}
+          {oauthState === 'ready' && (
+            <div className="grid gap-3">
+              {oauthItems.map(item => (
+                <div key={item.provider} className="flex items-center justify-between border rounded-xl p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                  <div className="min-w-0">
+                    <span className="font-medium">{item.label}</span>
+                    {item.connected && item.account && (
+                      <span className="ml-2 break-all text-xs text-gray-500">({item.account})</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => item.connected ? handleUnbindOAuth(item.provider) : handleBindOAuth(item.provider)}
+                    className={`ml-3 shrink-0 px-4 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                      item.connected
+                        ? 'border border-red-300 text-red-500 hover:bg-red-50'
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                    }`}
+                  >
+                    {item.connected ? '解绑' : '绑定'}
+                  </button>
                 </div>
-                <button
-                  onClick={() => item.connected ? handleUnbindOAuth(item.provider) : handleBindOAuth(item.provider)}
-                  className={`px-4 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                    item.connected
-                      ? 'border border-red-300 text-red-500 hover:bg-red-50'
-                      : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                  }`}
-                >
-                  {item.connected ? '解绑' : '绑定'}
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           {/* 邮箱手机绑定 */}
           <div className="mt-8 space-y-6">
@@ -528,72 +552,98 @@ function SecurityPage() {
 
             {/* 邮箱绑定 */}
             <div className="border rounded-lg p-4 space-y-3">
-              <h4 className="font-medium text-sm">邮箱绑定</h4>
-              <div className="flex gap-2">
-                <input
-                  className="flex-1 border rounded-lg px-3 py-2 text-sm"
-                  placeholder="输入邮箱"
-                  type="email"
-                  value={bindEmailForm.email}
-                  onChange={e => setBindEmailForm({ ...bindEmailForm, email: e.target.value })}
-                />
-                <button
-                  onClick={() => handleSendBindCode('email')}
-                  disabled={bindCodeLoading === 'email' || bindCountdown > 0}
-                  className="px-3 py-2 bg-gray-100 rounded-lg text-sm whitespace-nowrap disabled:opacity-50"
-                >
-                  {bindCountdown > 0 ? `${bindCountdown}s` : '获取验证码'}
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="font-medium text-sm">邮箱</h4>
+                {user?.emailVerified
+                  ? <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600">已验证 · {user.email}</span>
+                  : <span className="text-xs text-amber-600">{user?.email ? `历史资料 ${user.email} 尚未验证` : '尚未绑定'}</span>}
               </div>
-              <div className="flex gap-2">
-                <input
-                  className="flex-1 border rounded-lg px-3 py-2 text-sm"
-                  placeholder="输入验证码"
-                  value={bindEmailForm.code}
-                  onChange={e => setBindEmailForm({ ...bindEmailForm, code: e.target.value })}
-                />
-                <button
-                  onClick={handleBindEmail}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm whitespace-nowrap hover:bg-indigo-700"
-                >
-                  绑定邮箱
-                </button>
-              </div>
+              {!user?.emailVerified && <>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    className="min-w-0 flex-1 border rounded-lg px-3 py-2 text-sm"
+                    placeholder="输入需要验证的邮箱"
+                    type="email"
+                    autoComplete="email"
+                    value={bindEmailForm.email}
+                    onChange={e => setBindEmailForm({ ...bindEmailForm, email: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleSendBindCode('email')}
+                    disabled={bindCodeLoading === 'email' || bindCountdown.email > 0}
+                    className="px-3 py-2 bg-gray-100 rounded-lg text-sm whitespace-nowrap disabled:opacity-50"
+                  >
+                    {bindCodeLoading === 'email' ? '发送中…' : bindCountdown.email > 0 ? `${bindCountdown.email}s 后重试` : '获取验证码'}
+                  </button>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    className="min-w-0 flex-1 border rounded-lg px-3 py-2 text-sm"
+                    placeholder="输入邮箱验证码"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={bindEmailForm.code}
+                    onChange={e => setBindEmailForm({ ...bindEmailForm, code: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleBindEmail()}
+                    disabled={!bindEmailForm.email || !bindEmailForm.code}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm whitespace-nowrap hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    验证并绑定邮箱
+                  </button>
+                </div>
+              </>}
             </div>
 
             {/* 手机绑定 */}
             <div className="border rounded-lg p-4 space-y-3">
-              <h4 className="font-medium text-sm">手机绑定</h4>
-              <div className="flex gap-2">
-                <input
-                  className="flex-1 border rounded-lg px-3 py-2 text-sm"
-                  placeholder="输入手机号"
-                  type="tel"
-                  value={bindPhoneForm.phone}
-                  onChange={e => setBindPhoneForm({ ...bindPhoneForm, phone: e.target.value })}
-                />
-                <button
-                  onClick={() => handleSendBindCode('phone')}
-                  disabled={bindCodeLoading === 'phone' || bindCountdown > 0}
-                  className="px-3 py-2 bg-gray-100 rounded-lg text-sm whitespace-nowrap disabled:opacity-50"
-                >
-                  {bindCountdown > 0 ? `${bindCountdown}s` : '获取验证码'}
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="font-medium text-sm">手机号</h4>
+                {user?.phoneVerified
+                  ? <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600">已验证 · {user.phone}</span>
+                  : <span className="text-xs text-amber-600">{user?.phone ? `历史资料 ${user.phone} 尚未验证` : '尚未绑定'}</span>}
               </div>
-              <div className="flex gap-2">
-                <input
-                  className="flex-1 border rounded-lg px-3 py-2 text-sm"
-                  placeholder="输入验证码"
-                  value={bindPhoneForm.code}
-                  onChange={e => setBindPhoneForm({ ...bindPhoneForm, code: e.target.value })}
-                />
-                <button
-                  onClick={handleBindPhone}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm whitespace-nowrap hover:bg-indigo-700"
-                >
-                  绑定手机
-                </button>
-              </div>
+              {!user?.phoneVerified && <>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    className="min-w-0 flex-1 border rounded-lg px-3 py-2 text-sm"
+                    placeholder="输入手机号"
+                    type="tel"
+                    autoComplete="tel"
+                    value={bindPhoneForm.phone}
+                    onChange={e => setBindPhoneForm({ ...bindPhoneForm, phone: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleSendBindCode('phone')}
+                    disabled={bindCodeLoading === 'phone' || bindCountdown.phone > 0}
+                    className="px-3 py-2 bg-gray-100 rounded-lg text-sm whitespace-nowrap disabled:opacity-50"
+                  >
+                    {bindCodeLoading === 'phone' ? '发送中…' : bindCountdown.phone > 0 ? `${bindCountdown.phone}s 后重试` : '获取验证码'}
+                  </button>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    className="min-w-0 flex-1 border rounded-lg px-3 py-2 text-sm"
+                    placeholder="输入短信验证码"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={bindPhoneForm.code}
+                    onChange={e => setBindPhoneForm({ ...bindPhoneForm, code: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleBindPhone()}
+                    disabled={!bindPhoneForm.phone || !bindPhoneForm.code}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm whitespace-nowrap hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    验证并绑定手机
+                  </button>
+                </div>
+              </>}
             </div>
           </div>
         </div>
@@ -603,15 +653,23 @@ function SecurityPage() {
       {tab === '2fa' && (
         <div className="space-y-4 max-w-md">
           <h3 className="text-lg font-semibold mb-2">两步验证</h3>
+          {twoFAState === 'loading' && <p className="text-sm text-gray-500" role="status">正在读取两步验证状态…</p>}
+          {twoFAState === 'error' && (
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border p-4 text-sm" role="alert">
+              <span>{twoFAError}</span>
+              <button type="button" onClick={() => void load2FAStatus()} className="font-medium text-indigo-600">重试</button>
+            </div>
+          )}
+          {twoFAState === 'ready' && <>
           <p className="text-sm text-gray-600">当前状态: {twoFAEnabled ? <span className="text-green-600 font-medium">已启用</span> : <span className="text-gray-500">未启用</span>}</p>
 
           {show2FASetup && !twoFAEnabled && (
             <div className="border rounded-lg p-4 space-y-3 bg-gray-50">
               <p className="text-sm font-medium">设置两步验证</p>
-              <p className="text-xs text-gray-500">请使用 Google Authenticator 或 Authy 扫描下方密钥：</p>
+              <p className="text-xs text-gray-500">在 Google Authenticator 或 Authy 中选择“手动输入密钥”，填入下方密钥；再输入应用生成的 6 位验证码确认。</p>
               <div className="flex items-center gap-2">
                 <code className="bg-white border rounded px-3 py-1 text-sm break-all flex-1">{twoFASecret}</code>
-                <button onClick={copySecret} className="px-3 py-1 bg-white border rounded text-xs hover:bg-gray-100">
+                <button type="button" onClick={copySecret} className="px-3 py-1 bg-white border rounded text-xs hover:bg-gray-100">
                   复制
                 </button>
               </div>
@@ -640,12 +698,26 @@ function SecurityPage() {
           )}
 
           {twoFAEnabled && !show2FADisable && (
-            <button
-              onClick={() => setShow2FADisable(true)}
-              className="px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm hover:bg-red-50"
-            >
-              禁用两步验证
-            </button>
+            <div className="space-y-3">
+              {twoFABackupCodes.length > 0 && (
+                <div className="border border-amber-300 rounded-lg p-4 space-y-3 bg-amber-50">
+                  <p className="text-sm font-medium text-amber-900">请立即保存一次性备用码</p>
+                  <p className="text-xs text-amber-800">每个备用码只能用于一次登录。本页关闭后不会再次显示。</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {twoFABackupCodes.map(code => <code key={code} className="bg-white border rounded px-2 py-1 text-xs text-center">{code}</code>)}
+                  </div>
+                  <button onClick={copyBackupCodes} className="px-3 py-1.5 bg-white border rounded text-xs hover:bg-amber-100">
+                    复制全部备用码
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={() => setShow2FADisable(true)}
+                className="px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm hover:bg-red-50"
+              >
+                禁用两步验证
+              </button>
+            </div>
           )}
 
           {!twoFAEnabled && !show2FASetup && (
@@ -663,7 +735,7 @@ function SecurityPage() {
               <p className="text-sm text-red-600">确认禁用两步验证</p>
               <input
                 className="w-full border rounded-lg px-3 py-2 text-sm"
-                placeholder="输入动态验证码"
+                placeholder="输入动态验证码或未使用的备用码"
                 value={twoFADisableCode}
                 onChange={e => setTwoFADisableCode(e.target.value)}
               />
@@ -684,6 +756,7 @@ function SecurityPage() {
               </div>
             </div>
           )}
+          </>}
         </div>
       )}
 
@@ -691,35 +764,42 @@ function SecurityPage() {
       {tab === 'devices' && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold mb-2">登录设备</h3>
-          {devices.length > 0 && (
+          {devicesState === 'loading' && <p className="text-sm text-gray-500" role="status">正在读取当前会话…</p>}
+          {devicesState === 'error' && (
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border p-4 text-sm" role="alert">
+              <span>{devicesError}</span>
+              <button type="button" onClick={() => void loadDevices()} className="font-medium text-indigo-600">重试</button>
+            </div>
+          )}
+          {devicesState === 'ready' && devices.some(device => !device.isCurrent) && (
             <button
+              type="button"
               onClick={handleRemoveAllDevices}
               className="px-4 py-2 text-sm border border-red-300 text-red-600 rounded-lg hover:bg-red-50"
             >
               下线所有其他设备
             </button>
           )}
-          {devices.length === 0 ? (
-            <p className="text-gray-500 text-sm">暂无设备记录</p>
+          {devicesState === 'ready' && (devices.length === 0 ? (
+            <p className="text-gray-500 text-sm">当前暂无有效登录会话，请重新登录后刷新。</p>
           ) : (
             <div className="space-y-3">
-              {devices.map((d: any, i: number) => (
-                <div key={d.id || i} className="flex items-center justify-between border rounded-lg p-3">
+              <p className="text-sm text-gray-500">平台当前仅保留一个有效登录会话；在新设备登录后，之前的会话会自动失效。</p>
+              {devices.map(device => (
+                <div key={device.deviceId} className="flex items-center justify-between gap-3 border rounded-xl p-4" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
                   <div>
                     <p className="text-sm font-medium">
-                      {d.os || 'Unknown'} / {d.browser || 'Unknown'}
-                      {d.isCurrent && <span className="ml-2 text-xs text-green-600 bg-green-50 rounded-full px-2 py-0.5">当前设备</span>}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {d.ip || ''} {d.region ? `(${d.region})` : ''}
+                      {device.isCurrent ? '当前登录会话' : device.info || '登录设备'}
+                      {device.isCurrent && <span className="ml-2 text-xs text-green-600 bg-green-50 rounded-full px-2 py-0.5">正在使用</span>}
                     </p>
                     <p className="text-xs text-gray-400 mt-0.5">
-                      {d.loginTime ? new Date(d.loginTime).toLocaleString() : ''}
+                      最近活跃：{device.lastActive ? new Date(device.lastActive).toLocaleString() : '未知'}
                     </p>
                   </div>
-                  {!d.isCurrent && (
+                  {!device.isCurrent && (
                     <button
-                      onClick={() => handleRemoveDevice(d.id)}
+                      type="button"
+                      onClick={() => handleRemoveDevice(device.deviceId)}
                       className="px-3 py-1 text-xs border border-gray-300 rounded-full hover:bg-red-50 hover:border-red-300 hover:text-red-600"
                     >
                       移除
@@ -728,7 +808,7 @@ function SecurityPage() {
                 </div>
               ))}
             </div>
-          )}
+          ))}
         </div>
       )}
 
@@ -771,7 +851,7 @@ function SecurityPage() {
           {rechargeRecords.length === 0 ? (
             <p className="text-gray-500 text-sm">暂无充值记录</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="hide-scrollbar overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50">

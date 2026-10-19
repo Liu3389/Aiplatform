@@ -91,7 +91,7 @@ const lightTokens: Record<string, string> = {
   '--text-primary': '#0F172A',
   '--text-secondary': '#1E293B',
   '--text-muted': '#475569',
-  '--text-dim': '#94A3B8',
+  '--text-dim': '#64748B',
   '--text-surface': '#64748B',
   '--text-inverse': '#F8FAFC',
 
@@ -152,23 +152,14 @@ const applyTheme = (theme: Theme) => {
 
 const getInitialTheme = (): Theme => {
   const saved = localStorage.getItem('lingdian_theme') as Theme
-  if (saved) return saved
-  return 'dark'
+  if (saved === 'dark' || saved === 'light') return saved
+  // 首次访问固定使用明亮主题；用户主动切换后才读取并持久化选择。
+  return 'light'
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => {
   const initial = getInitialTheme()
   applyTheme(initial)
-  if (typeof window !== 'undefined') {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-      const saved = localStorage.getItem('lingdian_theme')
-      if (!saved) {
-        const autoTheme = e.matches ? 'dark' : 'light'
-        applyTheme(autoTheme)
-        set({ theme: autoTheme })
-      }
-    })
-  }
   return {
     theme: initial,
     toggleTheme: () => {

@@ -3,8 +3,9 @@ import { useAppStore } from '@/stores/appStore'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useI18nStore } from '@/stores/i18nStore'
 import { useThemeStore } from '@/stores/themeStore'
-import { subscriptionApi, userApi } from '@/services/api'
+import { subscriptionApi, modelApi } from '@/services/api'
 import { useToastStore } from '@/stores/toastStore'
+import MembershipIcon from '@/components/MembershipIcon'
 
 interface Package {
   id: number
@@ -32,7 +33,6 @@ const TIERS = [
     nameZh: '免费普通用户',
     nameEn: 'Free User',
     color: '#94A3B8',
-    icon: '○',
     dailyPoints: 30,
     dailyPointsNoteZh: '每日清空',
     dailyPointsNoteEn: 'Reset daily',
@@ -50,7 +50,6 @@ const TIERS = [
     nameZh: '白银月卡会员',
     nameEn: 'Silver Member',
     color: '#C0C0C0',
-    icon: '●',
     dailyPoints: 80,
     dailyPointsNoteZh: '永久有效、可叠加',
     dailyPointsNoteEn: 'Permanent, stackable',
@@ -67,7 +66,6 @@ const TIERS = [
     nameZh: '黄金进阶会员',
     nameEn: 'Gold Member',
     color: '#F59E0B',
-    icon: '★',
     dailyPoints: 150,
     dailyPointsNoteZh: '永久有效、可叠加',
     dailyPointsNoteEn: 'Permanent, stackable',
@@ -84,7 +82,6 @@ const TIERS = [
     nameZh: '钻石旗舰会员',
     nameEn: 'Diamond Member',
     color: '#8B5CF6',
-    icon: '◆',
     dailyPoints: 300,
     dailyPointsNoteZh: '永久有效、可叠加',
     dailyPointsNoteEn: 'Permanent, stackable',
@@ -98,12 +95,24 @@ const TIERS = [
   },
 ]
 
+type MembershipKey = 'free' | 'silver' | 'gold' | 'diamond'
+const MEMBERSHIP_LEVEL: Record<MembershipKey, number> = { free: 0, silver: 1, gold: 2, diamond: 3 }
+
+type ComparisonRow = {
+  key: string
+  labelZh: string
+  labelEn: string
+  values: string[]
+  isWide?: boolean
+}
+
 export default function RechargePage() {
   const { user, fetchUserInfo } = useAppStore()
   const { lang } = useI18nStore()
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
   const currentMembership = user?.membership || 'free'
+  const currentLevel = MEMBERSHIP_LEVEL[currentMembership] ?? 0
 
   const [packages, setPackages] = useState<Package[]>([])
   const [packagesLoading, setPackagesLoading] = useState(true)
@@ -112,14 +121,25 @@ export default function RechargePage() {
   const [confirmTier, setConfirmTier] = useState<typeof TIERS[0] | null>(null)
   const [selectedCycle, setSelectedCycle] = useState<'MONTHLY' | 'QUARTERLY' | 'YEARLY'>('MONTHLY')
 
-  const [rechargeAmount, setRechargeAmount] = useState('')
-  const [rechargeLoading, setRechargeLoading] = useState(false)
+  const [comparisonTierKey, setComparisonTierKey] = useState<MembershipKey>(currentMembership)
 
-  const quickAmounts = [10, 30, 50, 100, 200, 500]
+  // 模型点数消耗（真实数据，来自 platform_model_config）
+  const [modelPointRules, setModelPointRules] = useState<{ model: string; points: number }[]>([])
 
   useEffect(() => {
     loadPackages()
+    modelApi.list().then(models => {
+      const rules = (models || [])
+        .slice()
+        .sort((a, b) => (a.fixedPoints || 0) - (b.fixedPoints || 0))
+        .map(m => ({ model: m.displayName, points: Number(m.fixedPoints || 0) }))
+      setModelPointRules(rules)
+    }).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    setComparisonTierKey(currentMembership)
+  }, [currentMembership])
 
   const loadPackages = async () => {
     setPackagesLoading(true)
@@ -143,6 +163,15 @@ export default function RechargePage() {
 
   const getPkgByTierKey = (tierKey: string) => {
     return packages.find(p => p.packageCode === tierKey)
+  }
+
+  /** 价格以后端套餐配置为准（真数据），未配置返回 0 */
+  const priceOf = (tierKey: string, cycle: 'MONTHLY' | 'QUARTERLY' | 'YEARLY') => {
+    const pkg = getPkgByTierKey(tierKey)
+    if (!pkg) return 0
+    return cycle === 'MONTHLY' ? Number(pkg.priceMonthly || 0)
+      : cycle === 'QUARTERLY' ? Number(pkg.priceQuarterly || 0)
+      : Number(pkg.priceYearly || 0)
   }
 
   const handleOpenConfirm = (tier: typeof TIERS[0]) => {
@@ -191,54 +220,66 @@ export default function RechargePage() {
   }
 
   const getCyclePrice = (tier: typeof TIERS[0], cycle: 'MONTHLY' | 'QUARTERLY' | 'YEARLY') => {
-    switch (cycle) {
-      case 'MONTHLY': return tier.priceMonthly
-      case 'QUARTERLY': return tier.priceQuarterly
-      case 'YEARLY': return tier.priceYearly
-    }
-  }
-
-  const handleRecharge = async () => {
-    const val = parseFloat(rechargeAmount)
-    if (!val || val <= 0) {
-      useToastStore.getState().showToast({
-        title: lang === 'zh' ? '错误' : 'Error',
-        message: lang === 'zh' ? '请输入有效金额' : 'Enter a valid amount',
-        type: 'error',
-      })
-      return
-    }
-    setRechargeLoading(true)
-    try {
-      await userApi.recharge(val)
-      useToastStore.getState().showToast({
-        title: lang === 'zh' ? '充值成功' : 'Recharge Success',
-        message: lang === 'zh' ? `已成功充值 ¥${val.toFixed(2)}` : `Successfully recharged ¥${val.toFixed(2)}`,
-        type: 'success',
-      })
-      setRechargeAmount('')
-      await fetchUserInfo()
-    } catch (err) {
-      useToastStore.getState().showToast({
-        title: lang === 'zh' ? '充值失败' : 'Recharge Failed',
-        message: (err as Error).message || (lang === 'zh' ? '充值失败，请重试' : 'Recharge failed, please retry'),
-        type: 'error',
-      })
-    }
-    setRechargeLoading(false)
+    return priceOf(tier.key, cycle)
   }
 
   const getTierByKey = (key: string) => TIERS.find(t => t.key === key) || TIERS[0]
 
+  const comparisonRows: ComparisonRow[] = [
+    {
+      key: 'dailyPoints', labelZh: '每日点数', labelEn: 'Daily Points',
+      values: TIERS.map(t => {
+        const pkg = getPkgByTierKey(t.key)
+        const dp = pkg ? pkg.dailyPoints : t.dailyPoints
+        return dp > 0 ? `${dp} 点${lang === 'zh' ? `（${t.dailyPointsNoteZh}）` : ''}` : `${dp} 点（${lang === 'zh' ? '每日清空' : 'reset daily'}）`
+      }),
+    },
+    {
+      key: 'bonusPoints', labelZh: '开通赠送', labelEn: 'Bonus Points',
+      values: TIERS.map(t => {
+        const pkg = getPkgByTierKey(t.key)
+        const bp = pkg ? pkg.pointsGranted : t.bonusPoints
+        return bp > 0 ? `${bp} 永久点数` : '0 点'
+      }),
+    },
+    { key: 'models', labelZh: '可用模型', labelEn: 'Models', values: TIERS.map(t => t.models), isWide: true },
+    { key: 'features', labelZh: '开放功能', labelEn: 'Features', values: TIERS.map(t => t.features.join('、')), isWide: true },
+    {
+      key: 'monthly', labelZh: '月付价格', labelEn: 'Monthly',
+      values: TIERS.map(t => {
+        const p = priceOf(t.key, 'MONTHLY')
+        return p > 0 ? `¥${p}` : (t.key === 'free' ? (lang === 'zh' ? '免费' : 'Free') : '-')
+      }),
+    },
+    {
+      key: 'quarterly', labelZh: '季付价格', labelEn: 'Quarterly',
+      values: TIERS.map(t => {
+        const p = priceOf(t.key, 'QUARTERLY')
+        return p > 0 ? `¥${p}` : '-'
+      }),
+    },
+    {
+      key: 'yearly', labelZh: '年付价格', labelEn: 'Yearly',
+      values: TIERS.map(t => {
+        const p = priceOf(t.key, 'YEARLY')
+        return p > 0 ? `¥${p}` : '-'
+      }),
+    },
+  ]
+  const comparisonTier = getTierByKey(comparisonTierKey)
+  const comparisonTierIndex = TIERS.findIndex(tier => tier.key === comparisonTier.key)
+
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto overflow-y-auto h-full space-y-6">
+    <div className="page-scroll h-full max-w-6xl mx-auto space-y-5 overflow-y-auto p-3 sm:space-y-6 sm:p-6 lg:p-8">
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-xl sm:text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-          {lang === 'zh' ? '会员充值' : 'Membership & Recharge'}
+          {lang === 'zh' ? '会员套餐' : 'Membership Plans'}
         </h1>
         <p className="text-sm mt-1" style={{ color: 'var(--text-dim)' }}>
-          {lang === 'zh' ? '充值余额，升级会员解锁更多权益' : 'Recharge balance, upgrade membership for more benefits'}
+          {lang === 'zh'
+            ? '可使用已有账户余额开通或续费；自助充值暂未开放。'
+            : 'Use your existing account balance to subscribe or renew. Self-service recharge is currently unavailable.'}
         </p>
       </motion.div>
 
@@ -253,12 +294,12 @@ export default function RechargePage() {
           borderColor: `${getTierByKey(currentMembership).color}30`,
         }}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
           <div
             className="w-10 h-10 rounded-xl flex items-center justify-center text-lg"
             style={{ background: `${getTierByKey(currentMembership).color}20`, color: getTierByKey(currentMembership).color }}
           >
-            {getTierByKey(currentMembership).icon}
+            <MembershipIcon kind={currentMembership} size={20} color={getTierByKey(currentMembership).color} />
           </div>
           <div className="flex-1">
             <div className="text-sm font-semibold" style={{ color: getTierByKey(currentMembership).color }}>
@@ -270,27 +311,35 @@ export default function RechargePage() {
               </div>
             )}
           </div>
-          <div className="text-right">
+          <div className="text-left sm:text-right">
             <div className="text-xs" style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '余额' : 'Balance'}</div>
             <div className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>¥{Number(user?.balance || 0).toFixed(2)}</div>
           </div>
         </div>
       </motion.div>
 
-      {/* Tier comparison table */}
+      {/* Tier comparison */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-        <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-          {lang === 'zh' ? '📊 套餐权益对比' : '📊 Tier Comparison'}
-        </h3>
-        <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-          <div className="overflow-x-auto">
+        <div className="mb-4 flex items-end justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {lang === 'zh' ? '套餐权益对比' : 'Tier Comparison'}
+            </h3>
+            <p className="mt-1 text-xs" style={{ color: 'var(--text-dim)' }}>
+              {lang === 'zh' ? '桌面端快速对比，手机端点击套餐查看详情' : 'Compare on desktop; select a plan on mobile for details'}
+            </p>
+          </div>
+        </div>
+
+        <div className="hidden rounded-2xl border md:block" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+          <div className="overflow-hidden rounded-2xl">
             <table className="w-full text-xs">
               <thead>
                 <tr style={{ borderBottom: `1px solid var(--border-color)`, background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
                   <th className="text-left py-3 px-4" style={{ color: 'var(--text-dim)', minWidth: 120 }}>{lang === 'zh' ? '权益' : 'Benefits'}</th>
                   {TIERS.map(tier => (
                     <th key={tier.key} className="text-center py-3 px-3 relative" style={{ color: tier.color, minWidth: 100 }}>
-                      <span className="text-base">{tier.icon}</span>
+                      <MembershipIcon kind={tier.key} size={18} color={tier.color} />
                       <div className="font-medium mt-1">{lang === 'zh' ? tier.nameZh.replace(/会员|用户/g, '') : tier.nameEn.replace(/ Member| User/g, '')}</div>
                       {tier.key === currentMembership && (
                         <div className="mt-1 px-2 py-0.5 text-xs rounded-full font-medium" style={{ background: tier.color, color: '#fff' }}>
@@ -302,45 +351,14 @@ export default function RechargePage() {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  {
-                    labelZh: '每日点数', labelEn: 'Daily Points',
-                    values: TIERS.map(t => t.dailyPoints > 0 ? `${t.dailyPoints} 点${lang === 'zh' ? `（${t.dailyPointsNoteZh}）` : ''}` : `${t.dailyPoints} 点（${lang === 'zh' ? '每日清空' : 'reset daily'}）`),
-                  },
-                  {
-                    labelZh: '开通赠送', labelEn: 'Bonus Points',
-                    values: TIERS.map(t => t.bonusPoints > 0 ? `${t.bonusPoints} 永久点数` : '0 点'),
-                  },
-                  {
-                    labelZh: '可用模型', labelEn: 'Models',
-                    values: TIERS.map(t => t.models),
-                    isWide: true,
-                  },
-                  {
-                    labelZh: '开放功能', labelEn: 'Features',
-                    values: TIERS.map(t => t.features.join('、')),
-                    isWide: true,
-                  },
-                  {
-                    labelZh: '月付价格', labelEn: 'Monthly',
-                    values: TIERS.map(t => t.priceMonthly > 0 ? `¥${t.priceMonthly}` : (lang === 'zh' ? '免费' : 'Free')),
-                  },
-                  {
-                    labelZh: '季付价格', labelEn: 'Quarterly',
-                    values: TIERS.map(t => t.priceQuarterly > 0 ? `¥${t.priceQuarterly}` : '-'),
-                  },
-                  {
-                    labelZh: '年付价格', labelEn: 'Yearly',
-                    values: TIERS.map(t => t.priceYearly > 0 ? `¥${t.priceYearly}` : '-'),
-                  },
-                ].map((row, i) => (
-                  <tr key={i} style={{ borderBottom: `1px solid var(--border-color)` }}>
+                {comparisonRows.map(row => (
+                  <tr key={row.key} style={{ borderBottom: `1px solid var(--border-color)` }}>
                     <td className="py-3 px-4 font-medium" style={{ color: 'var(--text-primary)', background: isDark ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.01)' }}>
                       {lang === 'zh' ? row.labelZh : row.labelEn}
                     </td>
                     {row.values.map((val, j) => (
-                      <td key={j} className={`py-3 px-3 ${(row as any).isWide ? 'text-left' : 'text-center'}`} style={{ color: 'var(--text-dim)' }}>
-                        {(row as any).isWide ? val : <span className="font-medium" style={{ color: val.includes('免费') || val === '-' ? 'var(--text-dim)' : 'var(--text-primary)' }}>{val}</span>}
+                      <td key={j} className={`px-3 py-3 ${row.isWide ? 'text-left' : 'text-center'}`} style={{ color: 'var(--text-dim)' }}>
+                        {row.isWide ? val : <span className="font-medium" style={{ color: val.includes('免费') || val === '-' ? 'var(--text-dim)' : 'var(--text-primary)' }}>{val}</span>}
                       </td>
                     ))}
                   </tr>
@@ -348,6 +366,80 @@ export default function RechargePage() {
               </tbody>
             </table>
           </div>
+        </div>
+
+        <div className="space-y-3 md:hidden">
+          <div className="grid grid-cols-2 gap-2" role="tablist" aria-label={lang === 'zh' ? '选择套餐查看权益' : 'Select a plan to view benefits'}>
+            {TIERS.map(tier => {
+              const active = tier.key === comparisonTier.key
+              const tierIndex = TIERS.findIndex(item => item.key === tier.key)
+              return (
+                <button
+                  key={tier.key}
+                  type="button"
+                  onClick={() => setComparisonTierKey(tier.key as MembershipKey)}
+                  role="tab"
+                  aria-selected={active}
+                  aria-controls="mobile-plan-details"
+                  className="flex min-h-16 items-center gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors"
+                  style={{
+                    background: active ? `${tier.color}12` : 'var(--bg-card)',
+                    borderColor: active ? `${tier.color}65` : 'var(--border-color)',
+                  }}
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: `${tier.color}18` }}>
+                    <MembershipIcon kind={tier.key} size={17} color={tier.color} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-semibold" style={{ color: active ? tier.color : 'var(--text-primary)' }}>{tier.nameZh.replace(/会员|用户/g, '')}</span>
+                    <span className="mt-0.5 block text-[10px]" style={{ color: 'var(--text-dim)' }}>{active ? (lang === 'zh' ? '正在查看' : 'Selected') : comparisonRows[0].values[tierIndex]}</span>
+                  </span>
+                  {tier.key === currentMembership && <span className="ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium" style={{ background: `${tier.color}20`, color: tier.color }}>{lang === 'zh' ? '当前' : 'Current'}</span>}
+                </button>
+              )
+            })}
+          </div>
+
+          <section id="mobile-plan-details" role="tabpanel" className="rounded-2xl border p-4" style={{ background: 'var(--bg-card)', borderColor: `${comparisonTier.color}45` }}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background: `${comparisonTier.color}18` }}>
+                  <MembershipIcon kind={comparisonTier.key} size={20} color={comparisonTier.color} />
+                </span>
+                <div className="min-w-0">
+                  <h4 className="truncate text-sm font-bold" style={{ color: comparisonTier.color }}>{comparisonTier.nameZh}</h4>
+                  <p className="mt-0.5 text-[11px]" style={{ color: 'var(--text-dim)' }}>{comparisonTier.models}</p>
+                </div>
+              </div>
+              {comparisonTier.key === currentMembership && <span className="shrink-0 rounded-full px-2 py-1 text-[10px] font-medium" style={{ background: `${comparisonTier.color}18`, color: comparisonTier.color }}>{lang === 'zh' ? '当前方案' : 'Current plan'}</span>}
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {[
+                { label: lang === 'zh' ? '每日点数' : 'Daily points', value: comparisonRows[0].values[comparisonTierIndex] },
+                { label: lang === 'zh' ? '开通赠送' : 'Bonus points', value: comparisonRows[1].values[comparisonTierIndex] },
+                { label: lang === 'zh' ? '月付价格' : 'Monthly', value: comparisonRows[4].values[comparisonTierIndex] },
+                { label: lang === 'zh' ? '年付价格' : 'Yearly', value: comparisonRows[6].values[comparisonTierIndex] },
+              ].map(item => (
+                <div key={item.label} className="rounded-xl p-3" style={{ background: 'var(--bg-surface)' }}>
+                  <div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>{item.label}</div>
+                  <div className="mt-1 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4">
+              <div className="text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? '开放功能' : 'Features'}</div>
+              <div className="mt-2 space-y-2">
+                {comparisonTier.features.map(feature => (
+                  <div key={feature} className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-dim)' }}>
+                    <svg className="mt-0.5 shrink-0" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={comparisonTier.color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4 4L19 6" /></svg>
+                    <span>{feature}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
         </div>
       </motion.div>
 
@@ -359,46 +451,12 @@ export default function RechargePage() {
         style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
       >
         <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-          {lang === 'zh' ? '💰 充值余额' : '💰 Recharge Balance'}
+          {lang === 'zh' ? '账户余额充值' : 'Add Account Balance'}
         </h3>
-        <p className="text-xs mb-4" style={{ color: 'var(--text-dim)' }}>
-          {lang === 'zh' ? '充值金额将直接加入您的账户余额，可用于购买会员套餐或 AI 对话消费' : 'Recharged amount goes directly to your balance, usable for memberships and AI chat'}
-        </p>
-        <div className="flex items-center gap-3 mb-3">
-          <input
-            value={rechargeAmount}
-            onChange={e => setRechargeAmount(e.target.value)}
-            placeholder={lang === 'zh' ? '输入充值金额' : 'Enter amount'}
-            type="number"
-            min={1}
-            step={0.01}
-            className="flex-1 px-4 py-3 text-sm rounded-xl outline-none"
-            style={{ background: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
-          />
-          <button
-            onClick={handleRecharge}
-            disabled={rechargeLoading}
-            className="px-6 py-3 text-sm font-medium rounded-xl text-white transition-all disabled:opacity-40"
-            style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
-          >
-            {rechargeLoading ? (lang === 'zh' ? '充值中...' : 'Processing...') : (lang === 'zh' ? '充值' : 'Recharge')}
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {quickAmounts.map(amt => (
-            <button
-              key={amt}
-              onClick={() => setRechargeAmount(String(amt))}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-              style={{
-                background: rechargeAmount === String(amt) ? 'rgba(16,185,129,0.15)' : 'var(--bg-surface)',
-                color: rechargeAmount === String(amt) ? '#10B981' : 'var(--text-dim)',
-                border: rechargeAmount === String(amt) ? '1px solid rgba(16,185,129,0.3)' : '1px solid var(--border-color)',
-              }}
-            >
-              ¥{amt}
-            </button>
-          ))}
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm" style={{ color: 'var(--text-dim)' }}>
+          {lang === 'zh'
+            ? '自助充值暂时关闭：支付渠道与验签回调尚未接入。重新开放前不会扣款或增加账户余额，现有余额与 AI 点数不受影响。'
+            : 'Self-service recharge is paused until a payment provider and verified callback are configured. No payment will be taken and no balance will be added; existing balance and AI points are unaffected.'}
         </div>
       </motion.div>
 
@@ -418,21 +476,19 @@ export default function RechargePage() {
         
         <div className="p-4">
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-            {[
-              { model: '基础模型 (DeepSeek Flash)', points: '1 点/次', desc: lang === 'zh' ? '简单问答、文本生成' : 'Simple Q&A, text generation' },
-              { model: '标准模型 (DeepSeek V3)', points: '3 点/次', desc: lang === 'zh' ? '复杂推理、代码生成' : 'Complex reasoning, code gen' },
-              { model: '高级模型 (Claude/GPT-4)', points: '5 点/次', desc: lang === 'zh' ? '深度分析、长文本处理' : 'Deep analysis, long text' },
-              { model: '旗舰模型 (o1/Claude Pro)', points: '10 点/次', desc: lang === 'zh' ? '极限推理、专业任务' : 'Extreme reasoning, pro tasks' },
-            ].map((rule, i) => (
+            {modelPointRules.length > 0 ? modelPointRules.slice(0, 8).map((rule, i) => (
               <div key={i} className="p-3 rounded-xl" style={{ background: 'var(--bg-surface)' }}>
                 <div className="font-medium mb-1" style={{ color: 'var(--text-primary)' }}>{rule.model}</div>
-                <div className="font-bold mb-0.5" style={{ color: '#F59E0B' }}>{rule.points}</div>
-                <div style={{ color: 'var(--text-dim)' }}>{rule.desc}</div>
+                <div className="font-bold mb-0.5" style={{ color: '#F59E0B' }}>{rule.points} {lang === 'zh' ? '点/次' : 'pts/call'}</div>
               </div>
-            ))}
+            )) : (
+              <div className="p-3 rounded-xl" style={{ background: 'var(--bg-surface)', color: 'var(--text-dim)' }}>
+                {lang === 'zh' ? '模型点数规则加载中...' : 'Loading point rules...'}
+              </div>
+            )}
           </div>
           <div className="mt-3 p-3 rounded-lg text-xs" style={{ background: isDark ? 'rgba(139,92,246,0.05)' : 'rgba(139,92,246,0.03)', color: 'var(--text-dim)' }}>
-            {lang === 'zh' ? '💡 提示：点数仅用于 AI 对话消耗，与账户余额严格分离。余额仅用于 API Key 调用消费。' : '💡 Note: Points are only for AI chat consumption, strictly separated from balance. Balance is only for API Key usage.'}
+            {lang === 'zh' ? '提示：点数仅用于 AI 对话消耗，与账户余额严格分离。账户余额仅用于购买会员套餐。' : 'Note: Points are only for AI chat, strictly separated from balance. Account balance is only for membership purchases.'}
           </div>
         </div>
       </motion.div>
@@ -440,13 +496,14 @@ export default function RechargePage() {
       {/* Membership upgrade cards */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-          {lang === 'zh' ? '🎁 升级会员' : '🎁 Upgrade Membership'}
+          {lang === 'zh' ? '会员方案' : 'Membership Plans'}
         </h3>
       </motion.div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {TIERS.filter(t => t.key !== 'free').map((tier, i) => {
           const isCurrent = currentMembership === tier.key
+          const isLower = (MEMBERSHIP_LEVEL[tier.key as MembershipKey] ?? 0) < currentLevel
           const color = tier.color
 
           return (
@@ -469,21 +526,21 @@ export default function RechargePage() {
               )}
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base" style={{ background: `${color}20`, color }}>
-                  {tier.icon}
+                  <MembershipIcon kind={tier.key} size={17} color={color} />
                 </div>
                 <div className="text-sm font-semibold" style={{ color }}>{tier.nameZh}</div>
               </div>
 
-              {/* Prices */}
+              {/* Prices — 以后端套餐配置为准 */}
               <div className="space-y-1 mb-3">
                 <div className="flex items-baseline gap-1">
-                  <span className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>¥{tier.priceMonthly}</span>
+                  <span className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>¥{priceOf(tier.key, 'MONTHLY')}</span>
                   <span className="text-xs" style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '/月' : '/mo'}</span>
                 </div>
                 <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-dim)' }}>
-                  <span>{lang === 'zh' ? `季付 ¥${tier.priceQuarterly}（9折）` : `Quarterly ¥${tier.priceQuarterly} (10% off)`}</span>
+                  <span>{lang === 'zh' ? `季付 ¥${priceOf(tier.key, 'QUARTERLY') || '-'}` : `Quarterly ¥${priceOf(tier.key, 'QUARTERLY') || '-'}`}</span>
                   <span>·</span>
-                  <span>{lang === 'zh' ? `年付 ¥${tier.priceYearly}（7折）` : `Yearly ¥${tier.priceYearly} (30% off)`}</span>
+                  <span>{lang === 'zh' ? `年付 ¥${priceOf(tier.key, 'YEARLY') || '-'}` : `Yearly ¥${priceOf(tier.key, 'YEARLY') || '-'}`}</span>
                 </div>
               </div>
 
@@ -492,35 +549,47 @@ export default function RechargePage() {
                 <svg width="12" height="12" viewBox="0 0 24 24" fill={color} stroke="none">
                   <path d="M12 2L14.86 9.14L22 12L14.86 14.86L12 22L9.14 14.86L2 12L9.14 9.14L12 2Z"/>
                 </svg>
-                <span className="text-xs font-medium" style={{ color }}>{lang === 'zh' ? `${tier.dailyPoints} 点/天` : `${tier.dailyPoints} pts/day`}</span>
+                <span className="text-xs font-medium" style={{ color }}>{lang === 'zh' ? `${getPkgByTierKey(tier.key)?.dailyPoints ?? tier.dailyPoints} 点/天` : `${getPkgByTierKey(tier.key)?.dailyPoints ?? tier.dailyPoints} pts/day`}</span>
               </div>
 
               {/* Features */}
               <ul className="space-y-1.5 mb-4 flex-1">
                 <li className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-dim)' }}>
-                  <span style={{ color }}>✓</span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 flex-shrink-0"><path d="m5 12 4 4L19 6" /></svg>
                   {lang === 'zh' ? `每日 ${tier.dailyPoints} 永久点数（${tier.dailyPointsNoteZh}）` : `${tier.dailyPoints} permanent pts/day (${tier.dailyPointsNoteEn})`}
                 </li>
                 {tier.features.slice(0, 3).map((f, j) => (
                   <li key={j} className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-dim)' }}>
-                    <span style={{ color }}>✓</span>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 flex-shrink-0"><path d="m5 12 4 4L19 6" /></svg>
                     {f}
                   </li>
                 ))}
               </ul>
 
               {/* Bonus */}
-              {tier.bonusPoints > 0 && (
-                <div className="text-xs mb-4 px-2 py-1 rounded-md inline-block self-start" style={{ background: `${color}10`, color }}>
-                  {lang === 'zh' ? `🎁 开通赠送 ${tier.bonusPoints} 永久点数` : `🎁 Bonus ${tier.bonusPoints} permanent pts`}
-                </div>
-              )}
+              {(() => {
+                const bonus = getPkgByTierKey(tier.key)?.pointsGranted ?? tier.bonusPoints
+                return bonus > 0 ? (
+                  <div className="text-xs mb-4 px-2 py-1 rounded-md inline-block self-start" style={{ background: `${color}10`, color }}>
+                    {lang === 'zh' ? `开通赠送 ${bonus} 永久点数` : `Bonus ${bonus} permanent pts`}
+                  </div>
+                ) : null
+              })()}
 
               {/* Button - aligned at bottom */}
               <div className="mt-auto">
                 {isCurrent ? (
-                  <button disabled className="w-full py-2.5 rounded-xl text-xs font-medium opacity-50" style={{ background: color, color: '#fff' }}>
-                    {lang === 'zh' ? '当前方案' : 'Current Plan'}
+                  <button
+                    onClick={() => handleOpenConfirm(tier)}
+                    disabled={purchasing || packagesLoading}
+                    className="w-full py-2.5 rounded-xl text-xs font-medium text-white transition-all hover:opacity-90 disabled:opacity-50"
+                    style={{ background: color }}
+                  >
+                    {purchasing ? (lang === 'zh' ? '处理中...' : 'Processing...') : (lang === 'zh' ? '续费当前会员' : 'Renew plan')}
+                  </button>
+                ) : isLower ? (
+                  <button disabled className="w-full py-2.5 rounded-xl text-xs font-medium opacity-50" style={{ background: 'var(--bg-surface)', color: 'var(--text-dim)', border: '1px solid var(--border-color)' }}>
+                    {lang === 'zh' ? '低于当前等级' : 'Lower than current'}
                   </button>
                 ) : (
                   <button
@@ -543,7 +612,7 @@ export default function RechargePage() {
                   >
                     {purchasing ? (lang === 'zh' ? '处理中...' : 'Processing...') :
                       packagesLoading ? (lang === 'zh' ? '加载中...' : 'Loading...') :
-                      (lang === 'zh' ? '立即开通' : 'Activate Now')}
+                      (lang === 'zh' ? (currentLevel > 0 ? '立即升级' : '立即开通') : (currentLevel > 0 ? 'Upgrade now' : 'Activate now'))}
                   </button>
                 )}
               </div>
@@ -571,20 +640,22 @@ export default function RechargePage() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="rounded-2xl p-6 max-w-md w-full border"
+              className="page-scroll max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border p-4 sm:p-6"
               style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-                  {lang === 'zh' ? '确认开通会员' : 'Confirm Membership'}
+                  {lang === 'zh'
+                    ? (confirmTier.key === currentMembership ? '确认续费会员' : '确认升级会员')
+                    : (confirmTier.key === currentMembership ? 'Confirm renewal' : 'Confirm upgrade')}
                 </h3>
                 <button
                   onClick={() => !purchasing && setConfirmTier(null)}
                   className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
                   style={{ background: 'var(--bg-surface)', color: 'var(--text-dim)' }}
                 >
-                  ✕
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg>
                 </button>
               </div>
 
@@ -597,7 +668,7 @@ export default function RechargePage() {
                       color: confirmTier.color,
                     }}
                   >
-                    {confirmTier.icon}
+                    <MembershipIcon kind={confirmTier.key} size={22} color={confirmTier.color} />
                   </div>
                   <div>
                     <div className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>{pkg.identityLabel}</div>
@@ -609,7 +680,7 @@ export default function RechargePage() {
                 <div className="flex gap-2">
                   {(['MONTHLY', 'QUARTERLY', 'YEARLY'] as const).map(cycle => {
                     const cycleLabels: Record<string, string> = { MONTHLY: lang === 'zh' ? '月付' : 'Monthly', QUARTERLY: lang === 'zh' ? '季付' : 'Quarterly', YEARLY: lang === 'zh' ? '年付' : 'Yearly' }
-                    const cyclePrices: Record<string, number> = { MONTHLY: confirmTier.priceMonthly, QUARTERLY: confirmTier.priceQuarterly, YEARLY: confirmTier.priceYearly }
+                    const cyclePrices: Record<string, number> = { MONTHLY: priceOf(confirmTier.key, 'MONTHLY'), QUARTERLY: priceOf(confirmTier.key, 'QUARTERLY'), YEARLY: priceOf(confirmTier.key, 'YEARLY') }
                     return (
                       <button
                         key={cycle}
@@ -653,12 +724,20 @@ export default function RechargePage() {
                 </div>
 
                 <div className="p-3 rounded-xl text-xs" style={{ background: 'rgba(139,92,246,0.08)', color: 'var(--text-dim)', border: '1px solid rgba(139,92,246,0.15)' }}>
-                  {lang === 'zh' ? `将从您账户余额中扣除 ¥${price}，${selectedCycle === 'MONTHLY' ? '月付' : selectedCycle === 'QUARTERLY' ? '季付' : '年付'}，到期后自动降级为免费用户` : `¥${price} will be deducted from your balance, ${selectedCycle === 'MONTHLY' ? 'monthly' : selectedCycle === 'QUARTERLY' ? 'quarterly' : 'yearly'}, auto downgrade to free user on expiry`}
+                  {lang === 'zh'
+                    ? (confirmTier.key === currentMembership
+                      ? `将从账户余额中扣除 ¥${price}，续费后在当前到期时间上顺延一个${selectedCycle === 'MONTHLY' ? '月' : selectedCycle === 'QUARTERLY' ? '季度' : '年'}。`
+                      : `将从您账户余额中扣除 ¥${price}，开通${selectedCycle === 'MONTHLY' ? '月付' : selectedCycle === 'QUARTERLY' ? '季付' : '年付'}会员。`)
+                    : (confirmTier.key === currentMembership
+                      ? `¥${price} will be deducted and the current expiry will be extended by one cycle.`
+                      : `¥${price} will be deducted from your balance for this membership cycle.`)}
                 </div>
 
                 {insufficientBalance && (
                   <div className="p-3 rounded-xl text-xs" style={{ background: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.2)' }}>
-                    {lang === 'zh' ? `余额不足！当前余额 ¥${Number(user?.balance || 0).toFixed(2)}，请先充值` : `Insufficient balance! Current: ¥${Number(user?.balance || 0).toFixed(2)}, please recharge first`}
+                    {lang === 'zh'
+                      ? `余额不足！当前余额 ¥${Number(user?.balance || 0).toFixed(2)}。自助充值暂未开放，请联系管理员处理。`
+                      : `Insufficient balance. Current balance: ¥${Number(user?.balance || 0).toFixed(2)}. Self-service recharge is unavailable; please contact an administrator.`}
                   </div>
                 )}
 
@@ -677,7 +756,7 @@ export default function RechargePage() {
                     className="flex-1 py-3 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-50"
                     style={{ background: confirmTier.color }}
                   >
-                    {purchasing ? (lang === 'zh' ? '处理中...' : 'Processing...') : (lang === 'zh' ? `确认支付 ¥${price}` : `Confirm ¥${price}`)}
+                    {purchasing ? (lang === 'zh' ? '处理中...' : 'Processing...') : (lang === 'zh' ? `确认扣除余额 ¥${price}` : `Confirm balance deduction ¥${price}`)}
                   </button>
                 </div>
               </div>

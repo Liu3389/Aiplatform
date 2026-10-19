@@ -1,5 +1,6 @@
 package com.ai.gateway.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -24,6 +25,8 @@ public class User implements Serializable {
 
     private String email;
 
+    private String phone;
+
     private BigDecimal balance; // 后端存储三位小数，前端展示两位
 
     private Integer status;
@@ -44,6 +47,10 @@ public class User implements Serializable {
      * 点数余额（保留三位小数）
      */
     private BigDecimal points;
+
+    /** 点数余额并发版本，仅供账务恢复使用。 */
+    @JsonIgnore
+    private Long pointsVersion;
 
     /**
      * 每日免费次数

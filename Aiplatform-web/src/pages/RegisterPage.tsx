@@ -1,20 +1,37 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '@/services/api'
-import { useAppStore } from '@/stores/appStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { motion } from 'framer-motion'
 
 export default function RegisterPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [email, setEmail] = useState('')
+  const [captchaId, setCaptchaId] = useState('')
+  const [captchaImage, setCaptchaImage] = useState('')
+  const [captchaCode, setCaptchaCode] = useState('')
+  const [captchaLoading, setCaptchaLoading] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const { setToken, setUserId, fetchUserInfo } = useAppStore()
   const { theme } = useThemeStore()
   const navigate = useNavigate()
   const isDark = theme === 'dark'
+
+  const loadCaptcha = async () => {
+    setCaptchaLoading(true)
+    try {
+      const result = await authApi.getRegisterCaptcha()
+      setCaptchaId(result.captchaId)
+      setCaptchaImage(result.image)
+      setCaptchaCode('')
+    } catch (err) {
+      setError((err as Error).message || '验证码加载失败，请刷新页面重试')
+    } finally {
+      setCaptchaLoading(false)
+    }
+  }
+
+  useEffect(() => { void loadCaptcha() }, [])
 
   const textPrimary = isDark ? '#F1F5F9' : '#0F172A'
   const textDim = isDark ? '#94A3B8' : '#64748B'
@@ -25,16 +42,16 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault()
     if (!username || !password) { setError('请填写用户名和密码'); return }
-    if (password.length < 6) { setError('密码至少6个字符'); return }
+    if (password.length < 8) { setError('密码至少8个字符，并包含大小写字母和数字'); return }
+    if (!captchaId || !captchaCode.trim()) { setError('请输入图形验证码'); return }
     setError(''); setLoading(true)
     try {
-      await authApi.register({ username, password, email: email || undefined })
-      const loginData = await authApi.login({ username, password })
-      setToken(loginData.token)
-      setUserId(loginData.userInfo.id)
-      await fetchUserInfo()
-      navigate('/chat', { replace: true })
-    } catch (err) { setError((err as Error).message || '注册失败') }
+      await authApi.register({ username, password, captchaId, captchaCode })
+      navigate('/login', { replace: true, state: { notice: '注册成功，请使用账号和密码登录' } })
+    } catch (err) {
+      setError((err as Error).message || '注册失败')
+      void loadCaptcha()
+    }
     finally { setLoading(false) }
   }
 
@@ -106,6 +123,7 @@ export default function RegisterPage() {
             boxShadow: '0 24px 64px rgba(0,0,0,0.12)',
           }}>
             <h2 className="text-2xl font-bold tracking-tight" style={{ color: textPrimary }}>注册账户</h2>
+            <p className="-mt-4 text-xs" style={{ color: textDim }}>邮箱和手机号可在安全中心完成验证绑定</p>
 
             {error && (
               <div className="flex items-center gap-2.5 p-3.5 rounded-xl text-[12px]"
@@ -115,7 +133,7 @@ export default function RegisterPage() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4.5">
+            <form noValidate onSubmit={handleSubmit} className="space-y-4.5">
               <div>
                 <label className="block text-[12px] font-medium mb-2" style={{ color: textDim }}>用户名 *</label>
                 <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="请输入用户名"
@@ -123,16 +141,37 @@ export default function RegisterPage() {
                   style={{ background: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }} />
               </div>
               <div>
-                <label className="block text-[12px] font-medium mb-2" style={{ color: textDim }}>邮箱（选填）</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="请输入邮箱"
+                <label className="block text-[12px] font-medium mb-2" style={{ color: textDim }}>密码 *（至少8位，含大小写字母和数字）</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="请输入密码"
                   className="w-full px-4 py-3.5 rounded-xl text-sm outline-none transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(139,92,246,0.08)]"
                   style={{ background: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }} />
               </div>
               <div>
-                <label className="block text-[12px] font-medium mb-2" style={{ color: textDim }}>密码 *（至少6个字符）</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="请输入密码"
-                  className="w-full px-4 py-3.5 rounded-xl text-sm outline-none transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(139,92,246,0.08)]"
-                  style={{ background: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }} />
+                <label htmlFor="register-captcha" className="block text-[12px] font-medium mb-2" style={{ color: textDim }}>图形验证码 *</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="register-captcha"
+                    type="text"
+                    value={captchaCode}
+                    onChange={e => setCaptchaCode(e.target.value.toUpperCase())}
+                    placeholder="输入验证码"
+                    maxLength={5}
+                    autoComplete="off"
+                    className="min-w-0 flex-1 px-4 py-3.5 rounded-xl text-sm uppercase outline-none transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(139,92,246,0.08)]"
+                    style={{ background: inputBg, color: textPrimary, border: `1px solid ${borderColor}` }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void loadCaptcha()}
+                    disabled={captchaLoading}
+                    aria-label="刷新图形验证码"
+                    className="h-[50px] w-[144px] shrink-0 overflow-hidden rounded-xl border transition-opacity disabled:opacity-50"
+                    style={{ background: inputBg, borderColor }}
+                  >
+                    {captchaImage ? <img src={captchaImage} alt="图形验证码，点击刷新" className="h-full w-full object-cover" /> : <span className="text-xs" style={{ color: textDim }}>加载中</span>}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[11px]" style={{ color: textDim }}>看不清？点击图片刷新</p>
               </div>
               <button type="submit" disabled={loading}
                 className="w-full py-3.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 hover:opacity-90 active:scale-[0.98]"

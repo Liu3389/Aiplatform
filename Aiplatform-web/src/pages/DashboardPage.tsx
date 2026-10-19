@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '@/stores/appStore'
-import { userApi } from '@/services/api'
+import { userApi, pointsApi } from '@/services/api'
 import { motion, AnimatePresence, type Variants } from 'framer-motion'
 import * as echarts from 'echarts'
 import { useThemeStore } from '@/stores/themeStore'
@@ -76,11 +76,10 @@ export default function DashboardPage() {
   const chartInstRef = useRef<ECharts | null>(null)
 
   useEffect(() => {
+    // 当前点数：实时余额（点数扣减后立即反映）
     const fetchPoints = () => {
-      userApi.getFreeQuota().then(q => {
-        setUserPoints(q?.monthlyPoints || user?.points || 0)
-        setTokensUsed(q?.usedTokens || 0)
-        setApiCallsCount(q?.usedCalls || 0)
+      pointsApi.getBalance().then(p => {
+        setUserPoints(typeof p === 'number' ? p : (user?.points || 0))
       }).catch(() => {
         setUserPoints(user?.points || 0)
       })
@@ -89,21 +88,19 @@ export default function DashboardPage() {
     setLoading(true)
     fetchPoints()
 
+    // 每日用量趋势：真实数据（token/调用次数来自 call_log，点数来自 points_bill）
     const days = range === '7d' ? 7 : 30
-    const now = new Date()
-    const mock: { label: string; tokens: number; points: number; calls: number }[] = []
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(now)
-      d.setDate(d.getDate() - i)
-      mock.push({
-        label: `${d.getMonth() + 1}/${d.getDate()}`,
-        tokens: Math.floor(Math.random() * 8000 + 1000),
-        points: Math.floor(Math.random() * 50 + 10),
-        calls: Math.floor(Math.random() * 100 + 20),
-      })
-    }
-    setDailyData(mock)
-    setLoading(false)
+    userApi.getUsageDaily(days).then(r => {
+      setDailyData(r?.daily || [])
+      if (r) {
+        setTokensUsed(r.totalTokens)
+        setApiCallsCount(r.totalCalls)
+      }
+    }).catch(() => {
+      setDailyData([])
+    }).finally(() => {
+      setLoading(false)
+    })
 
     const interval = setInterval(fetchPoints, 5000)
     return () => clearInterval(interval)
@@ -124,6 +121,12 @@ export default function DashboardPage() {
         borderColor: ct.splitLineColor,
         textStyle: { color: ct.textColor, fontSize: 12 },
         axisPointer: { type: 'line', lineStyle: { color: ct.splitLineColor } },
+        formatter: (params: any) => {
+          const idx = params?.[0]?.dataIndex
+          const d = dailyData[idx]
+          if (!d) return ''
+          return `<b>${d.label}</b><br/>Token: ${Number(d.tokens).toLocaleString()}<br/>调用: ${d.calls} 次<br/>点数: ${d.points}`
+        },
       },
       xAxis: {
         type: 'category', 
@@ -248,7 +251,7 @@ export default function DashboardPage() {
 
   return (
     <motion.div 
-      className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto overflow-y-auto h-full"
+      className="page-scroll h-full max-w-6xl mx-auto overflow-y-auto p-3 sm:p-6 lg:p-8"
       variants={containerVariants}
       initial="hidden"
       animate="visible"
@@ -361,7 +364,13 @@ export default function DashboardPage() {
               {lang === 'zh' ? 'Token' : 'Token'}
             </div>
           </div>
-          <div ref={tokenChartRef} className="w-full" style={{ height: 280 }} />
+          {dailyData.length > 0 ? (
+            <div ref={tokenChartRef} className="w-full" style={{ height: 280 }} />
+          ) : (
+            <div className="w-full flex items-center justify-center" style={{ height: 280, color: 'var(--text-dim)' }}>
+              <span className="text-sm">{lang === 'zh' ? '近 ' + (range === '7d' ? '7' : '30') + ' 天暂无使用记录' : 'No usage in the last ' + (range === '7d' ? '7' : '30') + ' days'}</span>
+            </div>
+          )}
         </div>
       </motion.div>
 

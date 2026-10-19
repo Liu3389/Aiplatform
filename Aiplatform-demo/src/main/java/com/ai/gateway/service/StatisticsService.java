@@ -94,7 +94,7 @@ public class StatisticsService {
         quickStats.setApiSuccessRate(calculateApiSuccessRate());
         
         // 计算总点数消耗（使用 SQL SUM 聚合）
-        BigDecimal totalPointsConsumed = callLogMapper.sumCost();
+        BigDecimal totalPointsConsumed = callLogMapper.sumPointsConsumed();
         quickStats.setTotalPointsConsumed(totalPointsConsumed != null ? totalPointsConsumed : BigDecimal.ZERO);
         
         // 计算平均对话长度
@@ -490,9 +490,9 @@ public class StatisticsService {
                 while (!current.isAfter(endDate)) {
                     String dateStr = current.toString();
                     Map<String, Object> dayData = revenueMap.getOrDefault(dateStr, new HashMap<>());
-                    BigDecimal revenue = new BigDecimal(dayData.getOrDefault("cost", 0.0).toString());
+                    BigDecimal points = new BigDecimal(dayData.getOrDefault("points", 0.0).toString());
                     Long calls = ((Number) dayData.getOrDefault("calls", 0L)).longValue();
-                    csv.append(dateStr).append(",").append(revenue).append(",0.000,").append(calls).append("\n");
+                    csv.append(dateStr).append(",0.00,").append(points).append(",").append(calls).append("\n");
                     current = current.plusDays(1);
                 }
                 break;

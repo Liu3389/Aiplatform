@@ -9,7 +9,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -22,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -29,7 +33,7 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * 核心流程：
  * 1. 接收文件上传 → 立即返回fileId
- * 2. 丢入全局线程池执行异步解析
+ * 2. RabbitMQ 启用时投递持久化任务 ID；未启用时交给本地线程池
  * 3. 读取本地临时文件 → 解析内容
  * 4. 异步二次上传到OSS（IO解耦）
  * 5. 解析完成后存入Redis缓存（TTL 30分钟）
@@ -42,10 +46,37 @@ public class FileParseService {
 
     // 支持的文件类型与大小限制 (10MB)
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
-    private static final String[] ALLOWED_EXTENSIONS = {".txt", ".md", ".java", ".py", ".cpp", ".xlsx", ".docx", ".html", ".css", ".js", ".xml", ".json"};
+    /**
+     * 允许上传的文件扩展名白名单，作为文件上传链路的唯一校验入口
+     */
+    private static final String[] ALLOWED_EXTENSIONS = {
+            // 纯文本 / 标记
+            ".txt", ".md", ".markdown", ".text", ".log", ".rtf",
+            // Office 文档
+            ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+            ".csv", ".tsv",
+            // PDF / OpenDocument / 电子书（由 Apache Tika 统一解析）
+            ".pdf", ".odt", ".ods", ".odp", ".epub",
+            // 图片（上传后由视觉模型直接理解，不依赖文本解析结果）
+            ".png", ".jpg", ".jpeg", ".gif", ".webp",
+            // 代码 — C 系
+            ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx",
+            ".java", ".kt", ".kts", ".scala", ".dart", ".groovy",
+            // 代码 — 脚本/其他
+            ".py", ".pyw", ".rb", ".go", ".rs", ".swift",
+            ".php", ".pl", ".pm", ".lua", ".sh", ".bash", ".zsh", ".bat", ".cmd", ".ps1",
+            ".sql", ".r", ".m", ".jl", ".gradle", ".cmake",
+            // Web 前端
+            ".html", ".htm", ".css", ".scss", ".less",
+            ".js", ".jsx", ".ts", ".tsx", ".mjs", ".vue", ".svelte",
+            // 配置 / 数据
+            ".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".conf", ".cfg", ".properties", ".env"
+    };
     // 解析内容缓存 key 前缀和 TTL（30分钟）
     private static final String PARSED_FILE_KEY_PREFIX = "file:parsed:";
     private static final long PARSED_FILE_TTL_MINUTES = 30;
+    private static final int PARSE_LEASE_SECONDS = 300;
+    private static final int MAX_PARSE_ATTEMPTS = 5;
     // SSE emitter 存储，用于推送解析进度
     private static final Map<String, List<SseEmitter>> EMITTER_MAP = new ConcurrentHashMap<>();
     private final OssService ossService;
@@ -53,7 +84,14 @@ public class FileParseService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final AiDocService aiDocService;
     private final com.ai.gateway.service.OpenAiChatService openAiChatService;
+    private final ObjectProvider<FileParseTaskDispatchService> taskDispatchServiceProvider;
+    private final ObjectProvider<LocalFileParseTaskRecoveryService> localRecoveryServiceProvider;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Map<Long, String> activeParseLeases = new ConcurrentHashMap<>();
+
+    @Autowired
+    @Qualifier("fileParseExecutor")
+    private Executor fileParseExecutor;
 
     /**
      * 批量上传文件（最多8个）
@@ -121,17 +159,26 @@ public class FileParseService {
         task.setIsUsed(false);
         taskMapper.insert(task);
 
-        // 6. 提交异步解析任务
-        parseFileAsync(task.getId(), fileId, ossUrl, suffix);
+        // 6. 先尝试可靠投递任务 ID；未启用或 Broker 不可用时退回有界线程池。
+        // 任务行已先落库，消费者不信任消息里传来的文件路径或用户信息。
+        FileParseTaskDispatchService dispatchService = taskDispatchServiceProvider.getIfAvailable();
+        LocalFileParseTaskRecoveryService localRecoveryService = localRecoveryServiceProvider.getIfAvailable();
+        boolean queued = dispatchService != null
+                ? dispatchService.dispatchNow(task.getId())
+                : localRecoveryService != null && localRecoveryService.dispatchNow(task.getId());
+        if (!queued) {
+            fileParseExecutor.execute(() -> processFileTask(task.getId()));
+        }
 
-        // 7. 构建返回结果
+        // 7. 构建返回结果（ossUrl 转换为前端可访问的 HTTP URL）
         return new FileUploadResult(
                 fileId,
                 originalName,
                 file.getSize(),
                 suffix.substring(1),
                 "PENDING",
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                ossService.toAccessibleUrl(ossUrl)
         );
     }
 
@@ -146,13 +193,26 @@ public class FileParseService {
      * 5. 生成文本摘要
      * 6. 更新状态为SUCCESS → 推送给前端
      */
-    @Async("fileParseExecutor")
-    public void parseFileAsync(Long taskId, String fileId, String ossUrl, String fileType) {
+    public void processFileTask(Long taskId) {
         LocalDateTime startTime = LocalDateTime.now();
+        String fileId = String.valueOf(taskId); // 异常发生在加载任务前，也能在日志里定位任务 ID。
+        String leaseToken = UUID.randomUUID().toString();
 
         try {
-            // 1. 更新状态为PARSING
-            taskMapper.updateStatusToParsing(taskId, startTime);
+            LocalDateTime leaseUntil = startTime.plusSeconds(PARSE_LEASE_SECONDS);
+            LocalDateTime legacyStaleBefore = startTime.minusSeconds(PARSE_LEASE_SECONDS);
+            // 单条条件更新完成领取；Rabbit 重投、本地扫描与旧 worker 恢复之间只允许一个令牌有效。
+            if (taskMapper.claimForParsing(taskId, leaseToken, startTime, leaseUntil,
+                    legacyStaleBefore, MAX_PARSE_ATTEMPTS) != 1) {
+                log.info("文件任务当前不可领取，跳过重复或未过期消息: taskId={}", taskId);
+                return;
+            }
+            activeParseLeases.put(taskId, leaseToken);
+            FileParseTask sourceTask = taskMapper.selectById(taskId);
+            if (sourceTask == null) return;
+            fileId = sourceTask.getFileId();
+            String ossUrl = sourceTask.getOssUrl();
+            String fileType = sourceTask.getFileType();
             log.info("开始解析文件: fileId={}, ossUrl={}", fileId, ossUrl);
 
             // 推送PARSING状态
@@ -170,15 +230,24 @@ public class FileParseService {
                     "temp" + fileType
             );
 
-            // 4. 缓存到Redis（TTL 30分钟）
+            // 4. 先完成摘要计算；只有仍持有租约的 worker 才能写解析缓存。
             String cacheKey = PARSED_FILE_KEY_PREFIX + fileId;
-            redisTemplate.opsForValue().set(cacheKey, content, PARSED_FILE_TTL_MINUTES, TimeUnit.MINUTES);
 
             // 5. 生成文本摘要（AI生成，50-100字）
             String summary = generateTextSummary(content);
 
-            // 6. 更新状态为SUCCESS（包含摘要）
-            updateStatusWithSummary(taskId, content.length(), summary, LocalDateTime.now());
+            // 6. 续租后写缓存，再由带 fencing token 的条件更新提交 SUCCESS。
+            LocalDateTime endTime = LocalDateTime.now();
+            if (!renewLeaseIfOwned(taskId, leaseToken, endTime)) {
+                log.info("文件解析租约已失效，丢弃旧 worker 结果: taskId={}", taskId);
+                return;
+            }
+            redisTemplate.opsForValue().set(cacheKey, content, PARSED_FILE_TTL_MINUTES, TimeUnit.MINUTES);
+            int updated = taskMapper.updateStatusToSuccess(taskId, leaseToken, content.length(), summary, endTime);
+            if (updated != 1) {
+                log.info("文件解析租约已被其他 worker 接管，丢弃旧 worker 结果: taskId={}", taskId);
+                return;
+            }
             log.info("文件解析成功: fileId={}, textLength={}, summaryLength={}", fileId, content.length(), summary != null ? summary.length() : 0);
 
             // 推送SUCCESS状态
@@ -188,17 +257,48 @@ public class FileParseService {
             }
 
         } catch (Exception e) {
-            // 6. 更新状态为FAILED
             String errorMsg = e.getMessage() != null ? e.getMessage() : "未知错误";
-            taskMapper.updateStatusToFailed(taskId, errorMsg, LocalDateTime.now());
+            int updated = 0;
+            try {
+                updated = taskMapper.updateStatusToFailed(taskId, leaseToken, errorMsg, LocalDateTime.now());
+            } catch (Exception persistenceError) {
+                log.error("文件解析失败状态写入异常，租约到期后恢复扫描器会重新接管: taskId={}", taskId,
+                        persistenceError);
+            }
             log.error("文件解析失败: fileId={}", fileId, e);
 
             // 推送FAILED状态
-            FileParseTask failedTask = taskMapper.selectById(taskId);
-            if (failedTask != null) {
-                notifyParseProgress(fileId, convertToDTO(failedTask));
+            if (updated == 1) {
+                FileParseTask failedTask = taskMapper.selectById(taskId);
+                if (failedTask != null) notifyParseProgress(fileId, convertToDTO(failedTask));
+            }
+        } finally {
+            activeParseLeases.remove(taskId, leaseToken);
+        }
+    }
+
+    /** 活跃解析期间续租；JVM 崩溃后租约自然到期，由 Rabbit 或本地扫描器恢复。 */
+    @Scheduled(fixedDelayString = "${app.messaging.file-parse-lease-renew-ms:30000}")
+    public void renewActiveParseLeases() {
+        for (Map.Entry<Long, String> entry : activeParseLeases.entrySet()) {
+            LocalDateTime now = LocalDateTime.now();
+            int renewed;
+            try {
+                renewed = taskMapper.renewParsingLease(entry.getKey(), entry.getValue(), now,
+                        now.plusSeconds(PARSE_LEASE_SECONDS));
+            } catch (Exception e) {
+                log.warn("文件解析租约续期失败，最终状态仍受 fencing token 保护: taskId={}", entry.getKey(), e);
+                continue;
+            }
+            if (renewed != 1) {
+                activeParseLeases.remove(entry.getKey(), entry.getValue());
             }
         }
+    }
+
+    private boolean renewLeaseIfOwned(Long taskId, String leaseToken, LocalDateTime now) {
+        return taskMapper.renewParsingLease(taskId, leaseToken, now,
+                now.plusSeconds(PARSE_LEASE_SECONDS)) == 1;
     }
 
     /**
@@ -211,6 +311,24 @@ public class FileParseService {
         }
 
         return convertToDTO(task);
+    }
+
+    /**
+     * 获取当前用户拥有的文件任务，供文件问答链路读取原始存储地址。
+     */
+    public FileParseTask getTaskForUser(String fileId, Long userId) {
+        FileParseTask task = taskMapper.selectByFileIdAndUserId(fileId, userId);
+        if (task == null) {
+            throw new BusinessException("文件不存在或无权限访问");
+        }
+        return task;
+    }
+
+    /**
+     * 返回前端可访问的文件地址；本地存储会转换成 /api/uploads/...。
+     */
+    public String getAccessibleFileUrl(String fileId, Long userId) {
+        return ossService.toAccessibleUrl(getTaskForUser(fileId, userId).getOssUrl());
     }
 
     /**
@@ -233,7 +351,17 @@ public class FileParseService {
         String content = (String) redisTemplate.opsForValue().get(cacheKey);
 
         if (content == null) {
-            throw new BusinessException("文件内容已过期，请重新上传");
+            // 原始文件已经持久化到本地磁盘/OSS，Redis 只做加速缓存；缓存过期时自动重建，避免历史文件失效。
+            try {
+                byte[] fileBytes = ossService.downloadFile(task.getOssUrl());
+                String fileType = task.getFileType() == null ? "txt" : task.getFileType();
+                content = aiDocService.parseFileToText(
+                        new ByteArrayInputStream(fileBytes), "restored." + fileType);
+                redisTemplate.opsForValue().set(cacheKey, content, PARSED_FILE_TTL_MINUTES, TimeUnit.MINUTES);
+            } catch (Exception e) {
+                log.error("解析缓存重建失败: fileId={}", fileId, e);
+                throw new BusinessException("文件内容读取失败，请重新上传");
+            }
         }
 
         return content;
@@ -480,22 +608,4 @@ public class FileParseService {
         return summary;
     }
 
-    /**
-     * 更新状态为SUCCESS（包含摘要）
-     */
-    private void updateStatusWithSummary(Long taskId, Integer textLength, String summary, LocalDateTime endTime) {
-        try {
-            com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<FileParseTask> wrapper =
-                    new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<>();
-            wrapper.eq(FileParseTask::getId, taskId)
-                    .set(FileParseTask::getParseStatus, "SUCCESS")
-                    .set(FileParseTask::getParsedTextLength, textLength)
-                    .set(FileParseTask::getTextSummary, summary)
-                    .set(FileParseTask::getParseEndTime, endTime);
-
-            taskMapper.update(null, wrapper);
-        } catch (Exception e) {
-            log.error("更新解析状态失败: taskId={}", taskId, e);
-        }
-    }
 }

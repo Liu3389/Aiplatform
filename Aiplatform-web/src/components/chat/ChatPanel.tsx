@@ -55,7 +55,13 @@ export default function ChatPanel() {
 
     let fullContent = ''
     chatApi.stream(
-      { model: 'deepseek-v4-flash', messages: newMessages, temperature: 0.7 },
+      {
+        model: 'deepseek-v4-flash',
+        messages: newMessages,
+        idempotencyKey: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        temperature: 0.7,
+        mode: 'paid',
+      },
       {
         onMessage: (chunk: string) => {
           fullContent += chunk
@@ -128,7 +134,7 @@ export default function ChatPanel() {
         {error && (
           <div className="text-xs text-accent-rose bg-accent-rose/5 border border-accent-rose/10 rounded-lg px-3 py-2 flex items-center justify-between">
             <span>{error}</span>
-            <button onClick={()=>setError('')} className="ml-2 text-neutral-500 hover:text-white">✕</button>
+            <button onClick={()=>setError('')} className="ml-2 text-neutral-500 hover:text-white"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
           </div>
         )}
 

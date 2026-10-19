@@ -32,6 +32,9 @@ public class ChatMessageHistory {
      */
     private Long userId;
 
+    /** AI 对话请求幂等键，归档后仍用于恢复与重试去重。 */
+    private String requestId;
+
     /**
      * 角色：user/assistant/system
      */
@@ -66,6 +69,9 @@ public class ChatMessageHistory {
      * 元数据（JSON格式）
      */
     private String metadata;
+
+    /** 思考耗时（秒），仅 AI 消息有值。 */
+    private Double thinkingTime;
 
     /**
      * 原始创建时间

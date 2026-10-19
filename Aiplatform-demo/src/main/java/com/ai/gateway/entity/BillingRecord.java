@@ -36,6 +36,9 @@ public class BillingRecord implements Serializable {
      */
     private Long callLogId;
 
+    /** AI 请求扣费的幂等键；充值流水为空，同一请求只能存在一条扣费流水。 */
+    private String requestId;
+
     /**
      * 金额（元，修复 P0-9: 统一为 3 位小数）
      */

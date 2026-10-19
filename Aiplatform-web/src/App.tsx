@@ -18,6 +18,7 @@ const ModelStorePage = lazy(() => import('@/pages/ModelStorePage'))
 const BillingPage = lazy(() => import('@/pages/BillingPage'))
 const RechargePage = lazy(() => import('@/pages/RechargePage'))
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'))
+const SecurityPage = lazy(() => import('@/pages/SecurityPage'))
 
 function PageLoader() {
   return (
@@ -92,6 +93,7 @@ export default function App() {
           <Route path="store" element={<LazyRoute><ModelStorePage /></LazyRoute>} />
           <Route path="billing" element={<LazyRoute><BillingPage /></LazyRoute>} />
           <Route path="recharge" element={<LazyRoute><RechargePage /></LazyRoute>} />
+          <Route path="security" element={<LazyRoute><SecurityPage /></LazyRoute>} />
           <Route path="admin" element={<AdminRoute><LazyRoute><AdminPage /></LazyRoute></AdminRoute>} />
         </Route>
         <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
@@ -103,7 +105,8 @@ export default function App() {
           <Route path="/store" element={<LazyRoute><ModelStorePage /></LazyRoute>} />
           <Route path="/billing" element={<LazyRoute><BillingPage /></LazyRoute>} />
           <Route path="/recharge" element={<LazyRoute><RechargePage /></LazyRoute>} />
-          <Route path="/admin" element={<LazyRoute><AdminPage /></LazyRoute>} />
+          <Route path="/security" element={<LazyRoute><SecurityPage /></LazyRoute>} />
+          <Route path="/admin" element={<AdminRoute><LazyRoute><AdminPage /></LazyRoute></AdminRoute>} />
         </Route>
         <Route path="*" element={<Navigate to="/welcome" replace />} />
       </Routes>

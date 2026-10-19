@@ -7,11 +7,20 @@ spring:
   application:
     name: ai-gateway-platform
 
+  ai:
+    openai:
+      base-url: https://api.openai.com
+      api-key: ${OPENAI_API_KEY:}
+      chat:
+        options:
+          model: gpt-3.5-turbo
+          temperature: 0.7
+
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/ai_gateway?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: 123456
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:ai_gateway}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:}
     hikari:
       maximum-pool-size: 30
       minimum-idle: 10
@@ -31,9 +40,9 @@ spring:
 
   data:
     redis:
-      host: localhost
-      port: 6380
-      password:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+      password: ${REDIS_PASSWORD:}
       database: 0
       timeout: 3000ms
       lettuce:
@@ -48,6 +57,20 @@ spring:
     multipart:
       max-file-size: 10MB
       max-request-size: 10MB
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        default-requeue-rejected: false
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
@@ -64,6 +87,7 @@ mybatis-plus:
 
 rate-limit:
   default-rate: 100
+  user-max-requests: 60
   lua-script: classpath:lua/rate_limit.lua
 
 billing:
@@ -73,11 +97,29 @@ billing:
 # 应用配置
 app:
   init-test-data: false  # 是否每次启动时重置数据库并生成测试数据（默认false，开发时可设为true）
+  secondary-password: ${SECONDARY_PASSWORD:}  # 系统控制二级密码（管理员容器启停功能）
+  messaging:
+    rabbit-enabled: ${RABBITMQ_ENABLED:false} # 本地无 RabbitMQ 时降级到线程池；部署环境显式开启
+    file-parse-queue: ${FILE_PARSE_QUEUE:ai.file.parse}
+    settlement-queue: ${BILLING_SETTLEMENT_QUEUE:ai.billing.settlement}
+  storage:
+    local-path: ${APP_STORAGE_LOCAL_PATH:./uploads}  # 本地文件存储目录（Docker容器挂载到宿主机 ./uploads）
+    prefer-local: ${APP_STORAGE_PREFER_LOCAL:true}  # OSS 不可用时本地优先，避免上传先等待 OSS 超时
+  verification:
+    # External delivery is disabled unless explicitly configured; local capture is only for the isolated local stack.
+    delivery-mode: ${VERIFICATION_DELIVERY_MODE:disabled}
+    allow-local-capture: ${VERIFICATION_ALLOW_LOCAL_CAPTURE:false}
+    sms:
+      url: ${VERIFICATION_SMS_URL:}
+      token: ${VERIFICATION_SMS_TOKEN:}
+      template-id: ${VERIFICATION_SMS_TEMPLATE_ID:}
+    email:
+      from: ${VERIFICATION_EMAIL_FROM:${SPRING_MAIL_USERNAME:}}
 
 # API 加密配置
 api:
   encryption:
-    key: ${API_ENCRYPTION_KEY:7uOekwFsZ1poTzhXDgTVnOrkIy4Hf8wwwrGKh/Cu18Y=}  # AES-256 密钥（Base64编码），建议通过环境变量设置
+    key: ${API_ENCRYPTION_KEY:}  # AES-256 密钥（Base64编码），必须由部署环境注入
 
 # CORS 跨域配置
 cors:
@@ -104,9 +146,46 @@ logging:
 
 aliyun:
   oss:
-    endpoint: oss-cn-wuhan-lr.aliyuncs.com
-    access-key-id: LTAI5t9jdQoi8fLUq6BGr7BJ
-    access-key-secret: W4lcE7XPs1bn5mGvhBXOyvAF31onhJ
-    bucket-name: my-ai-platform-docs
-    domain: https://my-ai-platform-docs.oss-cn-wuhan-lr.aliyuncs.com
+    endpoint: ${ALIYUN_OSS_ENDPOINT:}
+    access-key-id: ${ALIYUN_OSS_ACCESS_KEY_ID:}
+    access-key-secret: ${ALIYUN_OSS_ACCESS_KEY_SECRET:}
+    bucket-name: ${ALIYUN_OSS_BUCKET:}
+    domain: ${ALIYUN_OSS_DOMAIN:}
 
+# ===== Knife4j / OpenAPI 3 文档配置 =====
+springdoc:
+  packages-to-scan: com.ai.gateway.controller
+  show-actuator: false          # 不把 actuator 端点算进接口文档
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+    enable-version: true
+    enable-footer: false
+
+# 搜索引擎配置（联网搜索）
+# auto 会按“已配置 SearXNG/Jina -> Bing -> 百度”依次回退；Jina 当前需要 API Key。
+# engine: auto | bing | baidu | searxng | jina
+searxng:
+  base-url: ${SEARXNG_BASE_URL:http://localhost:8888}
+  enabled: ${SEARXNG_ENABLED:true}
+  engine: ${SEARXNG_ENGINE:auto}
+
+# Jina AI 搜索（备选引擎，无需自建容器，但当前接口需要 API Key）
+jina:
+  base-url: ${JINA_BASE_URL:https://s.jina.ai}
+  api-key: ${JINA_API_KEY:}
+  enabled: ${JINA_ENABLED:true}
+
+# Tavily Search（专为 LLM 设计的联网搜索，效果最接近 AI 平台；配置 tavily.api-key 后自动优先使用）
+tavily:
+  base-url: ${TAVILY_BASE_URL:https://api.tavily.com}
+  api-key: ${TAVILY_API_KEY:}
+  enabled: ${TAVILY_ENABLED:true}

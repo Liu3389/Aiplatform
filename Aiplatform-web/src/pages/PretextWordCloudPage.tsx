@@ -69,7 +69,7 @@ export default function PretextWordCloudPage() {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto overflow-y-auto h-full">
+    <div className="page-scroll h-full max-w-5xl mx-auto overflow-y-auto p-4 sm:p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Pretext 词云引擎</h1>
         <p className="text-sm text-neutral-400 mt-1">

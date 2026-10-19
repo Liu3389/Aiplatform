@@ -124,7 +124,7 @@ export default function ApiKeysPage() {
 
   if (backendError) {
     return (
-      <div className="p-4 lg:p-6 max-w-4xl mx-auto overflow-y-auto h-full flex items-center justify-center">
+      <div className="page-scroll h-full max-w-4xl mx-auto overflow-y-auto p-4 lg:p-6 flex items-center justify-center">
         <div className="text-center py-16 px-4 rounded-2xl border" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="1.5" className="mx-auto mb-4 opacity-30">
             <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -142,7 +142,7 @@ export default function ApiKeysPage() {
 
   return (
     <>
-      <div className="p-4 lg:p-6 max-w-4xl mx-auto overflow-y-auto h-full">
+      <div className="page-scroll h-full max-w-4xl mx-auto overflow-y-auto p-4 lg:p-6">
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <div className="flex items-center justify-between mb-6">
           <div>

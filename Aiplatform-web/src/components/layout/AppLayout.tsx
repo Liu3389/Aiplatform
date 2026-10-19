@@ -6,6 +6,7 @@ import { useI18nStore } from '@/stores/i18nStore'
 import { motion, AnimatePresence } from 'framer-motion'
 import NotificationBell from '@/components/NotificationBell'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import { getUserDisplayName } from '@/utils/userDisplay'
 
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'admin']
 
@@ -17,6 +18,7 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const isDark = theme === 'dark'
   const isAdmin = user?.role && ADMIN_ROLES.includes(user.role)
+  const userDisplayName = getUserDisplayName(user, t('第三方账号', 'External account'))
 
   const navItems = useMemo(() => {
     const items = [
@@ -59,13 +61,14 @@ export default function AppLayout() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ background: 'var(--bg-primary)' }}>
-      {/* Top Navigation */}
-      <header className="flex-shrink-0 h-14 flex items-center justify-between px-4 lg:px-6 border-b"
+      {/* 平台顶栏保留；聊天页通过侧栏和会话工具栏做层级融合。 */}
+      <header className="motion-surface relative flex h-14 flex-shrink-0 items-center justify-between border-b px-4 lg:px-6"
         style={{
           borderColor: 'var(--border-color)',
           background: 'var(--bg-secondary)',
           backdropFilter: 'blur(16px)',
           WebkitBackdropFilter: 'blur(16px)',
+          zIndex: 20,
         }}>
         {/* Logo */}
         <div className="flex items-center gap-3">
@@ -93,7 +96,7 @@ export default function AppLayout() {
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-200"
+                className="motion-interactive flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium"
                 style={{
                   background: active ? 'var(--bg-active)' : 'transparent',
                   color: active ? 'var(--accent-purple)' : 'var(--text-dim)',
@@ -122,13 +125,13 @@ export default function AppLayout() {
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
             )}
           </button>
-          <button onClick={() => navigate('/user')} className="hidden sm:flex items-center gap-2 p-1 rounded-lg transition-all hover:bg-[var(--hover-bg)]" title={t('个人中心', 'Profile')}>
+          <button onClick={() => navigate('/user')} className="hidden sm:flex items-center gap-2 p-1 rounded-lg transition-all hover:bg-[var(--hover-bg)]" title={userDisplayName || t('个人中心', 'Profile')}>
             <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
               style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-              {user?.username?.[0]?.toUpperCase() || 'U'}
+              {userDisplayName[0]?.toUpperCase() || 'U'}
             </div>
-            <span className="text-[12px] font-medium hidden lg:inline" style={{ color: 'var(--text-secondary)' }}>
-              {user?.username}
+            <span className="text-[12px] font-medium hidden lg:inline max-w-[150px] truncate" style={{ color: 'var(--text-secondary)' }}>
+              {userDisplayName}
             </span>
           </button>
           <button onClick={handleLogout}
@@ -147,15 +150,15 @@ export default function AppLayout() {
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.02 }}
-            transition={{ duration: 0.25, ease: [0.34, 1.56, 0.64, 1] }}
-            className="h-full"
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="motion-surface h-full"
           >
             <Outlet />
           </motion.div>
         </AnimatePresence>
       </main>
 
-      {/* Mobile bottom nav - 5 items max for small screens */}
+      {/* Mobile bottom nav - 作为平台级导航保留。 */}
       <nav className="md:hidden flex-shrink-0 h-14 flex items-center justify-around border-t safe-area-inset-bottom"
         style={{
           borderColor: 'var(--border-color)',

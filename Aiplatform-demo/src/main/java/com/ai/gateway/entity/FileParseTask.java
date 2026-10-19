@@ -87,6 +87,21 @@ public class FileParseTask implements Serializable {
      */
     private LocalDateTime parseEndTime;
 
+    /** outbox 投递租约时间；超时后可由调度器重发 PENDING 任务。 */
+    private LocalDateTime lastDispatchAt;
+
+    /** 已尝试发布次数，用于排查队列不可用时的积压。 */
+    private Integer dispatchAttempts;
+
+    /** 当前解析 worker 的 fencing token；完成/失败必须匹配该值。 */
+    private String parseLeaseToken;
+
+    /** 当前解析租约的到期时间；过期后恢复扫描器可以重新领取任务。 */
+    private LocalDateTime parseLeaseUntil;
+
+    /** worker 实际领取任务的次数；超过上限后恢复器将明确失败任务。 */
+    private Integer parseAttempts;
+
     /**
      * 关联会话ID（对话时使用）
      */

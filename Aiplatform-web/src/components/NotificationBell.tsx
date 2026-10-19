@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useI18nStore } from '@/stores/i18nStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { notificationApi } from '@/services/api'
+import { useToastStore } from '@/stores/toastStore'
+import { useNotificationSse, type SseNotification } from '@/hooks/useNotificationSse'
+import { Z } from '@/constants/zIndex'
 
 interface NotifItem {
   id: number
@@ -23,26 +26,63 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false)
   const [list, setList] = useState<NotifItem[]>([])
   const [unread, setUnread] = useState(0)
+  const openRef = useRef(false)
+  const { showToast } = useToastStore()
 
   const fetchUnread = useCallback(async () => {
     try {
       const data = await notificationApi.unreadCount()
       setUnread(data.unreadCount || 0)
-    } catch {}
+    } catch (e) {
+      console.error('[NotificationBell] fetchUnread failed:', e)
+    }
   }, [])
 
   const fetchList = useCallback(async () => {
     try {
       const data = await notificationApi.list()
-      setList(data || [])
-    } catch {}
+      console.log('[NotificationBell] fetchList result:', data?.length, 'items')
+      setList(Array.isArray(data) ? data : [])
+    } catch (e) {
+      console.error('[NotificationBell] fetchList failed:', e)
+    }
   }, [])
 
+  // SSE 实时推送回调：收到新通知时更新未读数、刷新列表（若面板打开）、弹 Toast
+  const handleSseNotification = useCallback((n: SseNotification) => {
+    setUnread(prev => prev + 1)
+    // 面板打开时实时追加到列表头部，避免用户看到过期列表
+    if (openRef.current) {
+      setList(prev => [{
+        id: n.id,
+        userId: n.userId,
+        title: n.title,
+        content: n.content,
+        type: n.type,
+        isRead: false,
+        createTime: n.createTime,
+      }, ...prev])
+    }
+    // 弹出 Toast 提醒
+    showToast({
+      title: n.title,
+      message: n.content,
+      type: n.type === 'coupon' ? 'success' : 'info',
+      duration: 5000,
+    })
+  }, [showToast])
+
+  useNotificationSse({ onNotification: handleSseNotification, enabled: true })
+
+  // 轮询兜底：SSE 断线时保证最终一致性，频率从 30s 放宽到 5min
   useEffect(() => {
     fetchUnread()
-    const interval = setInterval(fetchUnread, 30000)
+    const interval = setInterval(fetchUnread, 5 * 60 * 1000)
     return () => clearInterval(interval)
   }, [fetchUnread])
+
+  // 同步 open 状态到 ref，供 SSE 回调读取
+  useEffect(() => { openRef.current = open }, [open])
 
   const markAllRead = async () => {
     try {
@@ -59,10 +99,10 @@ export default function NotificationBell() {
 
   const typeLabel = (t: string) => {
     switch (t) {
-      case 'coupon': return lang === 'zh' ? '🎁 代金卷' : '🎁 Coupon'
-      case 'system': return lang === 'zh' ? '📢 系统' : '📢 System'
-      case 'promo': return lang === 'zh' ? '💰 优惠' : '💰 Promo'
-      default: return lang === 'zh' ? '📌 通知' : '📌 Notice'
+      case 'coupon': return lang === 'zh' ? '代金券' : 'Coupon'
+      case 'system': return lang === 'zh' ? '系统' : 'System'
+      case 'promo': return lang === 'zh' ? '优惠' : 'Promo'
+      default: return lang === 'zh' ? '通知' : 'Notice'
     }
   }
 
@@ -86,14 +126,15 @@ export default function NotificationBell() {
       <AnimatePresence>
         {open && (
           <>
-            <div className="fixed inset-0 z-[59]" onClick={() => setOpen(false)} />
+            <div className="fixed inset-0" onClick={() => setOpen(false)} style={{ zIndex: Z.NOTIFICATION - 1 }} />
             <motion.div
               initial={{ opacity: 0, y: -8, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.96 }}
               transition={{ duration: 0.15 }}
-              className="absolute right-0 top-full mt-2 z-[60] w-80 max-h-[420px] rounded-2xl border shadow-2xl flex flex-col"
+              className="absolute right-0 top-full mt-2 w-80 max-h-[420px] rounded-2xl border shadow-2xl flex flex-col"
               style={{
+                zIndex: Z.NOTIFICATION,
                 background: dark ? '#141A2E' : '#fff',
                 borderColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
               }}

@@ -4,6 +4,8 @@ import com.ai.gateway.common.Result;
 import com.ai.gateway.dto.FileUploadResult;
 import com.ai.gateway.dto.ParseStatusDTO;
 import com.ai.gateway.service.FileParseService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,12 +21,13 @@ import java.util.Map;
 /**
  * 文件上传与解析控制器
  * <p>
- * 提供三大核心接口：
+ * 提供四大核心接口：
  * 1. POST /v1/file/upload - 批量上传文件（最多8个）
  * 2. GET /v1/file/parse-status/{fileId} - 查询解析状态
  * 3. DELETE /v1/file/{fileId} - 删除未使用的文件
  * 4. GET /v1/file/parse-stream/{fileId} - SSE流式监听解析进度
  */
+@Tag(name = "05-文件服务", description = "文件上传、解析状态查询、SSE 解析进度监听")
 @Slf4j
 @RestController
 @RequestMapping("/v1/file")
@@ -42,6 +45,7 @@ public class FileUploadController {
      * 3. 后台异步解析文件（丢入全局线程池）
      * 4. 前端通过SSE或轮询查询解析状态
      */
+    @Operation(summary = "批量上传文件", description = "最多8个，返回 fileId 列表，后台异步解析")
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Result<Map<String, Object>> uploadFiles(
             @RequestParam("files") List<MultipartFile> files,
@@ -77,6 +81,7 @@ public class FileUploadController {
      * - SUCCESS: 解析成功
      * - FAILED: 解析失败
      */
+    @Operation(summary = "查询文件解析状态", description = "返回 PENDING/PARSING/SUCCESS/FAILED")
     @GetMapping("/parse-status/{fileId}")
     public Result<ParseStatusDTO> getParseStatus(
             @PathVariable String fileId,
@@ -102,6 +107,7 @@ public class FileUploadController {
      * <p>
      * 用户可以取消上传但未在对话中使用的文件
      */
+    @Operation(summary = "删除未使用的文件")
     @DeleteMapping("/{fileId}")
     public Result<Boolean> deleteFile(
             @PathVariable String fileId,
@@ -127,6 +133,7 @@ public class FileUploadController {
      * <p>
      * 前端可以订阅此接口实时接收解析状态更新
      */
+    @Operation(summary = "SSE 流式监听解析进度", description = "SSE 流式响应，Knife4j 调试可能无法显示完整流，建议用 curl 或前端 EventSource 测试")
     @GetMapping(value = "/parse-stream/{fileId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter watchParseProgress(
             @PathVariable String fileId,

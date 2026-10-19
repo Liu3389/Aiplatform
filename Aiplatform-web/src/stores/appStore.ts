@@ -8,6 +8,7 @@ interface AppState {
   isLoading: boolean
   sidebarCollapsed: boolean
   mobileSidebarOpen: boolean
+  settingsPanelOpen: boolean
 
   setToken: (token: string | null) => void
   setUserId: (uid: number) => void
@@ -16,6 +17,9 @@ interface AppState {
   toggleSidebar: () => void
   closeMobileSidebar: () => void
   openMobileSidebar: () => void
+  openSettingsPanel: () => void
+  closeSettingsPanel: () => void
+  toggleSettingsPanel: () => void
   fetchUserInfo: () => Promise<void>
 }
 
@@ -25,6 +29,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isLoading: false,
   sidebarCollapsed: false,
   mobileSidebarOpen: false,
+  settingsPanelOpen: false,
 
   setToken: (token) => {
     if (token) {
@@ -48,39 +53,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     localStorage.removeItem('lingdian_uid')
     sessionStorage.removeItem('ld_active_apikey')
     sessionStorage.removeItem('lingdian_chat_version')
-    
-    // 清除用户相关的聊天数据
-    const uid = get().user?.id
-    if (uid) {
-      localStorage.removeItem('lingdian_chat_conversations_' + uid)
-      localStorage.removeItem('lingdian_chat_current_' + uid)
-    }
-    
-    // 清除所有按token隔离的本地缓存
-    const keysToRemove = []
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key && (
-        key.startsWith('ld_conversations_') || 
-        key.startsWith('ld_current_conv_') ||
-        key.startsWith('lingdian_chat_')
-      )) {
-        keysToRemove.push(key)
-      }
-    }
-    keysToRemove.forEach(key => localStorage.removeItem(key))
-    
-    // 清除其他用户相关缓存
+
+    // 会话缓存按用户 ID 隔离，退出时保留各账号自己的历史，下一次登录可自动恢复。
+    // 仅清理旧版本未隔离的全局键，避免旧账号消息继续泄漏到新账号。
+    localStorage.removeItem('ld_conversations')
+    localStorage.removeItem('ld_current_conv')
+    localStorage.removeItem('ld_deleted_conv_ids')
+    localStorage.removeItem('ld_conv_server_version')
     localStorage.removeItem('ld_sidebar_collapsed')
     localStorage.removeItem('ld_chat_model')
-    localStorage.removeItem('ld_conv_server_version')
-    
-    set({ token: null, user: null })
+
+    set({ token: null, user: null, settingsPanelOpen: false, mobileSidebarOpen: false })
   },
 
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   closeMobileSidebar: () => set({ mobileSidebarOpen: false }),
   openMobileSidebar: () => set({ mobileSidebarOpen: true }),
+
+  // 右边栏设置面板：打开时同时关闭手机端左侧栏（避免遮挡）
+  openSettingsPanel: () => set({ settingsPanelOpen: true, mobileSidebarOpen: false }),
+  closeSettingsPanel: () => set({ settingsPanelOpen: false }),
+  toggleSettingsPanel: () => {
+    const open = !get().settingsPanelOpen
+    set(open
+      ? { settingsPanelOpen: true, mobileSidebarOpen: false }
+      : { settingsPanelOpen: false })
+  },
 
   fetchUserInfo: async () => {
     const { token, setUserId } = get()
@@ -94,6 +92,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           id: info.id,
           username: info.username,
           email: info.email,
+          emailVerified: info.emailVerified === true,
+          phone: info.phone,
+          phoneVerified: info.phoneVerified === true,
           balance: info.balance,
           role: info.role as UserInfo['role'],
           status: (String(info.status) === '1' || info.status === 'ACTIVE' ? 'ACTIVE' : 'DISABLED') as UserInfo['status'],

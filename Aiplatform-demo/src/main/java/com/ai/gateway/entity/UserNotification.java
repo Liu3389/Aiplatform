@@ -41,10 +41,15 @@ public class UserNotification implements Serializable {
     private String type;
     
     /**
-     * 关联ID（如订单ID、公告ID等）
+     * 关联ID（如订单ID、公告ID等；广播投影时指向 system_notification.id）
      */
     private Long relatedId;
-    
+
+    /**
+     * 业务元数据（JSON 字符串，如 {"couponId":123} 等）
+     */
+    private String metadata;
+
     /**
      * 是否已读：0-未读, 1-已读
      */

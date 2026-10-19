@@ -6,26 +6,36 @@ import com.ai.gateway.dto.UserRegisterRequest;
 import com.ai.gateway.entity.PlatformStatistics;
 import com.ai.gateway.entity.PointsBill;
 import com.ai.gateway.entity.User;
+import com.ai.gateway.entity.UserContactVerification;
 import com.ai.gateway.entity.UserSubscription;
 import com.ai.gateway.exception.BusinessException;
+import com.ai.gateway.exception.TwoFactorRequiredException;
 import com.ai.gateway.mapper.BillingRecordMapper;
 import com.ai.gateway.mapper.PointsBillMapper;
+import com.ai.gateway.mapper.UserContactVerificationMapper;
 import com.ai.gateway.mapper.UserMapper;
 import com.ai.gateway.vo.UserInfoVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -42,19 +52,49 @@ public class UserService {
     private final PointsService pointsService;
     private final BillingService billingService;
     private final UserSubscriptionService userSubscriptionService;
+    private final UserContactVerificationMapper contactVerificationMapper;
+    private final VerificationCodeDeliveryService verificationCodeDeliveryService;
     private final StringRedisTemplate redisTemplate;
-    private final FreeLimitService freeLimitService;
     private final SessionService sessionService;
+    private final UserTwoFactorService twoFactorService;
     private final ConversationVersionService conversationVersionService;
     private final com.ai.gateway.mapper.ConversationMapper conversationMapper;
     private final com.ai.gateway.mapper.ChatMessageMapper chatMessageMapper;
     private final com.ai.gateway.mapper.PlatformStatisticsMapper platformStatisticsMapper;
+    private final com.ai.gateway.mapper.CallLogMapper callLogMapper;
     private final com.ai.gateway.util.RedisScanUtil redisScanUtil;
+    // 注入配置了 LocalDateTime 格式的 ObjectMapper（替代裸 new ObjectMapper()）
+    private final ObjectMapper objectMapper;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
-    private static final String BIND_CODE_PREFIX = "bind:code:";
-    private static final String TFA_SECRET_PREFIX = "2fa:secret:";
+    private static final String BIND_CODE_PREFIX = "user:contact:bind:code:v2:";
+    private static final String BIND_ATTEMPT_PREFIX = "user:contact:bind:attempt:v2:";
+    private static final String BIND_COOLDOWN_PREFIX = "user:contact:bind:cooldown:v2:";
     private static final String LOGIN_DEVICE_PREFIX = "login:device:";
-    private static final String SUBSCRIPTION_PREFIX = "subscription:";
+    private static final int BIND_CODE_TTL_SECONDS = 10 * 60;
+    private static final int BIND_COOLDOWN_SECONDS = 60;
+    private static final int BIND_CODE_MAX_ATTEMPTS = 5;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final DefaultRedisScript<Long> ACQUIRE_BIND_COOLDOWN = new DefaultRedisScript<>("""
+            if redis.call('EXISTS', KEYS[1]) == 1 or redis.call('EXISTS', KEYS[2]) == 1 then return 0 end
+            redis.call('SET', KEYS[1], '1', 'EX', ARGV[1])
+            redis.call('SET', KEYS[2], '1', 'EX', ARGV[1])
+            return 1
+            """, Long.class);
+    private static final DefaultRedisScript<Long> VERIFY_BIND_CODE = new DefaultRedisScript<>("""
+            local saved = redis.call('GET', KEYS[1])
+            if not saved then return 0 end
+            if saved == ARGV[1] then
+              redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
+              return 1
+            end
+            local attempts = redis.call('INCR', KEYS[2])
+            if attempts == 1 then redis.call('EXPIRE', KEYS[2], ARGV[2]) end
+            if attempts >= tonumber(ARGV[3]) then
+              redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
+              return -1
+            end
+            return -2
+            """, Long.class);
 
     @Transactional(rollbackFor = Exception.class)
     public UserInfoVO register(UserRegisterRequest request) {
@@ -69,7 +109,7 @@ public class UserService {
         User user = new User();
         user.setUsername(request.getUsername());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setEmail(request.getEmail());
+        // Email is a verified contact, so signup only records it after the bind-code flow succeeds.
         user.setBalance(BigDecimal.ZERO);
         user.setPoints(BigDecimal.ZERO); // 修复 P0-1: 初始化点数
         user.setStatus(1);
@@ -121,6 +161,14 @@ public class UserService {
             throw new BusinessException(ResultCode.USER_DISABLED);
         }
 
+        if (twoFactorService.isEnabled(user.getId())) {
+            String code = request.getTwoFactorCode();
+            if (code == null || code.isBlank()) throw new TwoFactorRequiredException();
+            if (!twoFactorService.verifyAndConsumeLoginCode(user.getId(), code)) {
+                throw new BusinessException(ResultCode.LOGIN_ERROR);
+            }
+        }
+
         // 登录时同步余额到Redis，确保计费系统可以正常使用
         billingService.syncUserBalanceToRedis(user.getId(), user.getBalance());
 
@@ -168,93 +216,6 @@ public class UserService {
         }
 
         return user.getBalance();
-    }
-
-    @Transactional(rollbackFor = Exception.class)
-    public void recharge(Long userId, BigDecimal amount) {
-        User user = userMapper.selectById(userId);
-        if (user == null) {
-            throw new BusinessException(ResultCode.USER_NOT_FOUND);
-        }
-
-        BigDecimal balanceBefore = user.getBalance();
-        BigDecimal balanceAfter = balanceBefore.add(amount);
-
-        user.setBalance(balanceAfter);
-        userMapper.updateById(user);
-
-        billingService.syncUserBalanceToRedis(userId, balanceAfter);
-
-        recordRevenue(amount);
-        
-        log.info("用户充值成功: userId={}, amount={}, balanceBefore={}, balanceAfter={}",
-                userId, amount, balanceBefore, balanceAfter);
-    }
-
-    /**
-     * 使用优惠券充值
-     * @param userId 用户ID
-     * @param amount 充值金额
-     * @param couponId 优惠券ID（可选）
-     * @return 充值结果信息
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> rechargeWithCoupon(Long userId, BigDecimal amount, Long couponId) {
-        User user = userMapper.selectById(userId);
-        if (user == null) {
-            throw new BusinessException(ResultCode.USER_NOT_FOUND);
-        }
-
-        Map<String, Object> result = new HashMap<>();
-        BigDecimal discount = BigDecimal.ZERO;
-        BigDecimal actualAmount = amount;
-
-        // 如果提供了优惠券ID，则使用优惠券
-        if (couponId != null) {
-            try {
-                // 使用优惠券，orderType为RECHARGE，orderId为时间戳生成的订单号
-                String orderId = "RECHARGE_" + System.currentTimeMillis();
-                discount = couponService.useCoupon(userId, couponId, amount, null, "RECHARGE", orderId);
-                actualAmount = amount.subtract(discount);
-                
-                result.put("couponUsed", true);
-                result.put("discount", discount);
-                result.put("orderId", orderId);
-                
-                log.info("充值使用优惠券: userId={}, couponId={}, discount={}, actualAmount={}", 
-                        userId, couponId, discount, actualAmount);
-            } catch (Exception e) {
-                log.warn("优惠券使用失败，将按原价充值: {}", e.getMessage());
-                result.put("couponUsed", false);
-                result.put("discount", BigDecimal.ZERO);
-                result.put("message", "优惠券使用失败: " + e.getMessage());
-            }
-        } else {
-            result.put("couponUsed", false);
-            result.put("discount", BigDecimal.ZERO);
-        }
-
-        // 执行充值（实际支付金额）
-        BigDecimal balanceBefore = user.getBalance();
-        BigDecimal balanceAfter = balanceBefore.add(actualAmount);
-
-        user.setBalance(balanceAfter);
-        userMapper.updateById(user);
-
-        billingService.syncUserBalanceToRedis(userId, balanceAfter);
-
-        recordRevenue(actualAmount);
-
-        result.put("success", true);
-        result.put("amount", amount);
-        result.put("actualAmount", actualAmount);
-        result.put("balanceBefore", balanceBefore);
-        result.put("balanceAfter", balanceAfter);
-
-        log.info("用户充值成功: userId={}, amount={}, discount={}, actualAmount={}, balanceBefore={}, balanceAfter={}",
-                userId, amount, discount, actualAmount, balanceBefore, balanceAfter);
-
-        return result;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -341,6 +302,7 @@ public class UserService {
         user.setStatus("ACTIVE".equals(status) ? 1 : 0);
         user.setUpdateTime(LocalDateTime.now());
         userMapper.updateById(user);
+        if (user.getStatus() == 0) sessionService.revokeAllUserSessions(userId, false);
 
         log.info("用户状态更新: userId={}, status={}", userId, status);
     }
@@ -378,158 +340,224 @@ public class UserService {
     }
 
     public void sendBindCode(Long userId, String type, String target) {
-        String code = String.format("%06d", new Random().nextInt(1000000));
-        String key = BIND_CODE_PREFIX + type + ":" + target;
-        redisTemplate.opsForValue().set(key, code, 10, TimeUnit.MINUTES);
-        log.info("发送绑定验证码: type={}, target={}, code={}", type, target, code);
+        if (userId == null) throw new BusinessException(ResultCode.USER_NOT_FOUND);
+        String normalizedType = normalizeContactType(type);
+        String normalizedTarget = normalizeContactTarget(normalizedType, target);
+        ensureContactAvailable(userId, normalizedType, normalizedTarget);
+
+        String userCooldownKey = BIND_COOLDOWN_PREFIX + "user:" + userId + ":" + normalizedType;
+        String targetCooldownKey = bindTargetCooldownKey(normalizedType, normalizedTarget);
+        Long acquired = redisTemplate.execute(ACQUIRE_BIND_COOLDOWN,
+                List.of(userCooldownKey, targetCooldownKey), Integer.toString(BIND_COOLDOWN_SECONDS));
+        if (!Long.valueOf(1L).equals(acquired)) {
+            throw new BusinessException(ResultCode.RATE_LIMIT_EXCEEDED.getCode(), "验证码发送过于频繁，请稍后重试");
+        }
+
+        String codeKey = bindCodeKey(userId, normalizedType, normalizedTarget);
+        String attemptKey = bindAttemptKey(userId, normalizedType, normalizedTarget);
+        String localInboxKey = VerificationCodeDeliveryService.localInboxKey(userId, normalizedType, normalizedTarget);
+        redisTemplate.delete(List.of(codeKey, attemptKey));
+        verificationCodeDeliveryService.clearLocalCode(userId, normalizedType, normalizedTarget);
+        String code = String.format(Locale.ROOT, "%06d", SECURE_RANDOM.nextInt(1_000_000));
+        String expected = userId + ":" + sha256(userId + ":" + normalizedType + ":" + normalizedTarget + ":" + code);
+        redisTemplate.opsForValue().set(codeKey, expected, BIND_CODE_TTL_SECONDS, TimeUnit.SECONDS);
+        try {
+            verificationCodeDeliveryService.deliver(userId, normalizedType, normalizedTarget, code);
+        } catch (RuntimeException e) {
+            redisTemplate.delete(List.of(codeKey, attemptKey, userCooldownKey, targetCooldownKey, localInboxKey));
+            throw e;
+        }
+        log.info("绑定验证码已投递: userId={}, type={}", userId, normalizedType);
     }
 
     @Transactional(rollbackFor = Exception.class)
     public void bindEmail(Long userId, String email, String code) {
-        String key = BIND_CODE_PREFIX + "email:" + email;
-        String savedCode = redisTemplate.opsForValue().get(key);
-        if (savedCode == null || !savedCode.equals(code)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "验证码错误或已过期");
-        }
-
-        User user = userMapper.selectById(userId);
-        if (user == null) {
-            throw new BusinessException(ResultCode.USER_NOT_FOUND);
-        }
-
-        user.setEmail(email);
-        user.setUpdateTime(LocalDateTime.now());
-        userMapper.updateById(user);
-
-        redisTemplate.delete(key);
-        log.info("邮箱绑定成功: userId={}, email={}", userId, email);
+        bindVerifiedContact(userId, "email", email, code);
     }
 
     @Transactional(rollbackFor = Exception.class)
     public void bindPhone(Long userId, String phone, String code) {
-        String key = BIND_CODE_PREFIX + "phone:" + phone;
-        String savedCode = redisTemplate.opsForValue().get(key);
-        if (savedCode == null || !savedCode.equals(code)) {
+        bindVerifiedContact(userId, "phone", phone, code);
+    }
+
+    private void bindVerifiedContact(Long userId, String type, String target, String code) {
+        String normalizedTarget = normalizeContactTarget(type, target);
+        if (code == null || !code.matches("\\d{6}")) {
             throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "验证码错误或已过期");
         }
-
         User user = userMapper.selectById(userId);
-        if (user == null) {
-            throw new BusinessException(ResultCode.USER_NOT_FOUND);
+        if (user == null) throw new BusinessException(ResultCode.USER_NOT_FOUND);
+        ensureContactAvailable(userId, type, normalizedTarget);
+
+        String codeKey = bindCodeKey(userId, type, normalizedTarget);
+        String attemptKey = bindAttemptKey(userId, type, normalizedTarget);
+        String localInboxKey = VerificationCodeDeliveryService.localInboxKey(userId, type, normalizedTarget);
+        String expected = userId + ":" + sha256(userId + ":" + type + ":" + normalizedTarget + ":" + code);
+        Long verified = redisTemplate.execute(VERIFY_BIND_CODE,
+                List.of(codeKey, attemptKey, localInboxKey), expected,
+                Integer.toString(BIND_CODE_TTL_SECONDS), Integer.toString(BIND_CODE_MAX_ATTEMPTS));
+        if (Long.valueOf(1L).equals(verified)) {
+            claimVerifiedContact(user, type, normalizedTarget);
+            return;
+        }
+        if (Long.valueOf(-1L).equals(verified)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "验证码错误次数过多，请重新获取");
+        }
+        throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "验证码错误或已过期");
+    }
+
+    /**
+     * Records an email already verified by a trusted OIDC provider.
+     * The local account still uses the same uniqueness checks and persistence path
+     * as an email verified through the platform's own binding flow.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void bindOAuthVerifiedEmail(Long userId, String verifiedEmail) {
+        if (userId == null || verifiedEmail == null || verifiedEmail.isBlank()) return;
+        User user = userMapper.selectById(userId);
+        if (user == null) throw new BusinessException(ResultCode.USER_NOT_FOUND);
+
+        String normalizedEmail = normalizeContactTarget("email", verifiedEmail);
+        UserContactVerification existing = contactVerificationMapper.selectById(userId);
+        if (existing != null && normalizedEmail.equals(existing.getEmail())) {
+            if (!normalizedEmail.equals(user.getEmail())) {
+                claimVerifiedContact(user, "email", normalizedEmail);
+            }
+            return;
         }
 
-        user.setUpdateTime(LocalDateTime.now());
-        userMapper.updateById(user);
+        ensureContactAvailable(userId, "email", normalizedEmail);
+        claimVerifiedContact(user, "email", normalizedEmail);
+    }
 
-        redisTemplate.delete(key);
-        log.info("手机号绑定成功: userId={}, phone={}", userId, phone);
+    private void ensureContactAvailable(Long userId, String type, String target) {
+        LambdaQueryWrapper<UserContactVerification> verifiedQuery = new LambdaQueryWrapper<>();
+        if ("email".equals(type)) verifiedQuery.eq(UserContactVerification::getEmail, target);
+        else verifiedQuery.eq(UserContactVerification::getPhone, target);
+        UserContactVerification verifiedContact = contactVerificationMapper.selectOne(verifiedQuery.last("LIMIT 1"));
+        if (verifiedContact != null) {
+            String message = "email".equals(type) ? "该邮箱已被绑定" : "该手机号已被绑定";
+            throw new BusinessException(409, message);
+        }
+
+        LambdaQueryWrapper<User> profileQuery = new LambdaQueryWrapper<>();
+        if ("email".equals(type)) profileQuery.eq(User::getEmail, target);
+        else profileQuery.eq(User::getPhone, target);
+        profileQuery.ne(User::getId, userId);
+        if (userMapper.selectCount(profileQuery) > 0) {
+            String message = "email".equals(type) ? "该邮箱已关联其他账号，请先完成账号资料核验" : "该手机号已关联其他账号，请先完成账号资料核验";
+            throw new BusinessException(409, message);
+        }
+    }
+
+    private void claimVerifiedContact(User user, String type, String target) {
+        UserContactVerification contact = contactVerificationMapper.selectById(user.getId());
+        boolean insert = contact == null;
+        if (insert) {
+            contact = new UserContactVerification();
+            contact.setUserId(user.getId());
+        }
+        if ("email".equals(type)) {
+            contact.setEmail(target);
+            user.setEmail(target);
+        } else {
+            contact.setPhone(target);
+            user.setPhone(target);
+        }
+        LocalDateTime now = LocalDateTime.now();
+        contact.setUpdatedAt(now);
+        user.setUpdateTime(now);
+        try {
+            if (insert) contactVerificationMapper.insert(contact);
+            else contactVerificationMapper.updateById(contact);
+            if (userMapper.updateById(user) != 1) throw new BusinessException(ResultCode.USER_NOT_FOUND);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            String message = "email".equals(type) ? "该邮箱已被绑定" : "该手机号已被绑定";
+            throw new BusinessException(409, message);
+        }
+        log.info("已验证联系方式绑定成功: userId={}, type={}", user.getId(), type);
+    }
+
+    private String normalizeContactType(String type) {
+        if (type == null) throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "绑定类型不正确");
+        String normalized = type.trim().toLowerCase(Locale.ROOT);
+        if (!"email".equals(normalized) && !"phone".equals(normalized)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "绑定类型不正确");
+        }
+        return normalized;
+    }
+
+    private String normalizeContactTarget(String type, String target) {
+        if (target == null) throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "联系方式不能为空");
+        String normalized = target.trim();
+        if ("email".equals(type)) {
+            normalized = normalized.toLowerCase(Locale.ROOT);
+            if (normalized.length() > 128 || !normalized.matches("^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\\.[a-z0-9-]+)+$")) {
+                throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "邮箱格式不正确");
+            }
+        } else if (!normalized.matches("^1[3-9]\\d{9}$")) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "手机号格式不正确");
+        }
+        return normalized;
+    }
+
+    private String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
+    }
+
+    static String bindCodeKey(Long userId, String type, String target) {
+        return BIND_CODE_PREFIX + userId + ":" + type + ":" + hashForRedis(target);
+    }
+
+    static String bindTargetCooldownKey(String type, String target) {
+        return BIND_COOLDOWN_PREFIX + "target:" + type + ":" + hashForRedis(target);
+    }
+
+    static String bindUserCooldownKey(Long userId, String type) {
+        return BIND_COOLDOWN_PREFIX + "user:" + userId + ":" + type;
+    }
+
+    private static String bindAttemptKey(Long userId, String type, String target) {
+        return BIND_ATTEMPT_PREFIX + userId + ":" + type + ":" + hashForRedis(target);
+    }
+
+    private static String hashForRedis(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 
     public Map<String, String> enable2FA(Long userId) {
-        String secret = cn.hutool.crypto.SecureUtil.generateKey("HmacSHA1", 20).toString();
-        String key = TFA_SECRET_PREFIX + userId;
-        redisTemplate.opsForValue().set(key, secret, 30, TimeUnit.DAYS);
-
-        String qrUrl = String.format("otpauth://totp/LingdianAI:%s?secret=%s&issuer=LingdianAI",
-                userId, secret);
-
-        Map<String, String> result = new HashMap<>();
-        result.put("secret", secret);
-        result.put("qrUrl", qrUrl);
-
-        log.info("2FA已启用: userId={}", userId);
-        return result;
+        return twoFactorService.beginEnrollment(userId);
     }
 
     public void disable2FA(Long userId, String code) {
-        if (!verify2FAToken(userId, code)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "2FA验证码错误");
-        }
-
-        String key = TFA_SECRET_PREFIX + userId;
-        redisTemplate.delete(key);
-
-        log.info("2FA已禁用: userId={}", userId);
+        twoFactorService.disable(userId, code);
     }
 
-    public boolean verify2FA(Long userId, String code) {
-        return verify2FAToken(userId, code);
-    }
-
-    private boolean verify2FAToken(Long userId, String code) {
-        String key = TFA_SECRET_PREFIX + userId;
-        String secret = redisTemplate.opsForValue().get(key);
-        if (secret == null) {
-            return false;
-        }
-
-        String expectedCode = generateTOTPCode(secret);
-        return expectedCode != null && expectedCode.equals(code);
-    }
-
-    private String generateTOTPCode(String secret) {
-        try {
-            long timeStep = System.currentTimeMillis() / 30000;
-            String data = secret + timeStep;
-            return String.format("%06d", Math.abs(data.hashCode()) % 1000000);
-        } catch (Exception e) {
-            log.error("TOTP生成失败", e);
-            return null;
-        }
+    public Map<String, Object> verify2FA(Long userId, String code) {
+        return twoFactorService.confirmEnrollment(userId, code);
     }
 
     public Map<String, Object> get2FAStatus(Long userId) {
-        String key = TFA_SECRET_PREFIX + userId;
-        boolean enabled = Boolean.TRUE.equals(redisTemplate.hasKey(key));
-
-        Map<String, Object> status = new HashMap<>();
-        status.put("enabled", enabled);
-        status.put("backupCodes", enabled ? generateBackupCodes() : null);
-
-        return status;
-    }
-
-    private List<String> generateBackupCodes() {
-        List<String> codes = new ArrayList<>();
-        Random random = new Random();
-        for (int i = 0; i < 10; i++) {
-            codes.add(String.format("%04d-%04d", random.nextInt(10000), random.nextInt(10000)));
-        }
-        return codes;
+        return twoFactorService.status(userId);
     }
 
     public List<Map<String, Object>> getLoginDevices(Long userId) {
-        String pattern = LOGIN_DEVICE_PREFIX + userId + ":*";
-        Set<String> keys = redisScanUtil.scanKeys(pattern);
-
-        List<Map<String, Object>> devices = new ArrayList<>();
-        for (String key : keys) {
-            String deviceInfo = redisTemplate.opsForValue().get(key);
-            if (deviceInfo != null) {
-                String deviceId = key.substring(key.lastIndexOf(":") + 1);
-                Map<String, Object> device = new HashMap<>();
-                device.put("deviceId", deviceId);
-                device.put("info", deviceInfo);
-                device.put("lastActive", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-                devices.add(device);
-            }
-        }
-
-        if (devices.isEmpty()) {
-            Map<String, Object> currentDevice = new HashMap<>();
-            currentDevice.put("deviceId", "current");
-            currentDevice.put("info", "Current Device");
-            currentDevice.put("lastActive", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-            currentDevice.put("isCurrent", true);
-            devices.add(currentDevice);
-        }
-
-        return devices;
+        return sessionService.listActiveDevices(userId);
     }
 
     public void removeLoginDevice(Long userId, String deviceId) {
         String key = LOGIN_DEVICE_PREFIX + userId + ":" + deviceId;
         redisTemplate.delete(key);
+        sessionService.revokeDevice(userId, deviceId);
         log.info("移除登录设备: userId={}, deviceId={}", userId, deviceId);
     }
 
@@ -542,7 +570,12 @@ public class UserService {
         if (!keys.isEmpty()) {
             redisTemplate.delete(keys);
         }
+        sessionService.revokeAllUserSessions(userId, exceptCurrent);
         log.info("移除所有登录设备: userId={}, exceptCurrent={}", userId, exceptCurrent);
+    }
+
+    public void revokeUserSessions(Long userId) {
+        sessionService.revokeAllUserSessions(userId, false);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -561,28 +594,44 @@ public class UserService {
         user.setEmail(null);
         user.setUpdateTime(LocalDateTime.now());
         userMapper.updateById(user);
+        sessionService.revokeAllUserSessions(userId, false);
 
         log.info("账户已注销: userId={}", userId);
     }
 
-    public List<Map<String, Object>> getRechargeRecords(Long userId, int page, int size) {
+    public Map<String, Object> getRechargeRecords(Long userId, int page, int size) {
         int safeSize = Math.min(Math.max(size, 1), 100);
         int safePage = Math.max(page, 1);
-        
-        Page<PointsBill> pageObj = new Page<>(safePage, safeSize);
-        // 修复：同时查询 RECHARGE 和 SUBSCRIPTION_GRANT 类型的记录
+
+        List<Map<String, Object>> all = new ArrayList<>();
+
+        // 1. 余额充值记录（billing_record type=2）
+        LambdaQueryWrapper<com.ai.gateway.entity.BillingRecord> brWrapper = new LambdaQueryWrapper<>();
+        brWrapper.eq(com.ai.gateway.entity.BillingRecord::getUserId, userId)
+                .eq(com.ai.gateway.entity.BillingRecord::getType, 2)
+                .orderByDesc(com.ai.gateway.entity.BillingRecord::getCreateTime);
+        for (com.ai.gateway.entity.BillingRecord r : billingRecordMapper.selectList(brWrapper)) {
+            Map<String, Object> record = new HashMap<>();
+            record.put("id", "B" + r.getId());
+            record.put("amount", r.getAmount());
+            record.put("changeType", "BALANCE_RECHARGE");
+            record.put("balanceBefore", r.getBalanceBefore());
+            record.put("balanceAfter", r.getBalanceAfter());
+            record.put("status", "COMPLETED");
+            record.put("description", "余额充值 ¥" + r.getAmount());
+            record.put("businessId", null);
+            record.put("createTime", r.getCreateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+            all.add(record);
+        }
+
+        // 2. 点数充值/会员发放记录（points_bill）
         LambdaQueryWrapper<PointsBill> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PointsBill::getUserId, userId)
                 .in(PointsBill::getChangeType, Arrays.asList("RECHARGE", "SUBSCRIPTION_GRANT"))
-               .orderByDesc(PointsBill::getCreateTime);
-        
-        Page<PointsBill> resultPage = pointsBillMapper.selectPage(pageObj, wrapper);
-        List<PointsBill> bills = resultPage.getRecords();
-        
-        List<Map<String, Object>> records = new ArrayList<>();
-        for (PointsBill bill : bills) {
+                .orderByDesc(PointsBill::getCreateTime);
+        for (PointsBill bill : pointsBillMapper.selectList(wrapper)) {
             Map<String, Object> record = new HashMap<>();
-            record.put("id", bill.getId());
+            record.put("id", "P" + bill.getId());
             record.put("points", bill.getPointsChange());
             record.put("changeType", bill.getChangeType());
             record.put("balanceBefore", bill.getBalanceBefore());
@@ -591,11 +640,23 @@ public class UserService {
             record.put("description", bill.getDescription());
             record.put("businessId", bill.getBusinessId());
             record.put("createTime", bill.getCreateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-            records.add(record);
+            all.add(record);
         }
-        
-        log.info("查询充值记录: userId={}, page={}, size={}, count={}", userId, page, size, records.size());
-        return records;
+
+        // 按时间倒序合并后分页
+        all.sort((a, b) -> b.get("createTime").toString().compareTo(a.get("createTime").toString()));
+        int from = Math.min((safePage - 1) * safeSize, all.size());
+        int to = Math.min(from + safeSize, all.size());
+        List<Map<String, Object>> records = new ArrayList<>(all.subList(from, to));
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("records", records);
+        result.put("total", all.size());
+        result.put("page", safePage);
+        result.put("size", safeSize);
+
+        log.info("查询充值记录: userId={}, page={}, size={}, count={}, total={}", userId, page, size, records.size(), all.size());
+        return result;
     }
 
     /**
@@ -690,177 +751,176 @@ public class UserService {
         log.info("发票申请已提交: userId={}, title={}, taxNumber={}, amount={}", userId, invoiceTitle, taxNumber, amount);
     }
 
-    public List<Map<String, Object>> getCoupons(Long userId) {
-        List<Map<String, Object>> coupons = new ArrayList<>();
-        Random random = new Random();
-
-        String[] couponTypes = {"DISCOUNT", "CASH", "FREE_CALLS"};
-        String[] couponNames = {"新人礼包", "限时折扣", "充值返利", "邀请奖励"};
-
-        for (int i = 0; i < 5; i++) {
-            Map<String, Object> coupon = new HashMap<>();
-            coupon.put("id", userId * 100 + i);
-            coupon.put("code", "CP" + String.format("%06d", random.nextInt(1000000)));
-            coupon.put("name", couponNames[random.nextInt(couponNames.length)]);
-            coupon.put("type", couponTypes[random.nextInt(couponTypes.length)]);
-            coupon.put("value", BigDecimal.valueOf(random.nextInt(50) + 5));
-            coupon.put("minAmount", BigDecimal.valueOf(random.nextInt(100)));
-            coupon.put("status", random.nextBoolean() ? "AVAILABLE" : "USED");
-            coupon.put("expireTime", LocalDateTime.now().plusDays(random.nextInt(90)).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-            coupons.add(coupon);
-        }
-
-        return coupons;
-    }
-
-    public Map<String, Object> useCoupon(Long userId, String code) {
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("message", "优惠券已使用");
-        result.put("discount", BigDecimal.valueOf(new Random().nextInt(30) + 5));
-
-        log.info("使用优惠券: userId={}, code={}", userId, code);
-        return result;
-    }
-
-    @Transactional(rollbackFor = Exception.class)
-    public void redeemCoupon(Long userId, String redeemCode) {
-        Map<String, Object> coupon = new HashMap<>();
-        coupon.put("code", redeemCode);
-        coupon.put("name", "兑换码奖励");
-        coupon.put("value", BigDecimal.valueOf(20));
-
-        log.info("兑换码兑换成功: userId={}, code={}", userId, redeemCode);
-    }
-
-    public Map<String, Object> getSubscription(Long userId) {
-        Map<String, Object> subscription = new HashMap<>();
-        subscription.put("plan", "NONE");
-        subscription.put("status", "INACTIVE");
-        subscription.put("expireTime", null);
-        subscription.put("autoRenew", false);
-
-        String key = SUBSCRIPTION_PREFIX + userId;
-        String plan = redisTemplate.opsForValue().get(key);
-        if (plan != null) {
-            subscription.put("plan", plan);
-            subscription.put("status", "ACTIVE");
-            subscription.put("expireTime", LocalDateTime.now().plusDays(30).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-            subscription.put("autoRenew", true);
-        }
-
-        return subscription;
-    }
-
-    @Transactional(rollbackFor = Exception.class)
-    public void subscribe(Long userId, String packageCode, String paymentMethod) {
-        // 修复 P1-9: 调用真实的套餐购买服务，不再只是存 Redis
-        if (packageCode == null || packageCode.isEmpty()) {
-            throw new BusinessException("请选择要购买的套餐");
-        }
-
-        // 委托给 UserSubscriptionService 处理扣费和创建订阅（默认月度）
-        userSubscriptionService.purchasePackage(userId, packageCode, "MONTHLY", null);
-        
-        log.info("用户完成套餐订阅: userId={}, package={}, method={}", userId, packageCode, paymentMethod);
-    }
-
-    @Transactional(rollbackFor = Exception.class)
-    public void cancelSubscription(Long userId) {
-        String key = SUBSCRIPTION_PREFIX + userId;
-        redisTemplate.delete(key);
-
-        log.info("订阅已取消: userId={}", userId);
-    }
-
-    // ========== OAuth 第三方登录 ==========
-
-    public UserInfoVO oauthLogin(String provider, String code, String state) {
-        String openId = fetchOAuthOpenId(provider, code, state);
-        if (openId == null) {
-            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "获取" + provider + "用户信息失败");
-        }
-
-        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(User::getUsername, provider + "_" + openId);
-        User user = userMapper.selectOne(wrapper);
-
-        if (user == null) {
-            user = new User();
-            user.setUsername(provider + "_" + openId);
-            user.setPassword(passwordEncoder.encode(openId + "_oauth_default"));
-            user.setBalance(BigDecimal.ZERO);
-            user.setStatus(1);
-            user.setRole("USER");
-            user.setFreeApiStrategy("NONE");
-            user.setFreeQuota(0);
-            user.setDailyCallLimit(0);
-            user.setMonthlyCallLimit(0);
-            user.setCreateTime(LocalDateTime.now());
-            user.setUpdateTime(LocalDateTime.now());
-            userMapper.insert(user);
-            billingService.syncUserBalanceToRedis(user.getId(), user.getBalance());
-            log.info("OAuth新用户注册: provider={}, openId={}, userId={}", provider, openId, user.getId());
-        }
-
-        return convertToVO(user);
-    }
-
-    @Transactional(rollbackFor = Exception.class)
-    public void bindOAuth(Long userId, String provider, String code) {
-        User user = userMapper.selectById(userId);
-        if (user == null) throw new BusinessException(ResultCode.USER_NOT_FOUND);
-
-        String openId = fetchOAuthOpenId(provider, code, "bind");
-        if (openId == null) throw new BusinessException("获取" + provider + "信息失败");
-
-        String key = "oauth:bind:" + provider + ":" + userId;
-        redisTemplate.opsForValue().set(key, openId, 365, TimeUnit.DAYS);
-
-        log.info("OAuth绑定成功: userId={}, provider={}, openId={}", userId, provider, openId);
-    }
-
-    public void unbindOAuth(Long userId, String provider) {
-        String key = "oauth:bind:" + provider + ":" + userId;
-        redisTemplate.delete(key);
-        log.info("OAuth解绑成功: userId={}, provider={}", userId, provider);
-    }
-
-    private String fetchOAuthOpenId(String provider, String code, String state) {
-        return provider + "_demo_" + code.hashCode() + "_" + System.currentTimeMillis() % 100000;
-    }
-
     // ========== 对话历史云端同步 ==========
 
     private static final String CONVERSATIONS_KEY = "conversations:";
     private static final String CONVERSATIONS_VERSION_KEY = "conversations:version:";
 
     public long syncConversations(Long userId, List<Map<String, Object>> conversations) {
-        if (conversations == null || conversations.isEmpty()) return 0;
-        
+        if (conversations == null) conversations = new ArrayList<>();
+
         // 修复 P0-2: 异步生成会话标题
         for (Map<String, Object> conv : conversations) {
             String title = (String) conv.get("title");
             if (title == null || title.trim().isEmpty() || "无标题会话".equals(title)) {
-                Long convId = ((Number) conv.get("id")).longValue();
-                generateTitleAsync(userId, convId);
+                Object idObj = conv.get("id");
+                Long convId = null;
+                if (idObj instanceof Number) {
+                    convId = ((Number) idObj).longValue();
+                } else if (idObj instanceof String) {
+                    try {
+                        convId = Long.parseLong((String) idObj);
+                    } catch (NumberFormatException ignored) {
+                        log.debug("非数字会话ID，跳过标题生成: {}", idObj);
+                    }
+                }
+                if (convId != null) {
+                    generateTitleAsync(userId, convId);
+                }
             }
         }
 
         String dataKey = CONVERSATIONS_KEY + userId;
         String versionKey = CONVERSATIONS_VERSION_KEY + userId;
-        String json;
+        String lockKey = "lock:conv:sync:" + userId;
+
+        // 加分布式锁防止并发覆盖
+        Boolean locked = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", 10, TimeUnit.SECONDS);
+        if (!Boolean.TRUE.equals(locked)) {
+            log.warn("获取同步锁失败，直接写入: userId={}", userId);
+        }
+
         try {
-            json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(conversations);
-        } catch (Exception e) {
-            log.error("序列化对话失败", e);
+            // ===== 修复多设备数据丢失：改为 merge 模式，不再全量覆盖 =====
+            // 1. 读取 Redis 现有会话列表
+            List<Map<String, Object>> existing = new ArrayList<>();
+            String existingJson = redisTemplate.opsForValue().get(dataKey);
+            if (existingJson != null && !existingJson.isEmpty()) {
+                try {
+                    existing = objectMapper.readValue(existingJson, List.class);
+                } catch (Exception e) {
+                    log.warn("反序列化现有会话失败，将从DB加载: userId={}", userId);
+                    existing = loadConversationsFromDatabase(userId);
+                }
+            } else {
+                // Redis 为空，从 DB 加载
+                existing = loadConversationsFromDatabase(userId);
+            }
+
+            // 2. 按 id 建 Map（统一转为 String 比较）
+            Map<String, Map<String, Object>> mergedMap = new LinkedHashMap<>();
+            for (Map<String, Object> conv : existing) {
+                String id = String.valueOf(conv.get("id"));
+                mergedMap.put(id, conv);
+            }
+
+            // 3. 遍历入参，按 updatedAt 合并（保留最新版本）
+            for (Map<String, Object> incoming : conversations) {
+                String id = String.valueOf(incoming.get("id"));
+                if (id == null || "null".equals(id)) continue;
+
+                Map<String, Object> existingConv = mergedMap.get(id);
+                if (existingConv == null) {
+                    // 新会话，直接加入
+                    mergedMap.put(id, incoming);
+                } else {
+                    // 已存在，比较 updatedAt 保留最新
+                    long existingUpdated = parseTimestamp(existingConv.get("updatedAt"));
+                    long incomingUpdated = parseTimestamp(incoming.get("updatedAt"));
+                    if (incomingUpdated >= existingUpdated) {
+                        mergedMap.put(id, incoming);
+                    }
+                    // 否则保留现有的
+                }
+            }
+
+            // 4. 序列化合并后的列表
+            List<Map<String, Object>> mergedList = new ArrayList<>(mergedMap.values());
+            String json;
+            try {
+                json = objectMapper.writeValueAsString(mergedList);
+            } catch (Exception e) {
+                log.error("序列化合并后的对话失败", e);
+                return 0;
+            }
+
+            long version = System.currentTimeMillis();
+            redisTemplate.opsForValue().set(dataKey, json, 90, TimeUnit.DAYS);
+            redisTemplate.opsForValue().set(versionKey, String.valueOf(version), 90, TimeUnit.DAYS);
+            log.info("对话同步成功(merge模式): userId={}, incoming={}, existing={}, merged={}, version={}",
+                    userId, conversations.size(), existing.size(), mergedList.size(), version);
+
+            // 5. 异步写入DB（best-effort，失败仅记日志）
+            final List<Map<String, Object>> conversationsFinal = conversations;
+            CompletableFuture.runAsync(() -> {
+                try {
+                    syncConversationsToDatabase(userId, conversationsFinal);
+                } catch (Exception e) {
+                    log.warn("异步写入会话到DB失败: userId={}", userId, e);
+                }
+            });
+
+            return version;
+
+        } finally {
+            if (Boolean.TRUE.equals(locked)) {
+                redisTemplate.delete(lockKey);
+            }
+        }
+    }
+
+    /** 解析时间戳字段，兼容 Long、String、Number */
+    private long parseTimestamp(Object ts) {
+        if (ts == null) return 0;
+        if (ts instanceof Number) return ((Number) ts).longValue();
+        try {
+            return Long.parseLong(String.valueOf(ts));
+        } catch (NumberFormatException e) {
             return 0;
         }
-        long version = System.currentTimeMillis();
-        redisTemplate.opsForValue().set(dataKey, json, 90, TimeUnit.DAYS);
-        redisTemplate.opsForValue().set(versionKey, String.valueOf(version), 90, TimeUnit.DAYS);
-        log.info("对话同步成功: userId={}, count={}, version={}", userId, conversations.size(), version);
-        return version;
+    }
+
+    /** 异步将会话列表写入数据库（upsert） */
+    private void syncConversationsToDatabase(Long userId, List<Map<String, Object>> conversations) {
+        for (Map<String, Object> conv : conversations) {
+            try {
+                Object idObj = conv.get("id");
+                if (idObj == null) continue;
+                Long convId = null;
+                if (idObj instanceof Number) {
+                    convId = ((Number) idObj).longValue();
+                } else {
+                    try { convId = Long.parseLong(String.valueOf(idObj)); } catch (Exception ignored) { continue; }
+                }
+                if (convId == null) continue;
+
+                // 检查会话是否已存在（包括已逻辑删除的）
+                com.ai.gateway.entity.Conversation existing = conversationMapper.selectById(convId);
+                if (existing == null) {
+                    // 新建会话记录
+                    com.ai.gateway.entity.Conversation entity = new com.ai.gateway.entity.Conversation();
+                    entity.setId(convId);
+                    entity.setUserId(userId);
+                    entity.setTitle((String) conv.getOrDefault("title", "新对话"));
+                    entity.setModel((String) conv.getOrDefault("model", "deepseek-v4-flash"));
+                    entity.setMessageCount(conv.get("messages") instanceof List ? ((List<?>) conv.get("messages")).size() : 0);
+                    entity.setIsDeleted(0);
+                    entity.setCreateTime(java.time.LocalDateTime.now());
+                    entity.setLastMessageTime(java.time.LocalDateTime.now());
+                    try {
+                        conversationMapper.insert(entity);
+                    } catch (Exception dupEx) {
+                        // 主键冲突说明已存在，忽略
+                    }
+                } else if (existing.getIsDeleted() != null && existing.getIsDeleted() == 1) {
+                    // 会话已被用户删除，拒绝重建（防止其他设备 syncConversations 把已删除会话推回来）
+                    log.info("跳过同步已删除的会话: userId={}, convId={}", userId, convId);
+                    continue;
+                }
+            } catch (Exception e) {
+                log.debug("同步会话到DB失败: convId={}", conv.get("id"), e);
+            }
+        }
     }
 
     public List<Map<String, Object>> fetchConversations(Long userId) {
@@ -872,9 +932,9 @@ public class UserService {
             log.info("Redis缓存未命中，从数据库加载对话列表: userId={}", userId);
             return loadConversationsFromDatabase(userId);
         }
-        
+
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, List.class);
+            return objectMapper.readValue(json, List.class);
         } catch (Exception e) {
             log.error("反序列化对话失败，从数据库重新加载: userId={}", userId, e);
             return loadConversationsFromDatabase(userId);
@@ -941,7 +1001,7 @@ public class UserService {
                     .collect(Collectors.toList());
 
             // 4. 写入Redis缓存（90天过期）
-            String jsonData = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(convList);
+            String jsonData = objectMapper.writeValueAsString(convList);
             redisTemplate.opsForValue().set(CONVERSATIONS_KEY + userId, jsonData, 90, TimeUnit.DAYS);
 
             // 5. 更新版本号
@@ -969,15 +1029,88 @@ public class UserService {
         }
     }
 
-    // ========== 免费配额 ==========
+    /**
+     * 用户级每日用量统计（真实数据：token/调用次数来自 call_log，点数消耗来自 points_bill）
+     *
+     * @param days 统计天数（1-90）
+     * @return 按日聚合的列表，缺失日期补 0
+     */
+    public Map<String, Object> getDailyUsage(Long userId, int days) {
+        int safeDays = Math.min(Math.max(days, 1), 90);
+        LocalDate today = LocalDate.now();
+        LocalDate startDate = today.minusDays(safeDays - 1L);
+        LocalDateTime startDateTime = startDate.atStartOfDay();
 
-    public Map<String, Integer> getFreeQuota(Long userId) {
-        return freeLimitService.getUserFreeQuota(userId);
+        // 1. call_log 聚合：tokens / calls
+        Map<LocalDate, long[]> usageByDay = new HashMap<>(); // [tokens, calls]
+        LambdaQueryWrapper<com.ai.gateway.entity.CallLog> callWrapper = new LambdaQueryWrapper<>();
+        callWrapper.eq(com.ai.gateway.entity.CallLog::getUserId, userId)
+                .eq(com.ai.gateway.entity.CallLog::getStatus, 1)
+                .ge(com.ai.gateway.entity.CallLog::getCreateTime, startDateTime);
+        for (com.ai.gateway.entity.CallLog logEntry : callLogMapper.selectList(callWrapper)) {
+            LocalDate day = logEntry.getCreateTime().toLocalDate();
+            if (day.isBefore(startDate)) continue;
+            long[] arr = usageByDay.computeIfAbsent(day, k -> new long[2]);
+            int inTok = logEntry.getInputTokens() != null ? logEntry.getInputTokens() : 0;
+            int outTok = logEntry.getOutputTokens() != null ? logEntry.getOutputTokens() : 0;
+            arr[0] += inTok + outTok;
+            arr[1] += 1;
+        }
+
+        // 2. points_bill 聚合：点数消耗（SETTLE 为实际消耗）
+        Map<LocalDate, Double> pointsByDay = new HashMap<>();
+        LambdaQueryWrapper<PointsBill> billWrapper = new LambdaQueryWrapper<>();
+        billWrapper.eq(PointsBill::getUserId, userId)
+                .in(PointsBill::getChangeType, Arrays.asList("SETTLE", "DEDUCT"))
+                .lt(PointsBill::getPointsChange, BigDecimal.ZERO)
+                .ge(PointsBill::getCreateTime, startDateTime);
+        for (PointsBill bill : pointsBillMapper.selectList(billWrapper)) {
+            LocalDate day = bill.getCreateTime().toLocalDate();
+            if (day.isBefore(startDate)) continue;
+            double change = bill.getPointsChange() != null ? Math.abs(bill.getPointsChange().doubleValue()) : 0;
+            pointsByDay.merge(day, change, Double::sum);
+        }
+
+        // 3. 按日组装，缺失补 0
+        DateTimeFormatter labelFmt = DateTimeFormatter.ofPattern("M/d");
+        List<Map<String, Object>> daily = new ArrayList<>();
+        long totalTokens = 0, totalCalls = 0;
+        double totalPoints = 0;
+        for (int i = 0; i < safeDays; i++) {
+            LocalDate day = startDate.plusDays(i);
+            long[] usage = usageByDay.getOrDefault(day, new long[2]);
+            double points = pointsByDay.getOrDefault(day, 0D);
+            Map<String, Object> item = new HashMap<>();
+            item.put("date", day.toString());
+            item.put("label", day.format(labelFmt));
+            item.put("tokens", usage[0]);
+            item.put("calls", usage[1]);
+            item.put("points", Math.round(points * 100) / 100.0);
+            daily.add(item);
+            totalTokens += usage[0];
+            totalCalls += usage[1];
+            totalPoints += points;
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("days", safeDays);
+        result.put("daily", daily);
+        result.put("totalTokens", totalTokens);
+        result.put("totalCalls", totalCalls);
+        result.put("totalPoints", Math.round(totalPoints * 100) / 100.0);
+        return result;
     }
 
     private UserInfoVO convertToVO(User user) {
         UserInfoVO vo = new UserInfoVO();
         BeanUtils.copyProperties(user, vo);
+        UserContactVerification verifiedContact = contactVerificationMapper.selectById(user.getId());
+        vo.setEmailVerified(verifiedContact != null
+                && user.getEmail() != null
+                && user.getEmail().equals(verifiedContact.getEmail()));
+        vo.setPhoneVerified(verifiedContact != null
+                && user.getPhone() != null
+                && user.getPhone().equals(verifiedContact.getPhone()));
         return vo;
     }
 

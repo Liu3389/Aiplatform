@@ -22,7 +22,7 @@ public interface CallLogMapper extends BaseMapper<CallLog> {
     /**
      * 获取模型使用分布统计
      */
-    @Select("SELECT model, COUNT(*) as calls, SUM(cost) as cost FROM call_log GROUP BY model ORDER BY calls DESC")
+    @Select("SELECT model, COUNT(*) as calls, COALESCE(SUM(cost), 0) as points FROM call_log WHERE status = 1 GROUP BY model ORDER BY calls DESC")
     List<Map<String, Object>> getModelDistribution();
     
     /**
@@ -34,8 +34,8 @@ public interface CallLogMapper extends BaseMapper<CallLog> {
     /**
      * 统计总cost（SUM聚合）
      */
-    @Select("SELECT COALESCE(SUM(cost), 0) FROM call_log")
-    BigDecimal sumCost();
+    @Select("SELECT COALESCE(SUM(cost), 0) FROM call_log WHERE status = 1")
+    BigDecimal sumPointsConsumed();
     
     /**
      * 统计指定时间范围内的独立用户数（COUNT DISTINCT）
@@ -57,8 +57,8 @@ public interface CallLogMapper extends BaseMapper<CallLog> {
     /**
      * 按日期聚合调用数据
      */
-    @Select("<script>SELECT DATE(create_time) as date, COUNT(*) as calls, COALESCE(SUM(cost), 0) as cost, COALESCE(SUM(input_tokens + output_tokens), 0) as tokens " +
-            "FROM call_log WHERE create_time &gt;= #{startDate} AND create_time &lt; #{endDate} " +
+    @Select("<script>SELECT DATE(create_time) as date, COUNT(*) as calls, COALESCE(SUM(cost), 0) as points, COALESCE(SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)), 0) as tokens " +
+            "FROM call_log WHERE status = 1 AND create_time &gt;= #{startDate} AND create_time &lt; #{endDate} " +
             "GROUP BY DATE(create_time) ORDER BY date</script>")
     List<Map<String, Object>> aggregateByDate(@Param("startDate") LocalDateTime startDate, 
                                                @Param("endDate") LocalDateTime endDate);
@@ -73,8 +73,8 @@ public interface CallLogMapper extends BaseMapper<CallLog> {
     /**
      * 按月份聚合收入数据
      */
-    @Select("<script>SELECT DATE_FORMAT(create_time, '%Y-%m') as month, COALESCE(SUM(cost), 0) as revenue " +
-            "FROM call_log WHERE create_time &gt;= #{startDate} GROUP BY month ORDER BY month</script>")
+    @Select("<script>SELECT DATE_FORMAT(create_time, '%Y-%m') as month, COALESCE(SUM(cost), 0) as points " +
+            "FROM call_log WHERE status = 1 AND create_time &gt;= #{startDate} GROUP BY month ORDER BY month</script>")
     List<Map<String, Object>> aggregateRevenueByMonth(@Param("startDate") LocalDateTime startDate);
     
     /**
@@ -95,8 +95,8 @@ public interface CallLogMapper extends BaseMapper<CallLog> {
      * 批量获取用户调用统计
      */
     @Select("<script>" +
-            "SELECT user_id, COUNT(*) as calls, COALESCE(SUM(cost), 0) as cost " +
-            "FROM call_log WHERE user_id IN " +
+            "SELECT user_id, COUNT(*) as calls, COALESCE(SUM(cost), 0) as points " +
+            "FROM call_log WHERE status = 1 AND user_id IN " +
             "<foreach item='id' collection='userIds' open='(' separator=',' close=')'>" +
             "#{id}" +
             "</foreach>" +
@@ -107,20 +107,20 @@ public interface CallLogMapper extends BaseMapper<CallLog> {
     /**
      * 获取单个用户调用统计
      */
-    @Select("SELECT COUNT(*) as calls, COALESCE(SUM(cost), 0) as cost FROM call_log WHERE user_id = #{userId}")
+    @Select("SELECT COUNT(*) as calls, COALESCE(SUM(cost), 0) as points FROM call_log WHERE status = 1 AND user_id = #{userId}")
     Map<String, Object> getUserCallStatsSingle(@Param("userId") Long userId);
     
     /**
      * 按日期统计cost
      */
-    @Select("<script>SELECT COALESCE(SUM(cost), 0) FROM call_log WHERE create_time <![CDATA[>=]]> #{startOfDay}</script>")
-    BigDecimal sumCostByDate(@Param("startOfDay") LocalDateTime startOfDay);
+    @Select("<script>SELECT COALESCE(SUM(cost), 0) FROM call_log WHERE status = 1 AND create_time <![CDATA[>=]]> #{startOfDay}</script>")
+    BigDecimal sumPointsByDate(@Param("startOfDay") LocalDateTime startOfDay);
     
     /**
      * 获取用户消费排行
      */
-    @Select("SELECT u.id as userId, u.username, COUNT(c.id) as calls, COALESCE(SUM(c.cost), 0) as cost " +
+    @Select("SELECT u.id as userId, u.username, COUNT(c.id) as calls, COALESCE(SUM(c.cost), 0) as points " +
             "FROM call_log c LEFT JOIN user u ON c.user_id = u.id " +
-            "GROUP BY c.user_id ORDER BY cost DESC LIMIT #{limit}")
-    List<Map<String, Object>> getTopUsersByCost(int limit);
+            "WHERE c.status = 1 GROUP BY c.user_id ORDER BY points DESC LIMIT #{limit}")
+    List<Map<String, Object>> getTopUsersByPoints(int limit);
 }

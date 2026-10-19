@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -49,10 +50,9 @@ public class PointsDistributionService {
     /**
      * 每日发放点数（由定时任务调用）
      */
-    @Transactional(rollbackFor = Exception.class)
     public void distributeDailyPoints() {
         log.info("========== 开始执行每日点数发放任务 ==========");
-
+        LocalDate grantDate = LocalDate.now();
         try {
             List<User> activeUsers = userMapper.selectList(
                     new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<User>()
@@ -63,36 +63,66 @@ public class PointsDistributionService {
 
             int successCount = 0;
             int failCount = 0;
+            List<Long> failedUserIds = new ArrayList<>();
 
             for (User user : activeUsers) {
-                try {
-                    distributePointsToUser(user);
+                boolean distributed = false;
+                for (int attempt = 1; attempt <= 3 && !distributed; attempt++) {
+                    try {
+                        distributePointsToUser(user, grantDate);
+                        distributed = true;
+                    } catch (Exception e) {
+                        log.error("用户点数发放失败，将重试: userId={}, attempt={}", user.getId(), attempt, e);
+                        if (attempt < 3) {
+                            try {
+                                Thread.sleep(200L * attempt);
+                            } catch (InterruptedException interrupted) {
+                                Thread.currentThread().interrupt();
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (distributed) {
                     successCount++;
-                } catch (Exception e) {
-                    log.error("用户点数发放失败: userId={}", user.getId(), e);
+                } else {
                     failCount++;
+                    failedUserIds.add(user.getId());
                 }
             }
 
             log.info("========== 每日点数发放完成: 成功={}, 失败={} ==========", successCount, failCount);
+            if (!failedUserIds.isEmpty()) {
+                throw new IllegalStateException("每日点数发放仍有用户失败，可安全重试: " + failedUserIds);
+            }
 
         } catch (Exception e) {
             log.error("每日点数发放任务执行失败", e);
+            throw new IllegalStateException("每日点数发放任务未全部完成", e);
         }
+    }
+
+    public void distributePointsForUser(Long userId, LocalDate grantDate) {
+        User user = userMapper.selectById(userId);
+        if (user == null || !Integer.valueOf(1).equals(user.getStatus())) {
+            throw new IllegalArgumentException("用户不存在或已禁用: userId=" + userId);
+        }
+        distributePointsToUser(user, grantDate);
     }
 
     /**
      * 为单个用户发放点数
      * 规则：所有用户发放30限时点数，付费会员额外发放套餐对应永久点数
      */
-    private void distributePointsToUser(User user) {
+    private void distributePointsToUser(User user, LocalDate grantDate) {
         Long userId = user.getId();
-        LocalDateTime expireTime = LocalDate.now().plusDays(1).atStartOfDay().minusSeconds(1);
+        LocalDateTime expireTime = grantDate.plusDays(1).atStartOfDay().minusSeconds(1);
 
         // 1. 所有用户发放30限时点数
         pointsService.addTemporaryPoints(
                 userId,
                 FREE_TEMPORARY_POINTS,
+                "daily_temporary_" + grantDate + "_" + userId,
                 "DAILY_GRANT",
                 "每日免费限时点数发放（当日有效）",
                 expireTime
@@ -131,7 +161,7 @@ public class PointsDistributionService {
                 permanentPoints,
                 "DAILY_PERMANENT_GRANT",
                 "每日" + pkg.getPackageName() + "永久点数发放（可叠加）",
-                "daily_permanent_" + LocalDate.now() + "_" + userId
+                "daily_permanent_" + grantDate + "_" + userId
         );
 
         log.info("付费会员点数发放完成: userId={}, tempPoints={}, permanentPoints={}, package={}",
@@ -167,5 +197,13 @@ public class PointsDistributionService {
 
         log.info("套餐赠送点数发放成功: userId={}, points={}, package={}",
                 userId, pointsGranted, pkg.getPackageName());
+    }
+
+    public void manualDistributePoints(Long userId) {
+        if (userId == null) {
+            distributeDailyPoints();
+        } else {
+            distributePointsForUser(userId, LocalDate.now());
+        }
     }
 }

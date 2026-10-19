@@ -1,5 +1,11 @@
 import { useState, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { FrontendConversation } from '@/types'
+import { useAppStore } from '@/stores/appStore'
+import { useI18nStore } from '@/stores/i18nStore'
+import { useThemeStore } from '@/stores/themeStore'
+import NotificationBell from '@/components/NotificationBell'
+import { getUserDisplayName } from '@/utils/userDisplay'
 
 interface Props {
   conversations: FrontendConversation[]
@@ -10,8 +16,9 @@ interface Props {
   onRenameConv: (id: string, title: string) => void
   onExportConv: (conv: FrontendConversation) => void
   onToggleFav: (id: string) => void
-  onSyncToCloud: () => void
-  onCloudRestore: () => void
+  onSyncNow: () => void
+  syncState?: 'idle' | 'syncing' | 'synced' | 'error'
+  syncAt?: number | null
   onOpenMobileSidebar?: () => void
   collapsed?: boolean
   onToggleCollapsed?: () => void
@@ -23,14 +30,19 @@ interface Props {
 
 export default function ChatSidebar({
   conversations, currentConvId, onSelectConv, onNewConv, onDeleteConv,
-  onRenameConv, onExportConv, onToggleFav, onSyncToCloud, onCloudRestore, onOpenMobileSidebar,
+  onRenameConv, onExportConv, onToggleFav, onSyncNow, syncState = 'idle', syncAt, onOpenMobileSidebar,
   collapsed = false, onToggleCollapsed, isLoading = false, lang, t, isMobile = false
 }: Props) {
+  const navigate = useNavigate()
+  const { user, logout } = useAppStore()
+  const { toggleLang } = useI18nStore()
+  const { theme, toggleTheme } = useThemeStore()
+  const isDark = theme === 'dark'
+  const userDisplayName = getUserDisplayName(user, t('第三方账号', 'External account'))
   const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [showMore, setShowMore] = useState<string | null>(null)
-
   const sorted = useMemo(() => {
     const copy = [...conversations]
     copy.sort((a, b) => {
@@ -44,11 +56,13 @@ export default function ChatSidebar({
   const filtered = useMemo(() => {
     if (!search.trim()) return sorted
     const q = search.toLowerCase()
-    return sorted.filter(c => c.title.toLowerCase().includes(q))
+    // 防御 title 为空的情况（旧数据/新建未命名会话），避免 toLowerCase 崩溃白屏
+    return sorted.filter(c => (c.title || '').toLowerCase().includes(q))
   }, [sorted, search])
 
   const handleStartRename = useCallback((e: React.MouseEvent, conv: FrontendConversation) => {
     e.stopPropagation()
+    setShowMore(null)  // 关闭下拉菜单，避免遮挡编辑输入框
     setEditingId(conv.id)
     setEditValue(conv.title)
   }, [])
@@ -75,9 +89,15 @@ export default function ChatSidebar({
     onExportConv(conv)
   }, [onExportConv])
 
+  const handleLogout = useCallback(() => {
+    if (!window.confirm(t('确定退出登录吗？', 'Are you sure you want to log out?'))) return
+    logout()
+    navigate('/login', { replace: true })
+  }, [logout, navigate, t])
+
   return (
     <aside
-      className={`flex flex-col border-r flex-shrink-0 transition-all duration-300 overflow-hidden ${isMobile ? 'h-screen' : 'hidden lg:flex'}`}
+      className={`flex flex-col border-r flex-shrink-0 transition-all duration-300 overflow-hidden ${isMobile ? 'h-screen' : 'hidden lg:flex h-full'}`}
       style={{
         width: collapsed ? '52px' : '280px',
         borderColor: 'var(--border-color)',
@@ -85,53 +105,46 @@ export default function ChatSidebar({
       }}
     >
       {collapsed ? (
-        <div className="flex flex-col items-center gap-2 py-4 h-full">
-          <button onClick={onToggleCollapsed} className="p-2 rounded-lg transition-all hover:scale-110"
-            style={{ color: 'var(--text-dim)' }} title={t('展开侧边栏', 'Expand sidebar')}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+        <div className="flex min-h-0 flex-1 flex-col items-center gap-2 py-3">
+          <button onClick={onToggleCollapsed} className="motion-interactive rounded-lg p-2"
+            style={{ color: 'var(--text-dim)' }} title={t('展开侧边栏', 'Expand sidebar')} aria-label={t('展开侧边栏', 'Expand sidebar')}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
           </button>
-          <button onClick={onNewConv} className="w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 hover:scale-105"
+          <button onClick={onNewConv} className="motion-interactive flex h-9 w-9 items-center justify-center rounded-xl"
             style={{ background: 'var(--accent-purple-soft)', color: 'var(--accent-purple)' }}
-            title={t('新对话', 'New Chat')}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            title={t('新对话', 'New Chat')} aria-label={t('新对话', 'New Chat')}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           </button>
-          <div className="flex-1 flex flex-col gap-1.5 overflow-y-auto w-full px-2 pt-2">
+          <div className="flex w-full flex-1 flex-col gap-1.5 overflow-y-auto px-2 pt-2">
             {sorted.slice(0, 8).map(c => (
               <button key={c.id} onClick={() => onSelectConv(c.id)}
-                className="w-2 h-2 rounded-full mx-auto transition-all hover:scale-150"
+                className="motion-interactive mx-auto h-2 w-2 rounded-full"
                 style={{ background: c.id === currentConvId ? 'var(--accent-purple)' : 'var(--text-dim)', opacity: c.id === currentConvId ? 1 : 0.35 }}
-                title={c.title} />
+                title={c.title} aria-label={c.title} />
             ))}
           </div>
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between px-4 h-12 border-b flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex h-14 flex-shrink-0 items-center justify-between border-b px-4" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-                style={{ background: 'linear-gradient(135deg, #6366F1, #3B82F6)' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
-                </svg>
-              </div>
-              <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                {t('对话', 'Conversations')}
-              </span>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+              <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{t('对话', 'Conversations')}</span>
             </div>
             <div className="flex items-center gap-1">
-              <button onClick={onNewConv} className="p-1.5 rounded-lg transition-all hover:scale-110"
-                style={{ color: 'var(--text-dim)' }} title={t('新对话', 'New Chat')}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <button onClick={onNewConv} className="motion-interactive rounded-lg p-1.5"
+                style={{ color: 'var(--text-dim)' }} title={t('新对话', 'New Chat')} aria-label={t('新对话', 'New Chat')}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
               </button>
               {isMobile ? (
-                <button onClick={onOpenMobileSidebar} className="p-1.5 rounded-lg transition-all hover:scale-110"
-                  style={{ color: 'var(--text-dim)' }} title={t('关闭', 'Close')}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <button onClick={onOpenMobileSidebar} className="motion-interactive rounded-lg p-1.5"
+                  style={{ color: 'var(--text-dim)' }} title={t('关闭', 'Close')} aria-label={t('关闭', 'Close')}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                 </button>
               ) : onToggleCollapsed ? (
-                <button onClick={onToggleCollapsed} className="p-1.5 rounded-lg transition-all hover:scale-110"
-                  style={{ color: 'var(--text-dim)' }} title={t('收起侧边栏', 'Collapse sidebar')}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                <button onClick={onToggleCollapsed} className="motion-interactive rounded-lg p-1.5"
+                  style={{ color: 'var(--text-dim)' }} title={t('收起侧边栏', 'Collapse sidebar')} aria-label={t('收起侧边栏', 'Collapse sidebar')}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
                 </button>
               ) : null}
             </div>
@@ -158,7 +171,7 @@ export default function ChatSidebar({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-2 py-1 min-h-0">
+          <div className="page-scroll flex-1 overflow-y-auto px-2 py-1 min-h-0">
             {isLoading ? (
               <div className="flex flex-col items-center justify-center py-12 gap-3">
                 <div className="typing-indicator"><span /><span /><span /></div>
@@ -279,17 +292,48 @@ export default function ChatSidebar({
           </div>
 
           {!isLoading && (
-            <div className="flex-shrink-0 px-3 py-2.5 border-t" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <div className="flex items-center gap-2">
-                <button onClick={onSyncToCloud} className="flex-1 py-2 rounded-xl text-[10px] font-medium transition-all hover:scale-[1.02] active:scale-[0.98]"
-                  style={{ background: 'var(--accent-purple-soft)', color: 'var(--accent-purple)' }}>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="inline mr-1"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>
-                  {t('同步到云端', 'Sync to Cloud')}
+            <div className="flex flex-shrink-0 flex-col border-t" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+              <div className="px-3 py-2.5" style={{ borderColor: 'var(--border-light)' }}>
+                <div className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: syncState === 'error' ? 'var(--accent-rose)' : syncState === 'syncing' ? 'var(--accent-amber)' : 'var(--accent-emerald)' }} />
+                  <span className="min-w-0 flex-1 truncate text-[10px]" style={{ color: 'var(--text-dim)' }}>
+                    {syncState === 'syncing'
+                      ? t('正在自动同步…', 'Syncing automatically…')
+                      : syncState === 'error'
+                        ? t('自动同步失败', 'Automatic sync failed')
+                        : syncState === 'synced'
+                          ? `${t('已自动同步', 'Synced automatically')}${syncAt ? ` · ${formatSyncTime(syncAt)}` : ''}`
+                          : t('自动同步已开启', 'Automatic sync is on')}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onSyncNow}
+                    disabled={syncState === 'syncing'}
+                    className="motion-interactive flex h-7 w-7 shrink-0 items-center justify-center rounded-lg disabled:opacity-40"
+                    style={{ color: 'var(--accent-purple)' }}
+                    aria-label={t('立即同步', 'Sync now')}
+                    title={t('立即同步', 'Sync now')}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 11a8 8 0 0 0-14.8-4L3 9" /><path d="M3 4v5h5" /><path d="M4 13a8 8 0 0 0 14.8 4L21 15" /><path d="M21 20v-5h-5" /></svg>
+                  </button>
+                </div>
+                <p className="mt-1 pl-3.5 text-[9px]" style={{ color: 'var(--text-dim)' }}>{t('切换账号后自动加载对应会话', 'Each account loads its own conversations')}</p>
+              </div>
+              <div className="flex items-center gap-1 border-t px-3 py-2" style={{ borderColor: 'var(--border-light)' }}>
+                <button type="button" onClick={() => navigate('/user')} className="motion-interactive flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left hover:bg-[var(--hover-bg)]" title={t('个人中心', 'Profile')}>
+                  <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>{userDisplayName[0]?.toUpperCase() || 'U'}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }} title={userDisplayName}>{userDisplayName || t('当前账户', 'Account')}</span>
+                    <span className="block truncate text-[9px]" style={{ color: 'var(--text-dim)' }}>{user?.membership || t('个人工作区', 'Personal workspace')}</span>
+                  </span>
                 </button>
-                <button onClick={onCloudRestore} className="flex-1 py-2 rounded-xl text-[10px] font-medium transition-all hover:scale-[1.02] active:scale-[0.98]"
-                  style={{ background: 'var(--accent-blue-soft)', color: 'var(--accent-blue)' }}>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="inline mr-1"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  {t('云端恢复', 'Cloud Restore')}
+                <NotificationBell />
+                <button type="button" onClick={toggleTheme} className="motion-interactive rounded-lg p-1.5" style={{ color: 'var(--text-dim)' }} aria-label={isDark ? t('切换明亮模式', 'Use light mode') : t('切换深色模式', 'Use dark mode')} title={isDark ? t('切换明亮模式', 'Use light mode') : t('切换深色模式', 'Use dark mode')}>
+                  {isDark ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></svg> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" /></svg>}
+                </button>
+                <button type="button" onClick={toggleLang} className="motion-interactive rounded-lg px-1.5 py-1 text-[9px] font-medium" style={{ color: 'var(--text-dim)' }} aria-label={lang === 'zh' ? 'English' : '中文'}>{lang === 'zh' ? 'EN' : '中'}</button>
+                <button type="button" onClick={handleLogout} className="motion-interactive rounded-lg p-1.5" style={{ color: 'var(--text-dim)' }} aria-label={t('退出登录', 'Log out')} title={t('退出登录', 'Log out')}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /><path d="M21 19V5a2 2 0 0 0-2-2h-6" /></svg>
                 </button>
               </div>
             </div>
@@ -313,4 +357,8 @@ function formatRelativeTime(ts: number, lang: string, _t: (zh: string, en: strin
   if (days < 7) return `${days}${lang === 'zh' ? '天前' : 'd ago'}`
   const d = new Date(ts)
   return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+function formatSyncTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }

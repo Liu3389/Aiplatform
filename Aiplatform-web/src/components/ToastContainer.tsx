@@ -1,5 +1,6 @@
 import { useToastStore } from '@/stores/toastStore'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Z } from '@/constants/zIndex'
 
 export default function ToastContainer() {
   const { toasts, removeToast } = useToastStore()
@@ -19,7 +20,7 @@ export default function ToastContainer() {
   }
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+    <div className="fixed top-4 right-4 flex flex-col gap-2 max-w-sm w-full pointer-events-none" style={{ zIndex: Z.TOAST }}>
       <AnimatePresence>
         {toasts.map((t) => (
           <motion.div

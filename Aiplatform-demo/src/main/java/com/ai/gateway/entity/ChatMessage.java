@@ -32,6 +32,9 @@ public class ChatMessage {
      */
     private Long userId;
 
+    /** AI 对话请求幂等键；普通历史消息为空。 */
+    private String requestId;
+
     /**
      * 角色：user/assistant/system
      */
@@ -66,6 +69,11 @@ public class ChatMessage {
      * 元数据（JSON格式）
      */
     private String metadata;
+
+    /**
+     * 思考耗时（秒），仅 AI 消息有值
+     */
+    private Double thinkingTime;
 
     /**
      * 创建时间

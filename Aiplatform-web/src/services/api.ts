@@ -1,4 +1,5 @@
-import type { ApiResult, ChatRequest } from '@/types';
+import type { ApiResult, ChatMessagePageVO, ChatRequest, SearchInfo } from '@/types';
+import { recordAuthSessionNotice, recoverUnauthorized } from './authResponseRecovery'
 
 const BASE_URL = '/api';
 
@@ -11,6 +12,22 @@ class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+function httpUnauthorizedResult<T>(): ApiResult<T> {
+  return { code: 401, message: 'HTTP 401', data: undefined as T, timestamp: Date.now() }
+}
+
+async function readApiResponse<T>(response: Response): Promise<ApiResult<T>> {
+  if (response.ok) return await response.json()
+  if (response.status === 401) {
+    try {
+      const body = await response.clone().json() as Partial<ApiResult<T>>
+      if (body?.code === 401) return { ...httpUnauthorizedResult<T>(), ...body }
+    } catch {}
+    return httpUnauthorizedResult<T>()
+  }
+  throw new ApiError(response.status, 'HTTP ' + response.status + ': ' + response.statusText)
 }
 
 async function refreshTokenIfNeeded(): Promise<boolean> {
@@ -67,24 +84,39 @@ async function request<T>(
     headers,
   });
 
-  if (!response.ok) {
-    throw new ApiError(response.status, 'HTTP ' + response.status + ': ' + response.statusText);
+  let result: ApiResult<T> = await readApiResponse<T>(response)
+
+  if (result.code === 401) {
+    result = await recoverUnauthorized(
+      result,
+      async () => {
+        const refreshedToken = localStorage.getItem('lingdian_token')
+        if (!refreshedToken) return result
+        const retryResponse = await fetch(url, {
+          ...options,
+          headers: { ...headers, 'X-User-Token': refreshedToken },
+        })
+        return await readApiResponse<T>(retryResponse)
+      },
+      refreshTokenIfNeeded,
+      async () => {
+        recordAuthSessionNotice(sessionStorage)
+        localStorage.removeItem('lingdian_token')
+        localStorage.removeItem('lingdian_uid')
+        sessionStorage.removeItem('ld_active_apikey')
+        try {
+          const { useAppStore } = await import('@/stores/appStore')
+          useAppStore.getState().logout()
+        } catch {}
+      },
+    )
   }
 
-  const result: ApiResult<T> = await response.json();
+  if (result.code === 401 && result.message?.includes('锁定')) {
+    return result.data as unknown as T
+  }
 
   if (result.code !== 200) {
-    if (result.code === 401) {
-      await refreshTokenIfNeeded()
-      if (result.message?.includes('锁定')) return result.data as unknown as T
-      localStorage.removeItem('lingdian_token');
-      localStorage.removeItem('lingdian_uid');
-      sessionStorage.removeItem('ld_active_apikey');
-      try {
-        const { useAppStore } = await import('@/stores/appStore');
-        useAppStore.getState().logout();
-      } catch {}
-    }
     throw new ApiError(result.code, result.message, result.data);
   }
 
@@ -92,7 +124,9 @@ async function request<T>(
 }
 
 export const authApi = {
-  register: (data: { username: string; password: string; email?: string }) =>
+  getRegisterCaptcha: () => request<{ captchaId: string; image: string; expiresIn: number }>('/auth/register/captcha'),
+  getLoginCaptcha: () => request<{ captchaId: string; image: string; expiresIn: number }>('/auth/login/captcha'),
+  register: (data: { username: string; password: string; captchaId: string; captchaCode: string }) =>
     request<{
       id: number;
       username: string;
@@ -102,46 +136,67 @@ export const authApi = {
       status: string;
     }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
 
-  login: (data: { username: string; password: string }) =>
+  login: (data: { username: string; password: string; captchaId: string; captchaCode: string; twoFactorCode?: string }) =>
     request<{
       token: string;
       userInfo: { id: number; username: string; email: string | null; balance: number; role: string; status: string; freeApiStrategy: string; createTime: string };
     }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
 
   logout: () => request<null>('/auth/logout', { method: 'POST' }),
-  getOAuthUrl: (provider: string) => request<{ url: string; state: string; provider: string }>('/auth/oauth/url?provider=' + provider),
-  oauthCallback: (provider: string, code: string, state: string) => request<{ token: string; userInfo: { id: number; username: string; email: string | null; balance: number; role: string; status: string; freeApiStrategy: string; createTime: string } }>('/auth/oauth/callback', { method: 'POST', body: JSON.stringify({ provider, code, state }) }),
-  oauthBind: (provider: string, code: string) => request<null>('/auth/oauth/bind', { method: 'POST', body: JSON.stringify({ provider, code }) }),
+  getOAuthUrl: (provider: string, purpose: 'login' | 'bind' = 'login') => request<{ url: string; state: string; provider: string; purpose: string }>(`/auth/oauth/url?provider=${encodeURIComponent(provider)}&purpose=${purpose}`),
+  oauthCallback: (provider: string, code: string, state: string) => request<{ mode: 'login' | 'bind'; token?: string; deviceId?: string; userInfo?: { id: number; username: string; email: string | null; balance: number; role: string; status: string; freeApiStrategy: string; createTime: string }; requiresTwoFactor: boolean; challengeToken?: string }>('/auth/oauth/callback', { method: 'POST', body: JSON.stringify({ provider, code, state }) }),
+  oauthComplete: (challengeToken: string, twoFactorCode: string) => request<{ token: string; deviceId: string; userInfo: { id: number; username: string; email: string | null; balance: number; role: string; status: string; freeApiStrategy: string; createTime: string } }>('/auth/oauth/complete', { method: 'POST', body: JSON.stringify({ challengeToken, twoFactorCode }) }),
+  oauthBindings: () => request<{ provider: string; displayName: string; email: string | null }[]>('/auth/oauth/bindings'),
   oauthUnbind: (provider: string) => request<null>('/auth/oauth/unbind', { method: 'POST', body: JSON.stringify({ provider }) }),
-  getUserInfo: () => request<{ id: number; username: string; email: string | null; balance: number; role: string; status: string; membership: string; createTime: string }>('/auth/userinfo'),
+  getUserInfo: () => request<{ id: number; username: string; email: string | null; emailVerified: boolean; phone: string | null; phoneVerified: boolean; balance: number; role: string; status: string; membership: string; createTime: string }>('/auth/userinfo'),
   getBalance: () => request<number>('/auth/balance'),
 };
+
+export interface UsageAnalytics {
+  startDate: string
+  endDate: string
+  timezone: string
+  calls: Array<{
+    date: string
+    model: string
+    calls: number
+    inputTokens: number
+    outputTokens: number
+  }>
+  points: Array<{
+    date: string
+    model: string
+    points: number
+  }>
+}
 
 export const userApi = {
   request: <T>(opts: { method?: string; url: string; headers?: Record<string, string>; data?: any; params?: Record<string, any> }): Promise<T> =>
     request<T>(opts.url, { method: opts.method || 'GET', headers: opts.headers, body: opts.data ? JSON.stringify(opts.data) : undefined }),
-  getInfo: () => request<{ id: number; username: string; email: string | null; balance: number; role: string; status: string; membership: string; freeApiStrategy: string; freeQuota: number; dailyCallLimit: number; monthlyCallLimit: number; points: number; membershipExpireTime?: string; createTime: string }>('/user/info'),
+  getInfo: () => request<{ id: number; username: string; email: string | null; emailVerified: boolean; phone: string | null; phoneVerified: boolean; balance: number; role: string; status: string; membership: string; freeApiStrategy: string; freeQuota: number; dailyCallLimit: number; monthlyCallLimit: number; points: number; membershipExpireTime?: string; createTime: string }>('/user/info'),
   getBalance: () => request<number>('/user/balance'),
-  getFreeQuota: () => request<{ usedCalls: number; maxCalls: number; usedTokens: number; maxTokens: number; monthlyPoints: number }>('/user/free-quota'),
-  recharge: (amount: number) => request<null>('/user/recharge?amount=' + amount, { method: 'POST' }),
+  getUsageDaily: (days = 7) => request<{
+    days: number
+    daily: { date: string; label: string; tokens: number; calls: number; points: number }[]
+    totalTokens: number
+    totalCalls: number
+    totalPoints: number
+  }>('/user/usage/daily?days=' + days),
+  getUsageAnalytics: () => request<UsageAnalytics>('/user/usage/analytics'),
   changePassword: (oldPassword: string, newPassword: string) => request<null>('/user/change-password', { method: 'POST', body: JSON.stringify({ oldPassword, newPassword }) }),
   syncConversations: (conversations: any[]) => request<{ version: number; count: number }>('/user/conversations/sync', { method: 'POST', body: JSON.stringify(conversations) }),
   fetchConversations: () => request<{ conversations: any[]; redisConversations: any[]; version: number }>('/user/conversations/fetch'),
   getConversationVersion: () => request<{ version: number }>('/user/conversations/version'),
   clearCloudConversations: () => request<null>('/user/conversations/clear', { method: 'DELETE' }),
-  getConversationMessages: (conversationId: string, limit = 15) => request<{ messages: any[]; hasMore: boolean; nextCursor?: string }>('/conversations/' + conversationId + '/messages/latest?limit=' + limit),
-  getRechargeRecords: (page = 1, size = 20) => request<any[]>('/user/recharge-records?page=' + page + '&size=' + size),
+  deleteConversation: (conversationId: string) => request<null>(`/user/conversations/${conversationId}`, { method: 'DELETE' }),
+  getConversationMessages: (conversationId: string, limit = 15) => request<ChatMessagePageVO>('/user/conversations/' + conversationId + '/messages/latest?limit=' + limit),
+  deleteMessage: (conversationId: string, role: string, content: string) =>
+    request<null>('/user/conversations/' + conversationId + '/messages', { method: 'DELETE', body: JSON.stringify({ role, content }) }),
+  getRechargeRecords: (page = 1, size = 20) => request<{ records: any[]; total: number; page: number; size: number }>('/user/recharge-records?page=' + page + '&size=' + size),
   getPointsBills: (page = 1, size = 20, changeType?: string) => {
     let url = '/user/points-bills?page=' + page + '&size=' + size
     if (changeType) url += '&changeType=' + changeType
     return request<{ records: any[]; total: number; page: number; size: number }>(url)
-  },
-};
-
-export const modelStoreApi = {
-  list: () => request<any[]>('/platform-model/list'),
-  detail: (id: number) => {
-    return request<any[]>('/platform-model/list').then(models => models.find((m: any) => m.id === id) || null)
   },
 };
 
@@ -175,7 +230,7 @@ export const userApiKeyApi = {
 };
 
 export const modelApi = {
-  list: () => request<Array<{ id: number; modelName: string; provider: string; baseUrl: string; inputPrice: number; outputPrice: number; status: number }>>('/platform-model/list'),
+  list: () => request<import('@/types').PlatformModelSummary[]>('/platform-model/list'),
   getAvailable: () => request<import('@/types').AvailableModel[]>('/platform-model/available'),
 };
 
@@ -232,6 +287,187 @@ export async function ensureApiKey(): Promise<string | undefined> {
   return undefined;
 }
 
+type StreamEventCallbacks = {
+  onMessage?: (content: string) => void
+  onDone?: (data: {
+    finished?: boolean
+    message?: string
+    inputTokens?: number
+    outputTokens?: number
+    cost?: number
+    conversationId?: number
+    pointsConsumed?: number
+  }) => void
+  onError?: (error: string) => void
+  onSearch?: (stage: string | undefined, data: SearchInfo) => void
+  onStatus?: (stage: string, message?: string) => void
+  onCancelled?: () => void
+}
+
+/**
+ * Consume the platform SSE contract in one place.
+ *
+ * The server deliberately has an explicit `done` event. Reaching EOF without
+ * that event is an interrupted response, not a successful empty response.
+ * Keeping this rule shared by text and file chats prevents the two paths from
+ * drifting and leaving the UI stuck or showing a false settlement.
+ */
+async function consumeSseStream(response: Response, callbacks: StreamEventCallbacks, signal?: AbortSignal): Promise<void> {
+  if (!response.body) {
+    callbacks.onError?.('无法读取响应流')
+    return
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let abortedByCaller = false
+  let timedOut = false
+  let terminal: 'done' | 'error' | 'cancelled' | null = null
+  let buffer = ''
+  let eventName = ''
+  let dataLines: string[] = []
+  let chunkCount = 0
+  let idleTimer: ReturnType<typeof setTimeout> | null = null
+
+  const clearIdleTimer = () => {
+    if (idleTimer) clearTimeout(idleTimer)
+    idleTimer = null
+  }
+
+  const armIdleTimer = () => {
+    clearIdleTimer()
+    // 后端上游超时为 60 秒；前端再留出少量网络缓冲，但不能让断开的
+    // 连接把界面永久留在“思考中”。
+    idleTimer = setTimeout(() => {
+      timedOut = true
+      // response 已经建立后，新的 AbortController 无法取消原始 fetch；
+      // 必须取消 reader，才能让 read() 结束并进入统一的超时终态。
+      void reader.cancel('idle timeout').catch(() => {})
+    }, 75_000)
+  }
+
+  const abortFromCaller = () => {
+    abortedByCaller = true
+    void reader.cancel('caller abort').catch(() => {})
+  }
+
+  if (signal) {
+    if (signal.aborted) abortFromCaller()
+    else signal.addEventListener('abort', abortFromCaller, { once: true })
+  }
+
+  const finishDone = (data: StreamEventCallbacks['onDone'] extends ((data: infer T) => void) | undefined ? T : never) => {
+    if (terminal) return
+    terminal = 'done'
+    clearIdleTimer()
+    callbacks.onDone?.(data)
+  }
+
+  const finishError = (message: string) => {
+    if (terminal) return
+    terminal = 'error'
+    clearIdleTimer()
+    callbacks.onError?.(message || '对话服务异常')
+  }
+
+  const dispatchEvent = () => {
+    const payload = dataLines.join('\n').trim()
+    const currentEvent = eventName || 'message'
+    eventName = ''
+    dataLines = []
+    if (!payload || terminal) return
+
+    if (payload === '[DONE]') {
+      finishDone({ finished: true })
+      return
+    }
+
+    try {
+      const data = JSON.parse(payload) as Record<string, any>
+      if (currentEvent === 'message') {
+        if (typeof data.content === 'string' && data.content.length > 0) {
+          callbacks.onMessage?.(data.content)
+          chunkCount += 1
+        }
+      } else if (currentEvent === 'search') {
+        callbacks.onSearch?.(data.stage, data as SearchInfo)
+      } else if (currentEvent === 'status') {
+        callbacks.onStatus?.(String(data.stage || ''), data.message)
+      } else if (currentEvent === 'done') {
+        finishDone(data)
+      } else if (currentEvent === 'error') {
+        finishError(String(data.message || '对话服务异常'))
+      }
+    } catch (error) {
+      console.warn('[SSE] Cannot parse event:', payload.slice(0, 200), error)
+    }
+  }
+
+  const processLine = (line: string) => {
+    if (line === '') {
+      dispatchEvent()
+      return
+    }
+    if (line.startsWith(':')) return
+    if (line.startsWith('event:')) {
+      eventName = line.slice(6).trim()
+    } else if (line.startsWith('data:')) {
+      // SSE permits multiple data lines in one event. Do not discard newlines
+      // before JSON parsing; this also handles providers that pretty-print.
+      dataLines.push(line.slice(5).replace(/^\s/, ''))
+    }
+  }
+
+  try {
+    armIdleTimer()
+    while (true) {
+      const { done, value } = await reader.read()
+      if (value && value.byteLength > 0) {
+        armIdleTimer()
+        buffer += decoder.decode(value, { stream: !done })
+        const lines = buffer.split(/\r?\n/)
+        buffer = lines.pop() || ''
+        for (const line of lines) processLine(line)
+      }
+
+      if (done) {
+        // Flush the decoder and the final unterminated line/event. Spring's
+        // emitter normally ends with a blank line, but proxies are allowed to
+        // close immediately after the last data line.
+        buffer += decoder.decode()
+        if (buffer) processLine(buffer)
+        dispatchEvent()
+        if (abortedByCaller && !terminal) {
+          terminal = 'cancelled'
+          clearIdleTimer()
+          callbacks.onCancelled?.()
+        } else if (!terminal) {
+          finishError(timedOut
+            ? '响应超时，当前内容已保留，请稍后重试'
+            : '响应连接已中断，当前内容已保留，请点击重试')
+        }
+        console.log(`[SSE] Stream ended. chunks=${chunkCount}, terminal=${terminal}`)
+        break
+      }
+    }
+  } catch (error) {
+    if ((error as Error)?.name === 'AbortError') {
+      if (timedOut) finishError('响应超时，当前内容已保留，请稍后重试')
+      else if (abortedByCaller && !terminal) {
+        terminal = 'cancelled'
+        clearIdleTimer()
+        callbacks.onCancelled?.()
+      }
+      return
+    }
+    finishError((error as Error)?.message || '连接错误')
+  } finally {
+    clearIdleTimer()
+    signal?.removeEventListener('abort', abortFromCaller)
+    try { reader.releaseLock() } catch {}
+  }
+}
+
 export const chatApi = {
   nonStream: (
     data: ChatRequest & { customApiKey?: string; customBaseUrl?: string; customFormat?: string }
@@ -252,8 +488,10 @@ export const chatApi = {
     data: ChatRequest & { customApiKey?: string; customBaseUrl?: string; customFormat?: string },
     callbacks: {
       onMessage: (content: string) => void
-      onDone: (finished: boolean, inputTokens?: number, outputTokens?: number, cost?: number) => void
+      onDone: (finished: boolean, inputTokens?: number, outputTokens?: number, cost?: number, conversationId?: number, pointsConsumed?: number) => void
       onError: (error: string) => void
+      onSearch?: (stage: string | undefined, data: SearchInfo) => void
+      onCancelled?: () => void
     },
     signal?: AbortSignal
   ): Promise<void> => {
@@ -283,91 +521,23 @@ export const chatApi = {
         }
 
         console.log('[SSE] Response received, starting to read stream...')
-        const reader = response.body?.getReader()
-        if (!reader) { 
-          console.error('[SSE] No response body reader available')
-          callbacks.onError('无法读取响应流')
-          return 
-        }
-
-        const decoder = new TextDecoder()
-        let buffer = ''
-        let receivedDone = false
-        let eventType = ''
-        let dataLine = ''
-        let debugChunkCount = 0
-
-        while (true) {
-          const { done, value } = await reader.read()
-
-          if (value) {
-            buffer += decoder.decode(value, { stream: !done })
-          }
-
-          const lines = buffer.split(/\r?\n/)
-          buffer = lines.pop() || ''
-
-          for (const line of lines) {
-            const t = line.trim()
-
-            if (t === '') {
-              if (dataLine && dataLine !== '[DONE]') {
-                try {
-                  const json = JSON.parse(dataLine)
-                  if (eventType === 'message') {
-                    if (json.content) {
-                      callbacks.onMessage(json.content)
-                      debugChunkCount++
-                    }
-                  } else if (eventType === 'done') {
-                    receivedDone = true
-                    console.log(`[SSE] Done. Total chunks received: ${debugChunkCount}, tokens: in=${json.inputTokens}, out=${json.outputTokens}`)
-                    callbacks.onDone(true, json.inputTokens || 0, json.outputTokens || 0, json.cost || 0)
-                  } else if (eventType === 'error') {
-                    callbacks.onError(json.message || '发生错误')
-                  }
-                } catch {
-                  console.warn('SSE parse error:', dataLine.slice(0, 200))
-                }
-              }
-              eventType = ''
-              dataLine = ''
-              continue
-            }
-
-            if (t.startsWith(':')) continue
-
-            if (t.startsWith('event:')) {
-              eventType = t.slice(6).trim()
-            } else if (t.startsWith('data:')) {
-              const dataPart = t.slice(5).trim()
-              if (dataLine) dataLine += '\n' + dataPart
-              else dataLine = dataPart
-            }
-          }
-
-          if (done) {
-            if (dataLine && dataLine !== '[DONE]') {
-              try {
-                const json = JSON.parse(dataLine)
-                if (eventType === 'message' && json.content) {
-                  callbacks.onMessage(json.content)
-                  debugChunkCount++
-                }
-                else if (eventType === 'done') {
-                  receivedDone = true
-                  callbacks.onDone(true, json.inputTokens || 0, json.outputTokens || 0, json.cost || 0)
-                }
-              } catch { console.warn('SSE final parse error:', dataLine.slice(0, 200)) }
-            }
-            console.log(`[SSE] Stream ended. Total chunks: ${debugChunkCount}`)
-            if (!receivedDone) callbacks.onDone(true, 0, 0, 0)
-            break
-          }
-        }
+        await consumeSseStream(response, {
+          onMessage: callbacks.onMessage,
+          onSearch: callbacks.onSearch,
+          onError: callbacks.onError,
+          onCancelled: callbacks.onCancelled,
+          onDone: (done) => callbacks.onDone(
+            done.finished !== false,
+            done.inputTokens,
+            done.outputTokens,
+            done.cost,
+            done.conversationId,
+            done.pointsConsumed,
+          ),
+        }, signal)
       } catch (err) {
         if ((err as Error).name === 'AbortError') {
-          console.log('[SSE] Request aborted by user')
+          callbacks.onCancelled?.()
           return
         }
         console.error('[SSE] Stream error:', err)
@@ -381,11 +551,11 @@ export const chatApi = {
 export type AdminUserInfo = {
   id: number; username: string; email: string | null; balance: number;
   role: string; status: string; membership: string; apiKeyCount: number; totalCalls: number;
-  totalCost: number; createTime: string;
+    totalPointsConsumed: number; createTime: string;
 };
 
 export const adminApi = {
-  getStats: () => request<{ totalUsers: number; activeUsers: number; totalApiKeys: number; totalCalls: number; totalCost: number; todayCalls: number; todayCost: number }>('/admin/stats'),
+  getStats: () => request<{ totalUsers: number; activeUsers: number; totalApiKeys: number; totalCalls: number; totalPointsConsumed: number; todayCalls: number; todayPointsConsumed: number }>('/admin/stats'),
   getUsers: (params?: { page?: number; size?: number; search?: string; membership?: string; status?: string }) => {
     const qs = new URLSearchParams()
     if (params?.page) qs.set('page', String(params.page))
@@ -406,11 +576,11 @@ export const adminApi = {
   assignAdminRole: (userId: number, role: 'ADMIN' | 'SUPER_ADMIN') => request<null>('/admin/assign-role', { method: 'POST', body: JSON.stringify({ userId, role }) }),
   getAnalytics: (days = 7, months = 6) => request<{
     totalUsers: number; activeUsers: number; totalApiKeys: number;
-    totalCalls: number; totalCost: number; todayCalls: number; todayCost: number;
+    totalCalls: number; totalPointsConsumed: number; todayCalls: number; todayPointsConsumed: number;
     users: Array<{
       id: number; username: string; email: string | null; balance: number;
       role: string; status: string; apiKeyCount: number; totalCalls: number;
-      totalCost: number; createTime: string;
+      totalPointsConsumed: number; createTime: string;
     }>;
     dailyUsage: Array<Record<string, unknown>>;
     modelUsage: Array<Record<string, unknown>>;
@@ -423,11 +593,71 @@ export const adminApi = {
     totalRevenue: number; todayRevenue: number; monthRevenue: number;
     subscriptionRevenue: number; rechargeRevenue: number;
   }>('/admin/platform/revenue'),
+  getSystemStatus: () => request<{
+    backend: { status: string; uptimeSeconds: number; usedMemoryMB: number; maxMemoryMB: number };
+    mysql: { status: string; latencyMs?: number; error?: string };
+    redis: { status: string; latencyMs?: number; error?: string };
+    docker: { status: string; latencyMs?: number; error?: string };
+    timestamp: number;
+  }>('/admin/components/status'),
 };
+
+// ==================== 系统控制 API（需二级密码） ====================
+
+export interface ContainerStatus {
+  name: string
+  containerName: string
+  status: string
+  running: boolean
+  state: string
+  image: string
+  startedAt: string
+}
+
+/** 从 sessionStorage 获取二级密码验证 Token */
+function getSecondaryToken(): string {
+  return sessionStorage.getItem('lingdian_secondary_token') || ''
+}
+
+export const systemControlApi = {
+  verify: (password: string) =>
+    request<{ token: string; expiresIn: number; dockerAvailable: boolean }>('/admin/system/verify', {
+      method: 'POST', body: JSON.stringify({ password }),
+    }),
+  getStatus: () =>
+    request<ContainerStatus[]>('/admin/system/status', {
+      headers: { 'X-Secondary-Token': getSecondaryToken() },
+    }),
+  startContainer: (name: string) =>
+    request<string>(`/admin/system/container/${name}/start`, {
+      method: 'POST', headers: { 'X-Secondary-Token': getSecondaryToken() },
+    }),
+  stopContainer: (name: string) =>
+    request<string>(`/admin/system/container/${name}/stop`, {
+      method: 'POST', headers: { 'X-Secondary-Token': getSecondaryToken() },
+    }),
+  restartContainer: (name: string) =>
+    request<string>(`/admin/system/container/${name}/restart`, {
+      method: 'POST', headers: { 'X-Secondary-Token': getSecondaryToken() },
+    }),
+  startEnvironment: () =>
+    request<string>('/admin/system/environment/start', {
+      method: 'POST', headers: { 'X-Secondary-Token': getSecondaryToken() },
+    }),
+  stopEnvironment: () =>
+    request<string>('/admin/system/environment/stop', {
+      method: 'POST', headers: { 'X-Secondary-Token': getSecondaryToken() },
+    }),
+  getLogs: (name: string, lines = 100) =>
+    request<string[]>(`/admin/system/logs/${name}?lines=${lines}`, {
+      headers: { 'X-Secondary-Token': getSecondaryToken() },
+    }),
+}
 
 export const pointsApi = {
   getBalance: () => request<number>('/user/points'),
   getInfo: () => request<import('@/types').UserPointsInfo>('/user/points/info'),
+  getConsumptionSummary: () => request<{ todayConsumed: number; monthConsumed: number; totalConsumed: number; remainingPoints: number }>('/user/points/consumption-summary'),
   getBills: (page = 1, size = 20, changeType?: string) => {
     const qs = new URLSearchParams()
     qs.set('page', String(page))
@@ -438,18 +668,24 @@ export const pointsApi = {
 };
 
 export const rechargeApi = {
-  recharge: (amount: number) =>
-    request<null>('/user/recharge?amount=' + amount, { method: 'POST' }),
-  rechargeWithCoupon: (amount: number, couponId?: number) =>
-    request<Map<string, any>>('/user/recharge-with-coupon', { method: 'POST', body: JSON.stringify({ amount, couponId }) }),
   getRecords: (page = 1, size = 20) =>
-    request<any[]>('/user/recharge-records?page=' + page + '&size=' + size),
+    request<{ records: any[]; total: number; page: number; size: number }>('/user/recharge-records?page=' + page + '&size=' + size),
 };
 
+export interface UserCouponSummary {
+  id: number;
+  code: string;
+  name: string;
+  type: 'CASH';
+  value: number;
+  minAmount: number;
+  applicablePlan?: string | null;
+  expireTime?: string | null;
+  status: 'AVAILABLE' | 'USED' | 'EXPIRED';
+}
+
 export const userCouponApi = {
-  list: () => request<any[]>('/user/coupons'),
-  redeem: (redeemCode: string) => request<null>('/user/coupons/redeem', { method: 'POST', body: JSON.stringify({ redeemCode }) }),
-  use: (code: string) => request<any>('/user/coupons/use', { method: 'POST', body: JSON.stringify({ code }) }),
+  list: () => request<UserCouponSummary[]>('/user/coupons'),
 };
 
 export const bindApi = {
@@ -459,14 +695,14 @@ export const bindApi = {
 };
 
 export const twoFAApi = {
-  getStatus: () => request<{ enabled: boolean }>('/user/2fa/status'),
+  getStatus: () => request<{ enabled: boolean; backupCodesRemaining: number }>('/user/2fa/status'),
   enable: () => request<{ secret: string }>('/user/2fa/enable', { method: 'POST' }),
-  verify: (code: string) => request<boolean>('/user/2fa/verify', { method: 'POST', body: JSON.stringify({ code }) }),
+  verify: (code: string) => request<{ enabled: boolean; backupCodes: string[] }>('/user/2fa/verify', { method: 'POST', body: JSON.stringify({ code }) }),
   disable: (code: string) => request<null>('/user/2fa/disable', { method: 'POST', body: JSON.stringify({ code }) }),
 };
 
 export const loginDeviceApi = {
-  list: () => request<any[]>('/user/login-devices'),
+  list: () => request<{ deviceId: string; info: string; lastActive: string; isCurrent: boolean }[]>('/user/login-devices'),
   remove: (deviceId: string) => request<null>('/user/login-devices/remove', { method: 'POST', body: JSON.stringify({ deviceId }) }),
   removeAll: (exceptCurrent?: boolean) => request<null>('/user/login-devices/remove-all', { method: 'POST', body: JSON.stringify({ exceptCurrent: exceptCurrent ? 'true' : 'false' }) }),
 };
@@ -484,6 +720,7 @@ export const subscriptionApi = {
   getPackages: () => request<any[]>('/user/subscriptions/packages'),
   getCurrent: () => request<any>('/user/subscriptions/current'),
   getHistory: () => request<any[]>('/user/subscriptions/history'),
+  getHistoryPage: (page = 1, size = 20) => request<{ records: any[]; total: number; current: number; size: number }>('/user/subscriptions/history/page?page=' + page + '&size=' + size),
   purchase: (packageCode: string, cycle = 'MONTHLY', couponId?: number) =>
     request<any>('/user/subscriptions/purchase', { method: 'POST', body: JSON.stringify({ packageCode, cycle, couponId }) }),
   cancel: (subscriptionId: number) =>
@@ -506,6 +743,12 @@ export const adminMembershipApi = {
     request<null>('/admin/membership/update', { method: 'POST', body: JSON.stringify({ userId, membership }) }),
   setExpireTime: (userId: number, expireTime: string) =>
     request<null>('/admin/membership/set-expire-time', { method: 'POST', body: JSON.stringify({ userId, expireTime }) }),
+};
+
+// 余额调整（仅超级管理员可用，后端 403 校验）
+export const adminBalanceApi = {
+  adjust: (userId: number, balance: number, reason?: string) =>
+    request<null>('/admin/balance/adjust', { method: 'POST', body: JSON.stringify({ userId, balance, reason }) }),
 };
 
 export const adminBatchApi = {
@@ -593,13 +836,116 @@ export const adminCouponApi = {
     request<{ sent: number; amount: number }>('/admin/coupons/send', { method: 'POST', body: JSON.stringify(data) }),
 };
 
+export const adminFinanceApi = {
+  rechargeList: (params?: { page?: number; size?: number; startDate?: string; endDate?: string }) => {
+    const qs = new URLSearchParams()
+    if (params?.page) qs.set('page', String(params.page))
+    if (params?.size) qs.set('size', String(params.size))
+    if (params?.startDate) qs.set('startDate', params.startDate)
+    if (params?.endDate) qs.set('endDate', params.endDate)
+    return request<{ records: any[]; total: number; page: number; size: number }>('/admin/finance/recharge/list?' + qs.toString())
+  },
+  consumptionList: (params?: { page?: number; size?: number; startDate?: string; endDate?: string }) => {
+    const qs = new URLSearchParams()
+    if (params?.page) qs.set('page', String(params.page))
+    if (params?.size) qs.set('size', String(params.size))
+    if (params?.startDate) qs.set('startDate', params.startDate)
+    if (params?.endDate) qs.set('endDate', params.endDate)
+    return request<{ records: any[]; total: number; page: number; size: number }>('/admin/finance/consumption/list?' + qs.toString())
+  },
+  ordersList: (params?: { page?: number; size?: number; status?: string; startDate?: string; endDate?: string }) => {
+    const qs = new URLSearchParams()
+    if (params?.page) qs.set('page', String(params.page))
+    if (params?.size) qs.set('size', String(params.size))
+    if (params?.status) qs.set('status', params.status)
+    if (params?.startDate) qs.set('startDate', params.startDate)
+    if (params?.endDate) qs.set('endDate', params.endDate)
+    return request<{ records: any[]; total: number; page: number; size: number; totalPaid: number }>('/admin/finance/orders/list?' + qs.toString())
+  },
+};
+
+export type AiChargeReviewQueueItem = {
+  requestId: string;
+  userId: number;
+  reservedPoints: number;
+  modelName: string;
+  upstreamStartedAt?: string | null;
+  createTime: string;
+  updateTime: string;
+  reason: string;
+};
+
+export type AiChargeReviewAudit = {
+  requestId: string;
+  userId: number;
+  adminId: number;
+  action: 'REFUND' | 'SETTLE';
+  actualPoints?: number | null;
+  evidence: string;
+  status: 'PENDING' | 'RESOLVED' | 'FAILED';
+  lastError?: string | null;
+  createTime: string;
+  updateTime: string;
+  completedAt?: string | null;
+};
+
+export type AiChargeReviewResolution = {
+  requestId: string;
+  userId: number;
+  action: 'REFUND' | 'SETTLE';
+  status: 'PENDING' | 'RESOLVED' | 'FAILED';
+  intentStatus: string;
+  actualPoints?: number | null;
+  message: string;
+};
+
+type AdminPage<T> = { records: T[]; total: number; page: number; size: number };
+
+export const adminAiChargeReviewApi = {
+  queue: (params?: { page?: number; size?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set('page', String(params.page));
+    if (params?.size) qs.set('size', String(params.size));
+    return request<AdminPage<AiChargeReviewQueueItem>>('/admin/ai-charge-intents/manual-review?' + qs.toString());
+  },
+  history: (params?: { page?: number; size?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set('page', String(params.page));
+    if (params?.size) qs.set('size', String(params.size));
+    return request<AdminPage<AiChargeReviewAudit>>('/admin/ai-charge-intents/reconciliations?' + qs.toString());
+  },
+  resolve: (requestId: string, data: { action: 'REFUND' | 'SETTLE'; actualPoints?: number; evidence: string }) =>
+    request<AiChargeReviewResolution>(`/admin/ai-charge-intents/${encodeURIComponent(requestId)}/resolve`, {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+};
+
+export const adminStatsApi = {
+  /** 统计数据对账验证 */
+  consistencyCheck: () => request<{
+    items: Array<{
+      metric: string; source: string; sourceValue: string;
+      rawTable: string; rawValue: string; diff: string;
+      diffPercent: string; status: string; message: string;
+    }>;
+    summary: { total: number; ok: number; warn: number; error: number; overallStatus: string; elapsedMs: number };
+  }>('/admin/stats/consistency-check'),
+  /** 手动重算统计缓存 */
+  recalculate: () => request<{ clearedKeys: number }>('/admin/stats/recalculate', { method: 'POST' }),
+};
+
 export const conversationApi = {
   getLatestMessages: (conversationId: number, limit = 10) =>
-    request<any>('/user/conversations/' + conversationId + '/messages/latest?limit=' + limit),
-  getMessagesByCursor: (conversationId: number, lastId?: number, limit = 10) =>
-    request<any>('/user/conversations/messages/page', {
+    request<ChatMessagePageVO>('/user/conversations/' + conversationId + '/messages/latest?limit=' + limit),
+  getMessagesByCursor: (conversationId: number, lastId?: number, limit = 10, lastCreateTime?: string) =>
+    request<ChatMessagePageVO>('/user/conversations/messages/page', {
       method: 'POST',
-      body: JSON.stringify({ conversationId, lastId: lastId || null, limit }),
+      body: JSON.stringify({
+        conversationId,
+        lastId: lastId || null,
+        lastCreateTime: lastCreateTime || null,
+        limit,
+      }),
     }),
   clearCache: () => request<null>('/user/conversations/cache/clear', { method: 'POST' }),
 };
@@ -712,7 +1058,14 @@ export const aiDocApi = {
     onError?: (error: Error) => void
   }, signal?: AbortSignal) => {
     const poll = async () => {
+      const startTime = Date.now()
+      const TIMEOUT_MS = 90000 // 90秒超时，大文件解析需要更长时间
       while (!signal?.aborted) {
+        // 超时检查：防止后端异步解析卡住导致前端永远轮询
+        if (Date.now() - startTime > TIMEOUT_MS) {
+          callbacks.onError?.(new Error('文件解析超时，请重试'))
+          return
+        }
         try {
           const status = await aiDocApi.getParseStatus(fileId)
           callbacks.onStatus?.(status)
@@ -750,20 +1103,29 @@ export const aiDocApi = {
     question: string,
     callbacks: {
       onContent?: (text: string) => void
-      onDone?: (message: string) => void
+      onDone?: (message: string, conversationId?: number, inputTokens?: number, outputTokens?: number, cost?: number, pointsConsumed?: number) => void
       onError?: (error: string) => void
       onStatus?: (stage: string, message?: string) => void
+      onSearch?: (stage: string | undefined, data: SearchInfo) => void
+      onCancelled?: () => void
     },
     signal?: AbortSignal,
     model?: string,
-    conversationId?: string
+    conversationId?: string,
+    filesMeta?: Array<{ fileId: string; fileName: string; fileSize: number; fileType: string; ossUrl?: string; uploadTime: number }>,
+    fileUrls?: string[],
+    idempotencyKey?: string
   ) => {
     const token = localStorage.getItem('lingdian_token')
     console.log('[SSE with files] Starting stream request to:', '/chat/stream-with-files')
+    // 透传文件元数据和 fileUrls，让后端 saveChatMessages 持久化到消息的 metadata 字段
+    const body: Record<string, any> = { fileIds, question, model, conversationId, mode: 'paid', idempotencyKey }
+    if (filesMeta && filesMeta.length > 0) body.files = filesMeta
+    if (fileUrls && fileUrls.length > 0) body.fileUrls = fileUrls
     return fetch('/chat/stream-with-files', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-User-Token': token || '' },
-      body: JSON.stringify({ fileIds, question, model, conversationId }),
+      body: JSON.stringify(body),
       signal,
     }).then(async response => {
       if (!response.ok) {
@@ -772,168 +1134,21 @@ export const aiDocApi = {
         throw new Error(errText || `请求失败 (${response.status})`)
       }
       console.log('[SSE with files] Response received, reading stream...')
-      const reader = response.body?.getReader()
-      if (!reader) {
-        console.error('[SSE with files] No response body reader')
-        throw new Error('不支持流式读取')
-      }
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let eventName = ''
-      let dataLine = ''
-      let chunkCount = 0
-      
-      const processSSELine = (line: string) => {
-        const t = line.trim()
-        
-        if (t === '') {
-          if (dataLine) {
-            try {
-              const data = JSON.parse(dataLine)
-              if (eventName === 'message') {
-                callbacks.onContent?.(data.content || '')
-                chunkCount++
-              } else if (eventName === 'done') {
-                callbacks.onDone?.(data.message || '对话完成')
-              } else if (eventName === 'error') {
-                callbacks.onError?.(data.message || '未知错误')
-              }
-            } catch (e) {
-              console.warn('[SSE with files] Parse error:', dataLine.slice(0, 200), e)
-            }
-            dataLine = ''
-          }
-          eventName = ''
-          return
-        }
-        if (t.startsWith(':')) return
-        if (t.startsWith('event:')) {
-          eventName = t.slice(6).trim()
-        } else if (t.startsWith('data:')) {
-          const dataPart = t.slice(5).trim()
-          if (dataLine) dataLine += '\n' + dataPart
-          else dataLine = dataPart
-        }
-      }
-      
-      while (true) {
-        const { done, value } = await reader.read()
-        if (value) {
-          const text = decoder.decode(value, { stream: !done })
-          buffer += text
-          const lines = buffer.split(/\r?\n/)
-          buffer = lines.pop() || ''
-          for (const line of lines) {
-            processSSELine(line)
-          }
-        }
-        if (done) {
-          if (buffer) {
-            const lines = buffer.split(/\r?\n/)
-            for (const line of lines) {
-              processSSELine(line)
-            }
-          }
-          if (dataLine) {
-            try {
-              const data = JSON.parse(dataLine)
-              if (eventName === 'message') {
-                callbacks.onContent?.(data.content || '')
-                chunkCount++
-              } else if (eventName === 'done') {
-                callbacks.onDone?.(data.message || '对话完成')
-              }
-            } catch {}
-          }
-          console.log(`[SSE with files] Stream ended. Total chunks: ${chunkCount}`)
-          break
-        }
-      }
-    }).catch(err => {
-      if ((err as Error).name === 'AbortError') {
-        console.log('[SSE with files] Request aborted')
-      } else {
-        console.error('[SSE with files] Error:', err)
-      }
-      throw err
-    })
-  },
-  /** 文件对话流式输出 SSE (旧接口，保留兼容) */
-  chatStream: (
-    file: File,
-    question: string,
-    callbacks: {
-      onStatus?: (stage: string, message: string) => void
-      onContent?: (text: string) => void
-      onDone?: (message: string) => void
-      onError?: (error: string) => void
-    },
-    signal?: AbortSignal
-  ) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('question', question)
-    const token = localStorage.getItem('lingdian_token')
-    return fetch('/api/v1/ai-doc/chat/stream', {
-      method: 'POST',
-      headers: { 'X-User-Token': token || '' },
-      body: formData,
-      signal,
-    }).then(async response => {
-      if (!response.ok) {
-        const errText = await response.text()
-        throw new Error(errText || `请求失败 (${response.status})`)
-      }
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('不支持流式读取')
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let eventName = ''
-      let dataLine = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (value) buffer += decoder.decode(value, { stream: !done })
-
-        const lines = buffer.split(/\r?\n/)
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          const t = line.trim()
-          if (t === '') {
-            if (dataLine) {
-              try {
-                const data = JSON.parse(dataLine)
-                if (eventName === 'status') callbacks.onStatus?.(data.stage, data.message)
-                else if (eventName === 'content') callbacks.onContent?.(data.text || '')
-                else if (eventName === 'done') callbacks.onDone?.(data.message || '对话完成')
-                else if (eventName === 'error') callbacks.onError?.(data.message || '未知错误')
-              } catch {}
-            }
-            eventName = ''
-            dataLine = ''
-            continue
-          }
-          if (t.startsWith(':')) continue
-          if (t.startsWith('event:')) eventName = t.slice(6).trim()
-          else if (t.startsWith('data:')) {
-            const dataPart = t.slice(5).trim()
-            if (dataLine) dataLine += '\n' + dataPart
-            else dataLine = dataPart
-          }
-        }
-
-        if (done) {
-          if (dataLine) {
-            try {
-              const data = JSON.parse(dataLine)
-              if (eventName === 'status') callbacks.onStatus?.(data.stage, data.message)
-              else if (eventName === 'content') callbacks.onContent?.(data.text || '')
-              else if (eventName === 'done') callbacks.onDone?.(data.message || '对话完成')
-            } catch {}
-          }
-          break
-        }
-      }
+      await consumeSseStream(response, {
+        onMessage: callbacks.onContent,
+        onSearch: callbacks.onSearch,
+        onStatus: callbacks.onStatus,
+        onError: callbacks.onError,
+        onCancelled: callbacks.onCancelled,
+        onDone: (done) => callbacks.onDone?.(
+          done.message || '对话完成',
+          done.conversationId,
+          done.inputTokens,
+          done.outputTokens,
+          done.cost,
+          done.pointsConsumed || 0,
+        ),
+      }, signal)
     })
   },
   exportResult: (content: string, format = 'md') => {
@@ -946,13 +1161,6 @@ export const aiDocApi = {
       return r.blob()
     })
   },
-};
-
-export const deprecatedSubscriptionApi = {
-  get: () => request<any>('/user/subscription'),
-  subscribe: (plan: string, paymentMethod: string) =>
-    request<null>('/user/subscription/subscribe', { method: 'POST', body: JSON.stringify({ plan, paymentMethod }) }),
-  cancel: () => request<null>('/user/subscription/cancel', { method: 'POST' }),
 };
 
 export { request, ApiError };

@@ -1,6 +1,7 @@
 package com.ai.gateway.aspect;
 
 import com.ai.gateway.annotation.RequireAdmin;
+import com.ai.gateway.common.Constants;
 import com.ai.gateway.common.ResultCode;
 import com.ai.gateway.entity.User;
 import com.ai.gateway.exception.BusinessException;
@@ -34,14 +35,14 @@ public class AdminAuthAspect {
         try {
             ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
             if (attributes == null) {
-                throw new BusinessException("无法获取请求上下文");
+                throw new BusinessException(ResultCode.UNAUTHORIZED, "无法获取请求上下文");
             }
             
             HttpServletRequest request = attributes.getRequest();
             String token = request.getHeader("X-User-Token");
             
             if (token == null || token.isEmpty()) {
-                throw new BusinessException("缺少认证Token");
+                throw new BusinessException(ResultCode.UNAUTHORIZED, "缺少认证Token");
             }
             
             Long userId;
@@ -49,16 +50,16 @@ public class AdminAuthAspect {
                 userId = tokenService.getUserIdFromToken(token);
             } catch (Exception e) {
                 log.error("Token验证异常: path={}, error={}", request.getRequestURI(), e.getMessage());
-                throw new BusinessException("Token验证失败，请重新登录");
+                throw new BusinessException(ResultCode.UNAUTHORIZED, "Token验证失败，请重新登录");
             }
             
             if (userId == null) {
-                throw new BusinessException("Token无效或已过期");
+                throw new BusinessException(ResultCode.UNAUTHORIZED, "Token无效或已过期");
             }
             
             User user = userService.getUserEntityById(userId);
-            if (user == null) {
-                throw new BusinessException("用户不存在");
+            if (user == null || Integer.valueOf(Constants.USER_STATUS_DISABLED).equals(user.getStatus())) {
+                throw new BusinessException(ResultCode.UNAUTHORIZED, "用户不存在或已禁用");
             }
             
             String role = user.getRole();

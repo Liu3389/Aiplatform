@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/stores/appStore'
-import { userApi, modelApi } from '@/services/api'
+import { modelApi } from '@/services/api'
 import { motion, useInView, useScroll, useTransform } from 'framer-motion'
 import * as echarts from 'echarts'
 import { useThemeStore } from '@/stores/themeStore'
 import { useI18nStore } from '@/stores/i18nStore'
+import { providerDisplayName } from '@/components/ProviderIcon'
+import type { PlatformModelSummary } from '@/types'
 
 type ECharts = echarts.ECharts
 
@@ -64,21 +66,12 @@ export default function HomePage() {
   const [scrolled, setScrolled] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const [stats, setStats] = useState({ balance: 0, todayTokens: 0, userPoints: 0, freeLimit: 50000 })
-  const [models, setModels] = useState<any[]>([])
+  const [models, setModels] = useState<PlatformModelSummary[]>([])
   const chartRef = useRef<ECharts | null>(null)
   const chart2Ref = useRef<ECharts | null>(null)
 
   useEffect(() => {
     (async () => {
-      try {
-        const [b, c, q] = await Promise.all([
-          userApi.getBalance().catch(() => 0),
-          userApi.getFreeQuota().catch(() => ({ usedTokens: 0, maxTokens: 50000 })),
-          userApi.getFreeQuota().catch(() => ({ monthlyPoints: 0 })),
-        ])
-        setStats({ balance: Number(b) || 0, todayTokens: c.usedTokens || 0, userPoints: q.monthlyPoints || 0, freeLimit: c.maxTokens || 50000 })
-      } catch {}
       try { const m = await modelApi.list(); setModels(m || []) } catch {}
     })()
   }, [])
@@ -137,7 +130,7 @@ export default function HomePage() {
   }, [])
 
   return (
-    <div className="overflow-y-auto" style={{ background: 'var(--bg-primary)' }}>
+    <div className="page-scroll overflow-y-auto" style={{ background: 'var(--bg-primary)' }}>
       {/* ============ STICKY HEADER ============ */}
       <header className="fixed top-0 left-0 right-0 z-50 transition-all duration-300" style={{
         background: scrolled ? (isDark ? 'rgba(15,15,20,0.85)' : 'rgba(255,255,255,0.85)') : 'transparent',
@@ -356,9 +349,9 @@ export default function HomePage() {
               {
                 icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
                 titleZh: '精确计费引擎', titleEn: 'Precision Billing',
-                descZh: '基于 Redis Lua 的原子性计费，按 Token 精确扣点，消费明细透明可追溯，每一分钱都清清楚楚',
+                descZh: '基于 Redis Lua 的原子性计费，按模型规则精确扣点，消费明细透明可追溯，每一点数都清清楚楚',
                 descEn: 'Atomic billing via Redis Lua, per-token precision, transparent and traceable spending',
-                tagsZh: ['原子扣点', '实时余额', '消费追溯'], tagsEn: ['Atomic', 'Real-time', 'Traceable'],
+                tagsZh: ['原子扣点', '点数余额', '消费追溯'], tagsEn: ['Atomic', 'Points', 'Traceable'],
                 color: colors[3],
               },
               {
@@ -456,24 +449,32 @@ export default function HomePage() {
               {lang === 'zh' ? '模型生态' : 'Model Ecosystem'}
             </span>
             <h2 className="text-2xl sm:text-3xl font-bold mb-3" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
-              {lang === 'zh' ? '接入 20+ 主流 AI 模型' : '20+ Leading AI Models Available'}
+              {lang === 'zh'
+                ? `已接入 ${models.filter(m => m.chatEnabled).length} 款 AI 模型`
+                : `${models.filter(m => m.chatEnabled).length} AI models connected`}
             </h2>
             <p className="text-sm max-w-lg mx-auto" style={{ color: 'var(--text-dim)' }}>
-              {lang === 'zh' ? '从对话生成到代码编写，从图像理解到语音合成，覆盖全场景 AI 能力' : 'From chat to code, vision to speech — covering all AI scenarios'}
+              {lang === 'zh' ? '模型服务接入后即可在对话工作区中使用' : 'Connected models are ready to use in the chat workspace'}
             </p>
           </FadeIn>
 
           {models.length > 0 && (
+            models.some(m => m.chatEnabled) ? (
             <StaggerGroup className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {models.filter(m => m.status === 1).slice(0, 12).map((m, i) => (
-                <div key={i} className="group rounded-xl p-4 border transition-all duration-200 hover:border-[var(--border-accent)] cursor-pointer" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                  <div className="text-xs font-semibold mb-1 truncate" style={{ color: 'var(--text-primary)' }}>{m.name}</div>
+              {models.filter(m => m.chatEnabled).slice(0, 12).map((m) => (
+                <div key={m.id} className="group rounded-xl p-4 border transition-all duration-200 hover:border-[var(--border-accent)]" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                  <div className="text-xs font-semibold mb-1 truncate" style={{ color: 'var(--text-primary)' }}>{m.displayName}</div>
                   <div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
-                    {m.provider || lang === 'zh' ? '通用模型' : 'General Model'}
+                    {m.provider ? providerDisplayName(m.provider) : lang === 'zh' ? '通用模型' : 'General Model'}
                   </div>
                 </div>
               ))}
             </StaggerGroup>
+            ) : (
+              <div className="rounded-xl border p-5 text-center text-sm" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)', color: 'var(--text-dim)' }}>
+                {lang === 'zh' ? '模型服务正在配置中，暂时没有可用模型。' : 'Model services are being configured; no models are available yet.'}
+              </div>
+            )
           )}
         </div>
       </section>
@@ -595,9 +596,9 @@ export default function HomePage() {
           </div>
           <div className="flex items-center gap-4">
             {['文档', 'API', '状态', '隐私'].map((l, i) => (
-              <button key={i} className="text-[11px] transition-colors hover:text-[var(--accent-purple)]" style={{ color: 'var(--text-dim)' }}>
+              <span key={i} className="text-[11px]" style={{ color: 'var(--text-dim)' }}>
                 {lang === 'zh' ? l : ['Docs', 'API', 'Status', 'Privacy'][i]}
-              </button>
+              </span>
             ))}
           </div>
         </div>

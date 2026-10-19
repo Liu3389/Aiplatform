@@ -65,12 +65,15 @@ public class DataArchiveService {
                     ChatMessageHistory history = new ChatMessageHistory();
                     history.setConversationId(msg.getConversationId());
                     history.setUserId(msg.getUserId());
+                    history.setRequestId(msg.getRequestId());
                     history.setRole(msg.getRole());
                     history.setContent(msg.getContent());
                     history.setModel(msg.getModel());
                     history.setTokens(msg.getTokens());
                     history.setFileUrls(msg.getFileUrls());
+                    history.setFileIds(msg.getFileIds());
                     history.setMetadata(msg.getMetadata());
+                    history.setThinkingTime(msg.getThinkingTime());
                     history.setOriginalCreateTime(msg.getCreateTime());
                     history.setArchiveTime(LocalDateTime.now());
                     return history;

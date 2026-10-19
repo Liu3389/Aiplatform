@@ -28,7 +28,7 @@ public class PointsBill implements Serializable {
     private Long userId;
 
     /**
-     * 变动类型：RECHARGE-充值, DEDUCT-扣除, GRANT-发放, EXPIRE-过期清零, REFUND-退款
+     * 变动类型：DAILY_GRANT/DAILY_PERMANENT_GRANT/GRANT/DEDUCT/SETTLE/ROLLBACK/EXPIRE
      */
     private String changeType;
 

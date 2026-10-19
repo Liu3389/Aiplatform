@@ -21,11 +21,14 @@ public class FileParseTaskService {
 
     private final FileParseTaskMapper fileParseTaskMapper;
     private final ChatMessageService chatMessageService;
+    private final OssService ossService;
 
     public FileParseTaskService(FileParseTaskMapper fileParseTaskMapper,
-                                ChatMessageService chatMessageService) {
+                                ChatMessageService chatMessageService,
+                                OssService ossService) {
         this.fileParseTaskMapper = fileParseTaskMapper;
         this.chatMessageService = chatMessageService;
+        this.ossService = ossService;
     }
 
     /**
@@ -98,6 +101,10 @@ public class FileParseTaskService {
 
     /**
      * 转换实体为VO
+     * <p>
+     * 注意：ossUrl 字段经过 ossService.toAccessibleUrl() 转换，
+     * 将 local:// 前缀的本地存储路径转换为 /api/uploads/ 前缀的 HTTP URL，
+     * 确保前端浏览器可直接访问（OSS 降级场景下也能正常打开文件）
      */
     private FileDetailVO convertToVO(FileParseTask task) {
         FileDetailVO vo = new FileDetailVO();
@@ -106,7 +113,7 @@ public class FileParseTaskService {
         vo.setFileType(task.getFileType());
         vo.setFileSize(task.getFileSize());
         vo.setParseStatus(task.getParseStatus());
-        vo.setOssUrl(task.getOssUrl());
+        vo.setOssUrl(ossService.toAccessibleUrl(task.getOssUrl()));
         vo.setTextSummary(task.getTextSummary());
         vo.setParsedTextLength(task.getParsedTextLength());
         vo.setUploadTime(task.getUploadTime());

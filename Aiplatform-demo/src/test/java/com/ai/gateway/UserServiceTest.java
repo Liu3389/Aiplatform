@@ -31,7 +31,7 @@ class UserServiceTest {
         
         assertNotNull(userInfo);
         assertEquals(request.getUsername(), userInfo.getUsername());
-        assertEquals(request.getEmail(), userInfo.getEmail());
+        assertNull(userInfo.getEmail(), "signup must not persist an unverified email");
         assertNotNull(userInfo.getId());
     }
 
@@ -39,7 +39,7 @@ class UserServiceTest {
     void testGetBalance() {
         // 先创建一个测试用户
         UserRegisterRequest request = new UserRegisterRequest();
-        request.setUsername("balance_test_user");
+        request.setUsername("balance_test_user_" + System.currentTimeMillis());
         request.setPassword("123456");
         
         UserInfoVO userInfo = userService.register(request);

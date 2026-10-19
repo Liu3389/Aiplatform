@@ -58,6 +58,8 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  scrollbar-color: var(--border-color) transparent;
+  scrollbar-width: thin;
 }
 
 body {
@@ -166,10 +168,10 @@ body {
   50% { border-color: rgba(139, 92, 246, 0.5); }
 }
 
-/* Typing dots bounce */
+/* Typing dots bounce (上下浮动) */
 @keyframes typing-dot {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30% { transform: translateY(-6px); opacity: 1; }
+  30% { transform: translateY(-8px); opacity: 1; }
 }
 
 /* Spin slow for decorative elements */
@@ -445,22 +447,26 @@ body {
   to { transform: rotate(360deg); }
 }
 
-/* Typing indicator — 3 bouncing dots */
+/* Typing indicator — 3 bouncing dots (上下浮动) */
 .typing-indicator {
   display: flex;
-  gap: 4px;
+  gap: 5px;
   align-items: center;
   padding: 8px 0;
 }
 .typing-indicator span {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: rgba(139, 92, 246, 0.6);
+  background: rgba(139, 92, 246, 0.65);
   animation: typing-dot 1.4s ease-in-out infinite;
 }
-.typing-indicator span:nth-child(2) { animation-delay: 0.15s; }
-.typing-indicator span:nth-child(3) { animation-delay: 0.3s; }
+.typing-indicator span:nth-child(2) { animation-delay: 0.18s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.36s; }
+/* 手机端点稍大更易触碰视觉 */
+@media (max-width: 640px) {
+  .typing-indicator span { width: 8px; height: 8px; }
+}
 
 /* =====================================================
    TRANSITIONS

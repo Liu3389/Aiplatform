@@ -54,6 +54,7 @@ public class UserSubscriptionService {
             // 标记为已过期
             subscription.setStatus("EXPIRED");
             userSubscriptionMapper.updateById(subscription);
+            syncUserMembershipFromCurrentSubscription(userId);
             return null;
         }
         
@@ -68,6 +69,18 @@ public class UserSubscriptionService {
         wrapper.eq(UserSubscription::getUserId, userId)
                .orderByDesc(UserSubscription::getStartTime);
         return userSubscriptionMapper.selectList(wrapper);
+    }
+
+    /**
+     * 分页查询订阅历史，避免个人中心一次性加载全部历史记录。
+     */
+    public Page<UserSubscription> getSubscriptionHistoryPage(Long userId, int page, int size) {
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        LambdaQueryWrapper<UserSubscription> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(UserSubscription::getUserId, userId)
+                .orderByDesc(UserSubscription::getCreateTime);
+        return userSubscriptionMapper.selectPage(new Page<>(safePage, safeSize), wrapper);
     }
 
     /**
@@ -92,6 +105,10 @@ public class UserSubscriptionService {
         boolean isRenewal = false;
         boolean isUpgrade = false;
 
+        if ("free".equalsIgnoreCase(packageCode)) {
+            throw new IllegalArgumentException("免费用户无需购买套餐");
+        }
+
         if (currentSubscription != null) {
             // 如果购买的是同一套餐，提示续费
             if (currentSubscription.getPackageCode().equals(packageCode)) {
@@ -102,14 +119,21 @@ public class UserSubscriptionService {
                 int currentLevel = getPackageLevel(currentSubscription.getPackageCode());
                 int newLevel = getPackageLevel(packageCode);
                 isUpgrade = newLevel > currentLevel;
-                log.info("用户{}套餐: userId={}, from={}, to={}",
-                        isUpgrade ? "升级" : "降级", userId, currentSubscription.getPackageCode(), packageCode);
+                if (newLevel < currentLevel) {
+                    throw new IllegalArgumentException("当前会员等级更高，不能购买低级套餐，请选择续费或升级");
+                }
+                log.info("用户升级套餐: userId={}, from={}, to={}",
+                        userId, currentSubscription.getPackageCode(), packageCode);
             }
         }
 
         // 默认订阅周期为月度
         if (cycle == null || cycle.isEmpty()) {
             cycle = "MONTHLY";
+        }
+        cycle = cycle.toUpperCase();
+        if (!"MONTHLY".equals(cycle) && !"QUARTERLY".equals(cycle) && !"YEARLY".equals(cycle)) {
+            throw new IllegalArgumentException("订阅周期不支持");
         }
 
         // 2. 计算价格和优惠（根据订阅周期选择价格）
@@ -160,7 +184,8 @@ public class UserSubscriptionService {
             }
             log.info("购买套餐原子扣费成功: userId={}, amount={}", userId, actualPrice);
         }
-        LocalDateTime startTime = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime startTime = now;
         LocalDateTime expireTime = null;
         // 根据订阅周期计算过期时间
         switch (cycle) {
@@ -175,30 +200,58 @@ public class UserSubscriptionService {
                 break;
         }
 
-        // 4. 创建订阅记录
-        UserSubscription subscription = new UserSubscription();
-        subscription.setUserId(userId);
-        subscription.setPackageId(pkg.getId());
-        subscription.setPackageCode(pkg.getPackageCode());
-        subscription.setPackageName(pkg.getPackageName());
-        subscription.setIdentityLabel(pkg.getIdentityLabel());
-        subscription.setPointsGranted(pkg.getPointsGranted());
-        subscription.setPricePaid(actualPrice);
-        subscription.setStartTime(startTime);
-        subscription.setExpireTime(expireTime);
-        subscription.setStatus("ACTIVE");
-        subscription.setAutoRenew(false);
-        subscription.setOrderId("SUB_" + System.currentTimeMillis());
-        subscription.setCouponId(usedCouponId);
-        subscription.setDiscountAmount(discount);
-        subscription.setCreateTime(LocalDateTime.now());
-        subscription.setUpdateTime(LocalDateTime.now());
-        
-        userSubscriptionMapper.insert(subscription);
+        // 4. 同级购买是续费：从当前到期时间继续顺延；升级则结束旧订阅后创建新订阅。
+        UserSubscription subscription;
+        String orderId = "SUB_" + System.currentTimeMillis() + "_" + userId;
+        if (isRenewal && currentSubscription != null) {
+            LocalDateTime baseTime = currentSubscription.getExpireTime() != null
+                    && currentSubscription.getExpireTime().isAfter(now)
+                    ? currentSubscription.getExpireTime() : now;
+            expireTime = addCycle(baseTime, cycle);
+            startTime = currentSubscription.getStartTime() != null ? currentSubscription.getStartTime() : now;
+            subscription = currentSubscription;
+            BigDecimal previousPaid = currentSubscription.getPricePaid() != null
+                    ? currentSubscription.getPricePaid() : BigDecimal.ZERO;
+            subscription.setPricePaid(previousPaid.add(actualPrice));
+            subscription.setExpireTime(expireTime);
+            subscription.setStatus("ACTIVE");
+            subscription.setAutoRenew(false);
+            subscription.setOrderId(orderId);
+            subscription.setCouponId(usedCouponId);
+            subscription.setDiscountAmount(discount);
+            subscription.setUpdateTime(now);
+            userSubscriptionMapper.updateById(subscription);
+        } else {
+            if (currentSubscription != null && isUpgrade) {
+                currentSubscription.setStatus("CANCELLED");
+                currentSubscription.setAutoRenew(false);
+                currentSubscription.setUpdateTime(now);
+                userSubscriptionMapper.updateById(currentSubscription);
+            }
+
+            subscription = new UserSubscription();
+            subscription.setUserId(userId);
+            subscription.setPackageId(pkg.getId());
+            subscription.setPackageCode(pkg.getPackageCode());
+            subscription.setPackageName(pkg.getPackageName());
+            subscription.setIdentityLabel(pkg.getIdentityLabel());
+            subscription.setPointsGranted(pkg.getPointsGranted());
+            subscription.setPricePaid(actualPrice);
+            subscription.setStartTime(startTime);
+            subscription.setExpireTime(expireTime);
+            subscription.setStatus("ACTIVE");
+            subscription.setAutoRenew(false);
+            subscription.setOrderId(orderId);
+            subscription.setCouponId(usedCouponId);
+            subscription.setDiscountAmount(discount);
+            subscription.setCreateTime(now);
+            subscription.setUpdateTime(now);
+            userSubscriptionMapper.insert(subscription);
+        }
 
         // 5. 授予开通赠送点数（永久有效）
         if (pkg.getPointsGranted() != null && pkg.getPointsGranted().compareTo(BigDecimal.ZERO) > 0) {
-            String businessId = "sub_" + subscription.getId();
+            String businessId = "sub_" + subscription.getId() + "_" + orderId;
             String description = "购买套餐[" + pkg.getPackageName() + "]赠送点数（永久有效）";
             if (discount.compareTo(BigDecimal.ZERO) > 0) {
                 description += "（使用优惠券优惠" + discount + "元）";
@@ -255,6 +308,7 @@ public class UserSubscriptionService {
         subscription.setStatus("CANCELLED");
         subscription.setAutoRenew(false);
         userSubscriptionMapper.updateById(subscription);
+        syncUserMembershipFromCurrentSubscription(userId);
         
         log.info("用户取消订阅: userId={}, subscriptionId={}", userId, subscriptionId);
     }
@@ -278,6 +332,42 @@ public class UserSubscriptionService {
         }
     }
 
+    private LocalDateTime addCycle(LocalDateTime baseTime, String cycle) {
+        switch (cycle) {
+            case "QUARTERLY":
+                return baseTime.plusMonths(3);
+            case "YEARLY":
+                return baseTime.plusYears(1);
+            default:
+                return baseTime.plusMonths(1);
+        }
+    }
+
+    /**
+     * 订阅状态变化后重新把用户会员标识与唯一的 ACTIVE 订阅对齐。
+     * 不能在某条订阅过期时无条件清空会员，否则会误伤刚升级/续费的订阅。
+     */
+    private void syncUserMembershipFromCurrentSubscription(Long userId) {
+        LambdaQueryWrapper<UserSubscription> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(UserSubscription::getUserId, userId)
+                .eq(UserSubscription::getStatus, "ACTIVE")
+                .orderByDesc(UserSubscription::getStartTime);
+        List<UserSubscription> active = userSubscriptionMapper.selectList(wrapper);
+        UserSubscription current = active.isEmpty() ? null : active.get(0);
+        User user = userMapper.selectById(userId);
+        if (user == null) return;
+
+        if (current == null || (current.getExpireTime() != null && current.getExpireTime().isBefore(LocalDateTime.now()))) {
+            user.setMembership("free");
+            user.setMembershipExpireTime(null);
+        } else {
+            user.setMembership(current.getPackageCode());
+            user.setMembershipExpireTime(current.getExpireTime());
+        }
+        user.setUpdateTime(LocalDateTime.now());
+        userMapper.updateById(user);
+    }
+
     /**
      * 检查并更新过期订阅（定时任务调用）
      */
@@ -296,13 +386,8 @@ public class UserSubscriptionService {
             sub.setStatus("EXPIRED");
             userSubscriptionMapper.updateById(sub);
             
-            // 重置用户会员标识
-            User user = userMapper.selectById(sub.getUserId());
-            if (user != null) {
-                user.setMembership(null);
-                user.setMembershipExpireTime(null);
-                userMapper.updateById(user);
-            }
+            // 只根据该用户是否还存在其它有效订阅来同步，避免误清空会员。
+            syncUserMembershipFromCurrentSubscription(sub.getUserId());
             
             log.info("订阅已过期: subscriptionId={}, userId={}", sub.getId(), sub.getUserId());
         }

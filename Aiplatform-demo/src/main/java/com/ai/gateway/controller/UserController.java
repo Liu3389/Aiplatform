@@ -4,14 +4,18 @@ import com.ai.gateway.common.Result;
 import com.ai.gateway.entity.PackageTemplate;
 import com.ai.gateway.entity.UserSubscription;
 import com.ai.gateway.service.*;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@Tag(name = "02-用户中心", description = "用户信息、余额点数、安全设置(2FA/绑定)、设备管理、发票优惠券")
 @RestController
 @RequestMapping("/user")
 @RequiredArgsConstructor
@@ -22,33 +26,28 @@ public class UserController {
     private final PointsService pointsService;
     private final UserSubscriptionService userSubscriptionService;
     private final PackageTemplateService packageTemplateService;
+    private final CouponService couponService;
 
+    @Operation(summary = "充值余额")
     @PostMapping("/recharge")
     public Result<Void> recharge(@RequestHeader("X-User-Token") String token, @RequestParam BigDecimal amount) {
         Long userId = tokenService.getUserIdFromToken(token);
         if (userId == null) return Result.error(401, "Token无效或已过期");
         if (amount.compareTo(BigDecimal.ZERO) <= 0) return Result.error("充值金额必须大于0");
-        userService.recharge(userId, amount);
-        return Result.success("充值成功", null);
+        return Result.error(503, "自助充值暂未接入可信支付下单与验签回调，账户余额未变更");
     }
 
+    @Operation(summary = "使用优惠券充值")
     @PostMapping("/recharge-with-coupon")
     public Result<Map<String, Object>> rechargeWithCoupon(
             @RequestHeader("X-User-Token") String token,
             @RequestBody Map<String, Object> body) {
         Long userId = tokenService.getUserIdFromToken(token);
         if (userId == null) return Result.error(401, "Token无效或已过期");
-        
-        BigDecimal amount = new BigDecimal(body.get("amount").toString());
-        if (amount.compareTo(BigDecimal.ZERO) <= 0) return Result.error("充值金额必须大于0");
-        
-        Long couponId = body.containsKey("couponId") && body.get("couponId") != null 
-                ? Long.valueOf(body.get("couponId").toString()) : null;
-        
-        Map<String, Object> result = userService.rechargeWithCoupon(userId, amount, couponId);
-        return Result.success(result);
+        return Result.error(503, "优惠券充值暂不可用：需先接入可信支付订单；优惠券和账户余额均未变更");
     }
 
+    @Operation(summary = "修改密码")
     @PostMapping("/change-password")
     public Result<Void> changePassword(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -60,6 +59,7 @@ public class UserController {
         return Result.success("密码修改成功", null);
     }
 
+    @Operation(summary = "获取用户信息")
     @GetMapping("/info")
     public Result<?> getUserInfo(@RequestHeader("X-User-Token") String token) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -67,6 +67,7 @@ public class UserController {
         return Result.success(userService.getUserInfo(userId));
     }
 
+    @Operation(summary = "查询账户余额")
     @GetMapping("/balance")
     public Result<BigDecimal> getBalance(@RequestHeader("X-User-Token") String token) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -77,6 +78,7 @@ public class UserController {
     /**
      * 查询点数余额
      */
+    @Operation(summary = "查询点数余额")
     @GetMapping("/points")
     public Result<BigDecimal> getPoints(@RequestHeader("X-User-Token") String token) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -88,6 +90,7 @@ public class UserController {
     /**
      * 查询点数详情（限时/永久拆分 + 会员每日发放信息）
      */
+    @Operation(summary = "查询点数详情", description = "限时/永久拆分 + 会员每日发放信息")
     @GetMapping("/points/info")
     public Result<Map<String, Object>> getPointsInfo(@RequestHeader("X-User-Token") String token) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -117,13 +120,17 @@ public class UserController {
         return Result.success(pointsInfo);
     }
 
-    @GetMapping("/free-quota")
-    public Result<Map<String, Integer>> getFreeQuota(@RequestHeader("X-User-Token") String token) {
+    @Operation(summary = "查询用户每日用量统计", description = "token/调用次数/点数消耗按日聚合，days=7或30")
+    @GetMapping("/usage/daily")
+    public Result<Map<String, Object>> getDailyUsage(
+            @RequestHeader("X-User-Token") String token,
+            @RequestParam(defaultValue = "7") int days) {
         Long userId = tokenService.getUserIdFromToken(token);
         if (userId == null) return Result.error(401, "Token无效或已过期");
-        return Result.success(userService.getFreeQuota(userId));
+        return Result.success(userService.getDailyUsage(userId, days));
     }
 
+    @Operation(summary = "绑定邮箱", description = "需传邮箱与验证码")
     @PostMapping("/bind-email")
     public Result<Void> bindEmail(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -138,6 +145,7 @@ public class UserController {
         return Result.success("邮箱绑定成功", null);
     }
 
+    @Operation(summary = "绑定手机号", description = "需传手机号与验证码")
     @PostMapping("/bind-phone")
     public Result<Void> bindPhone(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -152,6 +160,7 @@ public class UserController {
         return Result.success("手机号绑定成功", null);
     }
 
+    @Operation(summary = "发送绑定验证码", description = "type=email/phone，target=邮箱或手机号")
     @PostMapping("/send-bind-code")
     public Result<Void> sendBindCode(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -163,14 +172,16 @@ public class UserController {
         return Result.success("验证码已发送", null);
     }
 
+    @Operation(summary = "开始设置两步验证(2FA)", description = "返回待确认密钥；提交有效动态码后才正式启用")
     @PostMapping("/2fa/enable")
     public Result<Map<String, String>> enable2FA(@RequestHeader("X-User-Token") String token) {
         Long userId = tokenService.getUserIdFromToken(token);
         if (userId == null) return Result.error(401, "Token无效或已过期");
         Map<String, String> result = userService.enable2FA(userId);
-        return Result.success("2FA已启用", result);
+        return Result.success("请在验证器中添加密钥并输入动态验证码确认启用", result);
     }
 
+    @Operation(summary = "禁用两步验证(2FA)", description = "需传验证码")
     @PostMapping("/2fa/disable")
     public Result<Void> disable2FA(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -181,16 +192,17 @@ public class UserController {
         return Result.success("2FA已禁用", null);
     }
 
+    @Operation(summary = "验证两步验证(2FA)验证码")
     @PostMapping("/2fa/verify")
-    public Result<Boolean> verify2FA(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
+    public Result<Map<String, Object>> verify2FA(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
         Long userId = tokenService.getUserIdFromToken(token);
         if (userId == null) return Result.error(401, "Token无效或已过期");
         String code = body.get("code");
         if (code == null) return Result.error("验证码不能为空");
-        boolean valid = userService.verify2FA(userId, code);
-        return Result.success(valid ? "验证通过" : "验证失败", valid);
+        return Result.success("两步验证已启用，请安全保存本次显示的备用码", userService.verify2FA(userId, code));
     }
 
+    @Operation(summary = "查询两步验证(2FA)状态")
     @GetMapping("/2fa/status")
     public Result<Map<String, Object>> get2FAStatus(@RequestHeader("X-User-Token") String token) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -198,6 +210,7 @@ public class UserController {
         return Result.success(userService.get2FAStatus(userId));
     }
 
+    @Operation(summary = "查询登录设备列表")
     @GetMapping("/login-devices")
     public Result<List<Map<String, Object>>> getLoginDevices(@RequestHeader("X-User-Token") String token) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -205,6 +218,7 @@ public class UserController {
         return Result.success(userService.getLoginDevices(userId));
     }
 
+    @Operation(summary = "移除指定登录设备")
     @PostMapping("/login-devices/remove")
     public Result<Void> removeLoginDevice(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -215,6 +229,7 @@ public class UserController {
         return Result.success("设备已移除", null);
     }
 
+    @Operation(summary = "移除所有登录设备", description = "exceptCurrent=true 时保留当前设备")
     @PostMapping("/login-devices/remove-all")
     public Result<Void> removeAllLoginDevices(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -224,6 +239,7 @@ public class UserController {
         return Result.success("已移除所有登录设备", null);
     }
 
+    @Operation(summary = "注销账户", description = "需传密码且 confirm=DELETE 确认")
     @PostMapping("/delete-account")
     public Result<Void> deleteAccount(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -236,8 +252,9 @@ public class UserController {
         return Result.success("账户已注销", null);
     }
 
+    @Operation(summary = "查询充值记录", description = "分页：page、size")
     @GetMapping("/recharge-records")
-    public Result<List<Map<String, Object>>> getRechargeRecords(
+    public Result<Map<String, Object>> getRechargeRecords(
             @RequestHeader("X-User-Token") String token,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -250,6 +267,7 @@ public class UserController {
      * 获取点数账单列表（统一点数体系）
      * 包含充值、消费、赠送等所有点数变动记录
      */
+    @Operation(summary = "查询点数账单", description = "分页，可按 changeType 过滤")
     @GetMapping("/points-bills")
     public Result<?> getPointsBills(
             @RequestHeader("X-User-Token") String token,
@@ -269,6 +287,7 @@ public class UserController {
     /**
      * 获取点数消费汇总（今天/本月/总计）
      */
+    @Operation(summary = "查询点数消费汇总", description = "今天/本月/总计")
     @GetMapping("/points/consumption-summary")
     public Result<Map<String, Object>> getPointsConsumptionSummary(
             @RequestHeader("X-User-Token") String token) {
@@ -282,6 +301,7 @@ public class UserController {
     /**
      * 获取用户充值/购买历史（包含点数充值和订阅购买）
      */
+    @Operation(summary = "查询充值/购买历史", description = "含点数充值和订阅购买，分页")
     @GetMapping("/recharge-history")
     public Result<Map<String, Object>> getRechargeHistory(
             @RequestHeader("X-User-Token") String token,
@@ -297,6 +317,7 @@ public class UserController {
     /**
      * 获取用户会员状态详情
      */
+    @Operation(summary = "查询会员状态详情", description = "身份标签、会员到期、余额点数、当前订阅、每日点数")
     @GetMapping("/membership/status")
     public Result<Map<String, Object>> getMembershipStatus(
             @RequestHeader("X-User-Token") String token) {
@@ -361,6 +382,7 @@ public class UserController {
         return Result.success(result);
     }
 
+    @Operation(summary = "申请发票")
     @PostMapping("/invoice/apply")
     public Result<Void> applyInvoice(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, Object> body) {
         Long userId = tokenService.getUserIdFromToken(token);
@@ -369,70 +391,43 @@ public class UserController {
         return Result.success("发票申请已提交", null);
     }
 
+    @Operation(summary = "查询我的优惠券列表")
     @GetMapping("/coupons")
     public Result<List<Map<String, Object>>> getCoupons(@RequestHeader("X-User-Token") String token) {
         Long userId = tokenService.getUserIdFromToken(token);
         if (userId == null) return Result.error(401, "Token无效或已过期");
-        return Result.success(userService.getCoupons(userId));
+        List<Map<String, Object>> coupons = couponService.listByUser(userId).stream().map(coupon -> {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", coupon.getId());
+            item.put("code", coupon.getCouponCode());
+            item.put("name", "代金券");
+            item.put("type", "CASH");
+            item.put("value", coupon.getAmount());
+            item.put("minAmount", coupon.getThresholdAmount());
+            item.put("applicablePlan", coupon.getApplicablePlan());
+            item.put("expireTime", coupon.getExpireTime());
+            boolean expired = coupon.getExpireTime() != null
+                    && coupon.getExpireTime().isBefore(LocalDateTime.now());
+            item.put("status", Boolean.TRUE.equals(coupon.getUsed()) ? "USED" : expired ? "EXPIRED" : "AVAILABLE");
+            return item;
+        }).toList();
+        return Result.success(coupons);
     }
 
+    @Operation(summary = "使用优惠券", description = "传优惠券码 code")
     @PostMapping("/coupons/use")
     public Result<Map<String, Object>> useCoupon(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
         Long userId = tokenService.getUserIdFromToken(token);
         if (userId == null) return Result.error(401, "Token无效或已过期");
-        String code = body.get("code");
-        if (code == null) return Result.error("优惠券码不能为空");
-        return Result.success(userService.useCoupon(userId, code));
+        return Result.error(503, "优惠券不能单独消费；请在已开放的订单确认流程中使用，优惠券未变更");
     }
 
+    @Operation(summary = "兑换优惠券", description = "传兑换码 redeemCode")
     @PostMapping("/coupons/redeem")
     public Result<Void> redeemCoupon(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
         Long userId = tokenService.getUserIdFromToken(token);
         if (userId == null) return Result.error(401, "Token无效或已过期");
-        String redeemCode = body.get("redeemCode");
-        if (redeemCode == null) return Result.error("兑换码不能为空");
-        userService.redeemCoupon(userId, redeemCode);
-        return Result.success("兑换成功", null);
+        return Result.error(503, "兑换码功能暂未开放，账户与优惠券均未变更");
     }
 
-    /**
-     * 获取订阅信息（已废弃）
-     * @deprecated 已废弃，请迁移到 /user/subscriptions/* 系列接口
-     */
-    @Deprecated
-    @GetMapping("/subscription")
-    public Result<Map<String, Object>> getSubscription(@RequestHeader("X-User-Token") String token) {
-        Long userId = tokenService.getUserIdFromToken(token);
-        if (userId == null) return Result.error(401, "Token无效或已过期");
-        return Result.success(userService.getSubscription(userId));
-    }
-
-    /**
-     * 订阅套餐（已废弃）
-     * @deprecated 已废弃，请迁移到 /user/subscriptions/* 系列接口
-     */
-    @Deprecated
-    @PostMapping("/subscription/subscribe")
-    public Result<Void> subscribe(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
-        Long userId = tokenService.getUserIdFromToken(token);
-        if (userId == null) return Result.error(401, "Token无效或已过期");
-        String plan = body.get("plan");
-        String paymentMethod = body.get("paymentMethod");
-        if (plan == null || paymentMethod == null) return Result.error("缺少参数");
-        userService.subscribe(userId, plan, paymentMethod);
-        return Result.success("订阅成功（该接口已废弃，请使用新版订阅接口）", null);
-    }
-
-    /**
-     * 取消订阅（已废弃）
-     * @deprecated 已废弃，请迁移到 /user/subscriptions/* 系列接口
-     */
-    @Deprecated
-    @PostMapping("/subscription/cancel")
-    public Result<Void> cancelSubscription(@RequestHeader("X-User-Token") String token) {
-        Long userId = tokenService.getUserIdFromToken(token);
-        if (userId == null) return Result.error(401, "Token无效或已过期");
-        userService.cancelSubscription(userId);
-        return Result.success("订阅已取消（该接口已废弃，请使用新版订阅接口）", null);
-    }
 }

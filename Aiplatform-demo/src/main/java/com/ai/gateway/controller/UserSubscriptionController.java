@@ -6,6 +6,9 @@ import com.ai.gateway.entity.UserSubscription;
 import com.ai.gateway.service.PackageTemplateService;
 import com.ai.gateway.service.TokenService;
 import com.ai.gateway.service.UserSubscriptionService;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +20,7 @@ import java.util.Map;
 /**
  * 用户订阅控制器
  */
+@Tag(name = "02-用户中心-订阅", description = "套餐查询、订阅状态、购买与取消")
 @Slf4j
 @RestController
 @RequestMapping("/user/subscriptions")
@@ -30,6 +34,7 @@ public class UserSubscriptionController {
     /**
      * 获取所有可用套餐列表
      */
+    @Operation(summary = "查询可用套餐列表", description = "无需登录")
     @GetMapping("/packages")
     public Result<List<PackageTemplate>> listAvailablePackages() {
         List<PackageTemplate> packages = packageTemplateService.listActivePackages();
@@ -39,6 +44,7 @@ public class UserSubscriptionController {
     /**
      * 获取当前用户的订阅状态
      */
+    @Operation(summary = "查询当前订阅状态", description = "返回订阅信息、身份标签、token 限额、模型权限等级等")
     @GetMapping("/current")
     public Result<Map<String, Object>> getCurrentSubscription(
             @RequestHeader("X-User-Token") String token) {
@@ -73,6 +79,7 @@ public class UserSubscriptionController {
     /**
      * 获取用户的订阅历史
      */
+    @Operation(summary = "查询订阅历史")
     @GetMapping("/history")
     public Result<List<UserSubscription>> getSubscriptionHistory(
             @RequestHeader("X-User-Token") String token) {
@@ -86,9 +93,23 @@ public class UserSubscriptionController {
         return Result.success(history);
     }
 
+    @Operation(summary = "分页查询订阅历史")
+    @GetMapping("/history/page")
+    public Result<Page<UserSubscription>> getSubscriptionHistoryPage(
+            @RequestHeader("X-User-Token") String token,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Long userId = tokenService.getUserIdFromToken(token);
+        if (userId == null) {
+            return Result.error(401, "Token无效");
+        }
+        return Result.success(userSubscriptionService.getSubscriptionHistoryPage(userId, page, size));
+    }
+
     /**
      * 购买套餐
      */
+    @Operation(summary = "购买套餐", description = "传 packageCode、cycle(MONTHLY默认)、可选 couponId")
     @PostMapping("/purchase")
     public Result<Map<String, Object>> purchasePackage(
             @RequestHeader("X-User-Token") String token,
@@ -118,13 +139,15 @@ public class UserSubscriptionController {
             return Result.success("购买成功", result);
         } catch (Exception e) {
             log.error("购买套餐失败", e);
-            return Result.error(500, "购买失败: " + e.getMessage());
+            int code = e instanceof IllegalArgumentException ? 400 : 500;
+            return Result.error(code, "购买失败: " + e.getMessage());
         }
     }
 
     /**
      * 取消订阅
      */
+    @Operation(summary = "取消订阅")
     @PostMapping("/cancel/{subscriptionId}")
     public Result<Void> cancelSubscription(
             @RequestHeader("X-User-Token") String token,

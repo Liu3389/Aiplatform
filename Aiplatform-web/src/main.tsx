@@ -4,7 +4,8 @@ import App from './App'
 import './styles/design-system.css'
 import './styles/index.css'
 
-const theme = localStorage.getItem('lingdian_theme') || 'dark'
+const savedTheme = localStorage.getItem('lingdian_theme')
+const theme = savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : 'light'
 document.documentElement.classList.add(theme)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

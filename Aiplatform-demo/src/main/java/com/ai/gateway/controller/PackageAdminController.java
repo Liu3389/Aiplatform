@@ -8,6 +8,8 @@ import com.ai.gateway.service.AdminOperationLogService;
 import com.ai.gateway.service.PackageTemplateService;
 import com.ai.gateway.service.TokenService;
 import com.ai.gateway.service.UserService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +21,7 @@ import java.util.List;
 /**
  * 套餐管理控制器（管理员）
  */
+@Tag(name = "07-管理后台-套餐管理", description = "套餐模板增删改查、上下架（需管理员权限）")
 @Slf4j
 @RestController
 @RequestMapping("/admin/packages")
@@ -33,6 +36,7 @@ public class PackageAdminController {
     /**
      * 获取所有套餐列表
      */
+    @Operation(summary = "查询套餐列表", description = "includeInactive=true 时返回含下架套餐，需管理员权限")
     @RequireAdmin
     @GetMapping("/list")
     public Result<List<PackageTemplate>> listPackages(
@@ -53,6 +57,7 @@ public class PackageAdminController {
     /**
      * 获取套餐详情
      */
+    @Operation(summary = "查询套餐详情", description = "需管理员权限")
     @RequireAdmin
     @GetMapping("/{id}")
     public Result<PackageTemplate> getPackageDetail(
@@ -70,6 +75,7 @@ public class PackageAdminController {
     /**
      * 创建套餐模板
      */
+    @Operation(summary = "创建套餐模板", description = "需管理员权限，校验价格与点数非负")
     @RequireAdmin
     @PostMapping("/create")
     public Result<PackageTemplate> createPackage(
@@ -119,6 +125,7 @@ public class PackageAdminController {
     /**
      * 更新套餐模板
      */
+    @Operation(summary = "更新套餐模板", description = "需管理员权限")
     @RequireAdmin
     @PutMapping("/update")
     public Result<Void> updatePackage(
@@ -161,6 +168,7 @@ public class PackageAdminController {
     /**
      * 上架/下架套餐
      */
+    @Operation(summary = "上架/下架套餐", description = "status=1上架，0下架，需管理员权限")
     @RequireAdmin
     @PostMapping("/toggle-status")
     public Result<Void> toggleStatus(
@@ -202,6 +210,7 @@ public class PackageAdminController {
     /**
      * 删除套餐模板
      */
+    @Operation(summary = "删除套餐模板", description = "需管理员权限")
     @RequireAdmin
     @DeleteMapping("/{id}")
     public Result<Void> deletePackage(

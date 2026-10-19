@@ -22,13 +22,32 @@
         <java.version>21</java.version>
         <mybatis-plus.version>3.5.7</mybatis-plus.version>
         <hutool.version>5.8.24</hutool.version>
+        <spring-ai.version>0.8.1</spring-ai.version>
     </properties>
-    
+
+    <!-- Spring AI 0.8.x 仅发布在 Spring Milestones 仓库 -->
+    <repositories>
+        <repository>
+            <id>spring-milestones</id>
+            <name>Spring Milestones</name>
+            <url>https://repo.spring.io/milestone</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
     <dependencies>
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Configurable SMTP delivery for verified contact binding codes -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
         
         <!-- MyBatis-Plus -->
@@ -49,6 +68,12 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- RabbitMQ：文件解析任务和点数结算事件的持久化异步传递 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
         
         <!-- Lombok -->
@@ -103,6 +128,19 @@
             <artifactId>spring-security-crypto</artifactId>
         </dependency>
 
+        <!-- OIDC ID-token verification with Nimbus JOSE (JWKS signature validation) -->
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>9.37.3</version>
+        </dependency>
+
+        <!-- Spring Security Servlet Filter Chain：AI 接口令牌认证与无状态安全上下文 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
         <!-- JSON处理 -->
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
@@ -119,11 +157,37 @@
             <version>3.17.4</version>
         </dependency>
 
-        <!-- Apache POI for Excel/Word processing -->
+        <!-- Apache POI for Excel/Word/PowerPoint processing (导出 docx/xlsx 仍需保留) -->
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-ooxml</artifactId>
             <version>5.2.3</version>
+        </dependency>
+        <!-- poi-scratchpad: 支持旧格式 .doc / .xls / .ppt -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-scratchpad</artifactId>
+            <version>5.2.3</version>
+        </dependency>
+
+        <!-- Apache Tika: 开源统一文件解析器，支持 1000+ 文件格式自动检测与文本提取 -->
+        <!-- 替代手写 POI switch-case，覆盖 doc/docx/xls/xlsx/ppt/pptx/pdf/rtf/odt/epub 等 -->
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-core</artifactId>
+            <version>2.9.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-parsers-standard-package</artifactId>
+            <version>2.9.2</version>
+        </dependency>
+        <!-- commons-compress 显式声明 1.25.0：Tika 2.9.2 解析 zip/docx 需要 getNextEntry() 协变返回签名，
+             而 POI 5.2.3 传递引入的 1.21 太旧会导致 NoSuchMethodError，此处强制升级覆盖 -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>1.25.0</version>
         </dependency>
 
         <!-- Commonmark for Markdown parsing -->
@@ -146,11 +210,51 @@
             <classifier>osx-aarch_64</classifier>
             <scope>runtime</scope>
         </dependency>
-    </dependencies> <!-- 确保这里有闭合标签 -->
 
-    
+        <!-- Spring AI OpenAI (支持 OpenAI 兼容 API) -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- Knife4j (OpenAPI 3 + Jakarta, 适配 Spring Boot 3.2) -->
+        <dependency>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+            <version>4.5.0</version>
+        </dependency>
+
+        <!-- Docker Java SDK (管理员系统控制: 容器启停/状态/日志) -->
+        <dependency>
+            <groupId>com.github.docker-java</groupId>
+            <artifactId>docker-java-core</artifactId>
+            <version>3.4.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.docker-java</groupId>
+            <artifactId>docker-java-transport-httpclient5</artifactId>
+            <version>3.4.0</version>
+        </dependency>
+
+    </dependencies>
+
+    <!-- Spring AI BOM 统一管理 Spring AI 依赖版本 -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <build>
+        <finalName>ai-gateway-platform</finalName>
         <plugins>
+            <!-- Spring Boot 打包插件: 生成可执行 fat JAR (java -jar) -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -161,21 +265,6 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <source>21</source>
-                    <target>21</target>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                            <version>1.18.38</version>
-                        </path>
-                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
         </plugins>

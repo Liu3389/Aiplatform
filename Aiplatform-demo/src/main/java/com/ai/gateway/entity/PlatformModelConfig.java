@@ -20,11 +20,13 @@ public class PlatformModelConfig implements Serializable {
     private String actualModel; // 实际调用模型
     private BigDecimal fixedPoints; // 固定点数消耗
     private String provider; // 关联厂商
+    private String description; // 模型描述（模型商店展示）
     private String baseUrl; // 厂商 API 地址
     private String apiKey; // 平台持有的 API Key
     private Integer sortOrder; // 排序字段 (P3-20)
     private Integer status;
     private Integer supportsVision; // 是否支持图片：0-不支持，1-支持
+    private Integer maxOutputTokens; // 单模型服务端最大输出 Token 数
 
     /**
      * 所需会员等级（0-基础，1-中端，2-高端，3-全部）

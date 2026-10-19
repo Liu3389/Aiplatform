@@ -18,11 +18,13 @@ assert '[[ "$PREFLIGHT_MODE" == "--local-only" ]]' in preflight
 assert 'python3 "$ROOT/scripts/check-production-env.py"' in preflight
 assert 'bash "$ROOT/scripts/local-release-preflight.sh" --local-only' in deploy
 
+replacement_guard = deploy.index('AI_PLATFORM_ALLOW_IMAGE_AND_CONTAINER_REPLACEMENT')
+local_preflight = deploy.index('bash "$ROOT/scripts/local-release-preflight.sh" --local-only')
 remote_config_check = deploy.index('docker compose --env-file .env.prod -f - config -q')
 remote_env_check = deploy.index('python3 - --server --env-file .env.prod')
 existing_container_check = deploy.index("docker inspect --format '{{.State.Running}}' lingdian-mysql")
 first_transfer = deploy.index("scp ")
-assert existing_container_check < remote_env_check < remote_config_check < first_transfer, "existing services, server env, and Compose must pass preflight before transfer"
+assert replacement_guard < local_preflight < existing_container_check < remote_env_check < remote_config_check < first_transfer, "explicit replacement authorization, local tests, existing services, server env, and Compose must pass before transfer"
 compose_transfer = deploy.index('"$ROOT/docker-compose.server.yml"', first_transfer)
 candidate_config_check = deploy.index("docker compose -f .docker-compose.server.yml.next --env-file .env.prod config -q")
 image_load = deploy.index("docker load -i 'aiplatform-backend:prod.tar'")

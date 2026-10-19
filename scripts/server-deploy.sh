@@ -11,6 +11,11 @@ REMOTE_DIR=/root/lingdian
 TAR_DIR=/tmp/ld-build
 DEPLOY_STAMP="$(date +%Y%m%d%H%M%S)-$$"
 
+if [[ "${AI_PLATFORM_ALLOW_IMAGE_AND_CONTAINER_REPLACEMENT:-false}" != "true" ]]; then
+  echo "部署已停止：当前流程会加载新镜像并替换现有容器；请先明确允许这项操作，或提供不更换镜像/容器的已验证方案。" >&2
+  exit 1
+fi
+
 if [[ -z "$HOST" ]]; then
   echo "缺少 AI_PLATFORM_DEPLOY_HOST；未连接远程服务器。" >&2
   exit 1

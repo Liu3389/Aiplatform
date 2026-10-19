@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { marketplaceApi } from '@/services/api'
+import { marketplaceApi, modelApi } from '@/services/api'
 import { motion } from 'framer-motion'
 import { useThemeStore } from '@/stores/themeStore'
 import { useI18nStore } from '@/stores/i18nStore'
+import PointsIcon from '@/components/PointsIcon'
 
 type ProviderKey = {
   id: number;
@@ -22,55 +23,7 @@ function getColors(isDark: boolean) {
     : ['#7C3AED', '#2563EB', '#0891B2', '#059669', '#D97706', '#E11D48']
 }
 
-const PROVIDERS = [
-  {
-    id: 'openai',
-    nameZh: 'OpenAI',
-    nameEn: 'OpenAI',
-    logo: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z',
-    inputPrice: 10.50,
-    outputPrice: 31.50,
-    features: ['GPT-4o', 'GPT-4 Turbo', 'GPT-3.5 Turbo', 'DALL·E 3'],
-    status: 1,
-  },
-  {
-    id: 'anthropic',
-    nameZh: 'Anthropic',
-    nameEn: 'Anthropic',
-    logo: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z',
-    inputPrice: 105.00,
-    outputPrice: 52.50,
-    features: ['Claude 3.5 Sonnet', 'Claude 3 Opus', 'Claude 3 Haiku'],
-    status: 1,
-  },
-  {
-    id: 'google',
-    nameZh: 'Google',
-    nameEn: 'Google',
-    logo: 'M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9',
-    inputPrice: 3.50,
-    outputPrice: 10.50,
-    features: ['Gemini 2.0 Flash', 'Gemini 2.0 Pro', 'Gemini 1.5 Pro'],
-    status: 1,
-  },
-  {
-    id: 'deepseek',
-    nameZh: 'DeepSeek',
-    nameEn: 'DeepSeek',
-    logo: 'M13 10V3L4 14h7v7l9-11h-7z',
-    inputPrice: 1.00,
-    outputPrice: 2.00,
-    features: ['DeepSeek V3', 'DeepSeek R1', 'DeepSeek Coder'],
-    status: 1,
-  },
-]
-
-const POINTS_MODELS = [
-  { id: 'deepseek-chat', nameZh: 'DeepSeek Chat', nameEn: 'DeepSeek Chat', pointsPerCall: 1, description: '基础对话模型' },
-  { id: 'deepseek-reasoner', nameZh: 'DeepSeek Reasoner', nameEn: 'DeepSeek Reasoner', pointsPerCall: 2, description: '推理增强模型' },
-  { id: 'deepseek-v3', nameZh: 'DeepSeek V3', nameEn: 'DeepSeek V3', pointsPerCall: 3, description: '高级通用模型' },
-  { id: 'deepseek-pro', nameZh: 'DeepSeek Pro', nameEn: 'DeepSeek Pro', pointsPerCall: 5, description: '旗舰级模型' },
-]
+const POINTS_MODELS: { id: string; nameZh: string; nameEn: string; pointsPerCall: number; description: string }[] = []
 
 const FAQ_ITEMS = [
   {
@@ -82,8 +35,8 @@ const FAQ_ITEMS = [
   {
     qZh: '如何获取点数？',
     qEn: 'How to get points?',
-    aZh: '您可以通过充值获得点数。最低充值金额为 ¥1，充值后点数立即到账。',
-    aEn: 'You can get points by recharging. Minimum recharge amount is ¥1, points are credited immediately.',
+    aZh: '自助充值暂未开放；已有账户余额可用于购买会员套餐。点数由会员权益或管理员发放，用于 AI 对话。',
+    aEn: 'Self-service recharge is currently unavailable. Existing account balance can be used for membership plans; points are granted by membership or admins for AI chat.',
   },
   {
     qZh: '购买 API Key 后如何使用？',
@@ -105,6 +58,16 @@ const FAQ_ITEMS = [
   },
 ]
 
+function BillingFeatureIcon({ kind, color }: { kind: 'points' | 'cycle' | 'atomic'; color: string }) {
+  if (kind === 'cycle') {
+    return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 11a8 8 0 0 0-14.7-4L4 9" /><path d="M4 4v5h5" /><path d="M4 13a8 8 0 0 0 14.7 4L20 15" /><path d="M20 20v-5h-5" /></svg>
+  }
+  if (kind === 'atomic') {
+    return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" /></svg>
+  }
+  return <PointsIcon size={22} color={color} variant="outline" />
+}
+
 export default function BillingPage() {
   const { theme } = useThemeStore()
   const { lang } = useI18nStore()
@@ -113,6 +76,7 @@ export default function BillingPage() {
   const [activeTab, setActiveTab] = useState<'points' | 'apikey'>('points')
 
   const [providers, setProviders] = useState<ProviderKey[]>([])
+  const [pointsModels, setPointsModels] = useState(POINTS_MODELS)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -121,8 +85,20 @@ export default function BillingPage() {
         const keys = await marketplaceApi.listKeys()
         setProviders(keys || [])
       } catch {
-        setProviders(PROVIDERS as any)
+        // API 失败不使用假数据，保持空列表
+        setProviders([])
       }
+      // 模型点数规则：真实数据来自 platform_model_config
+      try {
+        const models = await modelApi.list()
+        setPointsModels((models || []).map(m => ({
+          id: m.modelCode || String(m.id),
+          nameZh: m.displayName,
+          nameEn: m.displayName,
+          pointsPerCall: Number(m.fixedPoints || 0),
+          description: m.description || '',
+        })))
+      } catch {}
       setLoading(false)
     })()
   }, [])
@@ -136,7 +112,7 @@ export default function BillingPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto overflow-y-auto h-full space-y-6">
+    <div className="page-scroll h-full max-w-6xl mx-auto space-y-5 overflow-y-auto p-3 sm:space-y-6 sm:p-6 lg:p-8">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-xl sm:text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
           {lang === 'zh' ? '参考文档' : 'Documentation'}
@@ -158,7 +134,7 @@ export default function BillingPage() {
           }}
         >
           <div className="flex items-center justify-center gap-2">
-            <span>🪙</span>
+            <PointsIcon size={16} color="currentColor" variant="outline" />
             <span>{lang === 'zh' ? 'AI 对话计费' : 'AI Chat Billing'}</span>
           </div>
         </button>
@@ -172,7 +148,7 @@ export default function BillingPage() {
           }}
         >
           <div className="flex items-center justify-center gap-2">
-            <span>🔑</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="15" r="4" /><path d="m11 12 8-8m0 0h-4m4 0v4" /></svg>
             <span>{lang === 'zh' ? '模型商店计费' : 'Model Store Billing'}</span>
           </div>
         </button>
@@ -236,12 +212,12 @@ export default function BillingPage() {
 
             <div className="grid sm:grid-cols-3 gap-4 mb-6">
               {[
-                { icon: '🎯', titleZh: '按点数付费', titleEn: 'Pay with Points', descZh: '每次对话消耗 1～5 点', descEn: 'Each chat consumes 1-5 points' },
-                { icon: '🔄', titleZh: '预扣余额机制', titleEn: 'Pre-deduct Balance', descZh: '请求前预扣最大预估费用，完成后退还差额', descEn: 'Pre-deduct max estimated fee, refund difference after completion' },
-                { icon: '⚡', titleZh: 'Redis Lua 原子结算', titleEn: 'Redis Lua Atomic', descZh: '高并发下零超卖，精确到每个 Token', descEn: 'Zero oversell under high concurrency, accurate to each token' },
+                { icon: 'points' as const, titleZh: '按点数付费', titleEn: 'Pay with Points', descZh: '每次对话消耗 1～5 点', descEn: 'Each chat consumes 1-5 points' },
+                { icon: 'cycle' as const, titleZh: '预扣点数机制', titleEn: 'Pre-deduct Points', descZh: '请求前预扣模型点数，失败时自动回滚', descEn: 'Pre-deduct model points before a request and roll back on failure' },
+                { icon: 'atomic' as const, titleZh: 'Redis Lua 原子结算', titleEn: 'Redis Lua Atomic', descZh: '高并发下零超卖，精确到每个 Token', descEn: 'Zero oversell under high concurrency, accurate to each token' },
               ].map((item, i) => (
                 <div key={i} className="flex gap-3 p-4 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'}` }}>
-                  <span className="text-2xl">{item.icon}</span>
+                  <div className="w-7 h-7 flex items-center justify-center flex-shrink-0" style={{ color: colors[i] }}><BillingFeatureIcon kind={item.icon} color={colors[i]} /></div>
                   <div>
                     <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? item.titleZh : item.titleEn}</div>
                     <div className="text-[10px] leading-relaxed" style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? item.descZh : item.descEn}</div>
@@ -264,7 +240,7 @@ export default function BillingPage() {
                 {lang === 'zh' ? '点数单位：整数点（无小数位）' : 'Points unit: Integer (no decimals)'}
               </p>
             </div>
-            <div className="overflow-x-auto">
+            <div className="hide-scrollbar overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr style={{ borderBottom: `1px solid var(--border-color)` }}>
@@ -274,7 +250,7 @@ export default function BillingPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {POINTS_MODELS.map((m, i) => (
+                  {pointsModels.map((m, i) => (
                     <tr key={m.id} style={{ borderBottom: `1px solid var(--border-color)` }}>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
@@ -320,16 +296,16 @@ export default function BillingPage() {
               </div>
               <ul className="space-y-2 text-xs" style={{ color: 'var(--text-dim)' }}>
                 <li className="flex items-start gap-2">
-                  <span style={{ color: 'var(--accent-emerald)' }}>◆</span>
+                  <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: 'var(--accent-emerald)' }} />
                   <span>{lang === 'zh' ? '按输入/输出 Token 分别计价' : 'Input/output tokens priced separately'}</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span style={{ color: 'var(--accent-emerald)' }}>◆</span>
+                  <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: 'var(--accent-emerald)' }} />
                   <span>{lang === 'zh' ? '不同模型价格不同' : 'Different models have different prices'}</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span style={{ color: 'var(--accent-emerald)' }}>◆</span>
-                  <span>{lang === 'zh' ? '从平台余额中自动扣除（人民币）' : 'Auto-deducted from platform balance (CNY)'}</span>
+                  <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: 'var(--accent-emerald)' }} />
+                  <span>{lang === 'zh' ? '从平台点数余额中自动扣除，账户金额不参与对话计费' : 'Deducted from points; account balance is never used for chat'}</span>
                 </li>
               </ul>
             </div>
@@ -350,15 +326,15 @@ export default function BillingPage() {
               </div>
               <ul className="space-y-2 text-xs" style={{ color: 'var(--text-dim)' }}>
                 <li className="flex items-start gap-2">
-                  <span style={{ color: 'var(--accent-blue)' }}>◆</span>
+                  <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: 'var(--accent-blue)' }} />
                   <span>{lang === 'zh' ? '固定月费，无限次调用' : 'Fixed monthly fee, unlimited calls'}</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span style={{ color: 'var(--accent-blue)' }}>◆</span>
+                  <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: 'var(--accent-blue)' }} />
                   <span>{lang === 'zh' ? '专属 API Key，可在任意平台使用' : 'Dedicated API Key, usable on any platform'}</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span style={{ color: 'var(--accent-blue)' }}>◆</span>
+                  <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: 'var(--accent-blue)' }} />
                   <span>{lang === 'zh' ? '到期自动续费，可随时取消' : 'Auto-renewal, cancel anytime'}</span>
                 </li>
               </ul>
@@ -373,10 +349,10 @@ export default function BillingPage() {
                 {lang === 'zh' ? '厂商 Token 定价明细' : 'Vendor Token Pricing Details'}
               </h3>
               <p className="text-xs" style={{ color: 'var(--text-dim)' }}>
-                {lang === 'zh' ? '价格单位：人民币 (CNY) / 1K tokens' : 'Unit: Chinese Yuan (CNY) / 1K tokens'}
+                {lang === 'zh' ? '厂商参考价：人民币 (CNY) / 1K tokens；仅用于说明模型成本，不参与平台余额或点数结算' : 'Vendor reference price: CNY / 1K tokens; it never participates in platform balance or points billing'}
               </p>
             </div>
-            <div className="overflow-x-auto">
+            <div className="hide-scrollbar overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr style={{ borderBottom: `1px solid var(--border-color)` }}>
@@ -439,7 +415,7 @@ export default function BillingPage() {
       {providers.length === 0 && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
           className="rounded-2xl p-8 border text-center" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-          <div className="text-4xl mb-3">🔑</div>
+          <svg className="mx-auto mb-3" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="15" r="4" /><path d="m11 12 8-8m0 0h-4m4 0v4" /></svg>
           <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
             {lang === 'zh' ? '模型商店即将上线' : 'Model Store Coming Soon'}
           </h3>

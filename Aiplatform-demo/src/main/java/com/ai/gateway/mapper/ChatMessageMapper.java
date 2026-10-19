@@ -3,6 +3,8 @@ package com.ai.gateway.mapper;
 import com.ai.gateway.entity.ChatMessage;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 /**
  * 聊天消息Mapper（热数据）
@@ -11,4 +13,8 @@ import org.apache.ibatis.annotations.Mapper;
  */
 @Mapper
 public interface ChatMessageMapper extends BaseMapper<ChatMessage> {
+
+    @Select("SELECT * FROM chat_message WHERE request_id = #{requestId} AND role = #{role} LIMIT 1")
+    ChatMessage selectByRequestIdAndRole(@Param("requestId") String requestId, @Param("role") String role);
+
 }

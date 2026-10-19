@@ -20,7 +20,9 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class TokenService {
 
-    private static final String TOKEN_PREFIX = "ai_gateway:token:";
+    static final String TOKEN_PREFIX = "ai_gateway:token:";
+    static final String TOKEN_DEVICE_PREFIX = "ai_gateway:token_device:";
+    static final String USER_TOKENS_PREFIX = "ai_gateway:user_tokens:";
     private static final String LOGIN_FAIL_PREFIX = "ai_gateway:login_fail:";
     private static final long TOKEN_TTL_HOURS = 24;
     private static final long REFRESH_THRESHOLD_HOURS = 1;
@@ -53,31 +55,18 @@ public class TokenService {
         String token = UUID.randomUUID().toString().replace("-", "");
         String key = TOKEN_PREFIX + token;
         redisTemplate.opsForValue().set(key, String.valueOf(userId), TOKEN_TTL_HOURS, TimeUnit.HOURS);
+        redisTemplate.opsForSet().add(USER_TOKENS_PREFIX + userId, token);
+        redisTemplate.expire(USER_TOKENS_PREFIX + userId, TOKEN_TTL_HOURS, TimeUnit.HOURS);
         log.info("Token生成: userId={}", userId);
         return token;
     }
 
     public Long getUserIdFromToken(String token) {
-        if (token == null || token.isEmpty()) return null;
-        String key = TOKEN_PREFIX + token;
-        String userIdStr = redisTemplate.opsForValue().get(key);
-        if (userIdStr == null) return null;
-        refreshToken(token);
-        return Long.parseLong(userIdStr);
+        return resolveUserId(token, true);
     }
 
     public String refreshToken(String token) {
-        if (token == null || token.isEmpty()) return null;
-        String key = TOKEN_PREFIX + token;
-        String userIdStr = redisTemplate.opsForValue().get(key);
-        if (userIdStr == null) return null;
-
-        Long ttl = redisTemplate.getExpire(key, TimeUnit.SECONDS);
-        if (ttl != null && ttl > 0 && ttl < REFRESH_THRESHOLD_HOURS * 3600) {
-            redisTemplate.expire(key, TOKEN_TTL_HOURS, TimeUnit.HOURS);
-            log.info("Token续期: ttl={}s", ttl);
-        }
-        return token;
+        return resolveUserId(token, true) == null ? null : token;
     }
 
     public User getUserFromToken(String token) {
@@ -87,55 +76,70 @@ public class TokenService {
     }
 
     public void revokeToken(String token) {
-        if (token == null) return;
-
-        // 1. 获取userId
-        Long userId = getUserIdFromToken(token);
-
-        // 2. 删除Token
-        redisTemplate.delete(TOKEN_PREFIX + token);
+        if (token == null || token.isBlank()) return;
+        String tokenKey = TOKEN_PREFIX + token;
+        String userIdValue = redisTemplate.opsForValue().get(tokenKey);
+        String deviceId = redisTemplate.opsForValue().get(TOKEN_DEVICE_PREFIX + token);
+        Long userId = parseUserId(userIdValue);
+        boolean activeSessionRevoked = userId != null && deviceId != null
+                && sessionService.destroySession(userId, deviceId, token);
+        redisTemplate.delete(tokenKey);
+        redisTemplate.delete(TOKEN_DEVICE_PREFIX + token);
+        if (userId != null) redisTemplate.opsForSet().remove(USER_TOKENS_PREFIX + userId, token);
+        if (activeSessionRevoked && userId != null) clearUserSessionCaches(userId);
         log.info("Token已撤销: userId={}", userId);
-
-        // 3. 清除用户会话（单设备登录机制）
-        if (userId != null) {
-            try {
-                // 销毁会话信息
-                String deviceId = sessionService.getCurrentDeviceId(userId);
-                if (deviceId != null) {
-                    sessionService.destroySession(userId, deviceId);
-                }
-
-                // 清除对话列表缓存
-                String conversationsKey = "conversations:" + userId;
-                String conversationsVersionKey = "conversations:version:" + userId;
-                redisTemplate.delete(conversationsKey);
-                redisTemplate.delete(conversationsVersionKey);
-                log.info("对话列表缓存已清除: userId={}", userId);
-
-                // 清除消息缓存（SCAN方式，避免KEYS阻塞）
-                String messageCachePattern = "chat:messages:" + userId + ":*";
-                long deletedCount = redisScanUtil.deleteByPattern(messageCachePattern);
-                log.info("消息缓存已清除: userId={}, deleted={}", userId, deletedCount);
-
-                // 清除免费配额缓存
-                String freeLimitPattern = "free:limit:*:" + userId + ":*";
-                redisScanUtil.deleteByPattern(freeLimitPattern);
-                log.info("免费配额缓存已清除: userId={}", userId);
-
-                // 清除会员等级缓存
-                String membershipKey = "membership:" + userId;
-                redisTemplate.delete(membershipKey);
-                log.info("会员等级缓存已清除: userId={}", userId);
-
-            } catch (Exception e) {
-                log.error("清除用户缓存失败: userId={}", userId, e);
-                // 不抛出异常，确保Token能被正常撤销
-            }
-        }
     }
 
     public boolean validateToken(String token) {
         return getUserIdFromToken(token) != null;
+    }
+
+    private Long resolveUserId(String token, boolean refresh) {
+        if (token == null || token.isBlank()) return null;
+        String tokenKey = TOKEN_PREFIX + token;
+        String userIdValue = redisTemplate.opsForValue().get(tokenKey);
+        if (userIdValue == null) return null;
+        Long userId = parseUserId(userIdValue);
+        String deviceId = redisTemplate.opsForValue().get(TOKEN_DEVICE_PREFIX + token);
+        if (userId == null || deviceId == null || !sessionService.validateSession(userId, deviceId, token)) {
+            revokeToken(token);
+            return null;
+        }
+        User user = userService.getUserEntityById(userId);
+        if (user == null || user.getStatus() == com.ai.gateway.common.Constants.USER_STATUS_DISABLED) {
+            revokeToken(token);
+            return null;
+        }
+        if (refresh) {
+            Long ttl = redisTemplate.getExpire(tokenKey, TimeUnit.SECONDS);
+            if (ttl != null && ttl > 0 && ttl < REFRESH_THRESHOLD_HOURS * 3600) {
+                redisTemplate.expire(tokenKey, TOKEN_TTL_HOURS, TimeUnit.HOURS);
+                log.info("Token续期: ttl={}s", ttl);
+            }
+            sessionService.refreshSession(userId, deviceId, token);
+        }
+        return userId;
+    }
+
+    private Long parseUserId(String userIdValue) {
+        if (userIdValue == null) return null;
+        try {
+            return Long.parseLong(userIdValue);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private void clearUserSessionCaches(Long userId) {
+        try {
+            redisTemplate.delete("conversations:" + userId);
+            redisTemplate.delete("conversations:version:" + userId);
+            redisScanUtil.deleteByPattern("chat:messages:v2:" + userId + ":*");
+            redisScanUtil.deleteByPattern("free:limit:*:" + userId + ":*");
+            redisTemplate.delete("membership:" + userId);
+        } catch (Exception e) {
+            log.error("清除用户会话缓存失败: userId={}", userId, e);
+        }
     }
 
     // === Login Failure Lockout ===

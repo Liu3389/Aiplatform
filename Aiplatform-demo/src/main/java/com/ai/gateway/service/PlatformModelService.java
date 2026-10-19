@@ -10,6 +10,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -28,6 +29,10 @@ public class PlatformModelService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
+    /** DeepSeek 上游凭据的服务端环境变量兜底，不进入模型列表或接口响应。 */
+    @Value("${DEEPSEEK_API_KEY:}")
+    private String deepseekApiKey;
+
     // 优化：增加 Caffeine 本地缓存，减少 Redis 网络开销
     private final Cache<String, PlatformModelConfig> localCache = Caffeine.newBuilder()
             .maximumSize(100)
@@ -45,6 +50,38 @@ public class PlatformModelService {
         wrapper.eq(PlatformModelConfig::getStatus, 1)
                .orderByAsc(PlatformModelConfig::getSortOrder);
         return platformModelConfigMapper.selectList(wrapper);
+    }
+
+    /**
+     * 判断模型是否具备可调用的基础上游配置。只返回布尔状态，不暴露凭据内容。
+     */
+    public boolean isChatEnabled(PlatformModelConfig model) {
+        return model != null
+                && hasText(model.getProvider())
+                && hasText(model.getActualModel())
+                && hasText(model.getBaseUrl())
+                && hasText(resolveApiKey(model));
+    }
+
+    /**
+     * 返回本次上游调用的凭据。模型记录优先；仅 DeepSeek 允许从服务端环境变量补齐空凭据。
+     * 不应将返回值写入模型列表、日志或客户端响应。
+     */
+    public String resolveApiKey(PlatformModelConfig model) {
+        if (model == null) {
+            return null;
+        }
+        if (hasText(model.getApiKey())) {
+            return model.getApiKey().trim();
+        }
+        if ("deepseek".equalsIgnoreCase(model.getProvider()) && hasText(deepseekApiKey)) {
+            return deepseekApiKey.trim();
+        }
+        return null;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     /**
@@ -145,6 +182,7 @@ public class PlatformModelService {
             boolean accessible = userAccessLevel >= requiredLevel;
             item.put("accessible", accessible);
             item.put("requiredLevel", requiredLevel);
+            item.put("chatEnabled", isChatEnabled(model));
 
             if (requiredLevel > 0 && requiredLevel <= 3) {
                 item.put("requiredLevelName", levelNames[requiredLevel]);

@@ -10,6 +10,7 @@ import { useThemeStore } from '@/stores/themeStore'
 import { useI18nStore } from '@/stores/i18nStore'
 import { useAppStore } from '@/stores/appStore'
 import PageTransition from '@/components/PageTransition'
+import { getUserDisplayName } from '@/utils/userDisplay'
 
 // ===================== Hooks =====================
 
@@ -247,7 +248,7 @@ const FAQ_ITEMS = [
 const FEATURES = [
   { title: '智能路由调度', desc: '自动选择最优模型路径，支持权重分配、负载均衡、智能降级，确保每次调用都高效可靠', icon: 'M13 10V3L4 14h7v7l9-11h-7z', color: '#8B5CF6', tags: ['动态切换', '负载均衡', '降级策略'] },
   { title: '安全网关防护', desc: 'IP 级别限流、API Key 鉴权、参数安全过滤、攻击检测与防御，全方位保护你的 AI 调用', icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z', color: '#3B82F6', tags: ['Token Bucket', 'API 鉴权', '攻击防御'] },
-  { title: '精确计费引擎', desc: '基于 Redis Lua 的原子性计费，按 Token 精确扣点，消费明细透明可追溯，每一分钱都清清楚楚', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z', color: '#10B981', tags: ['原子扣点', '实时余额', '消费追溯'] },
+  { title: '精确计费引擎', desc: '基于 Redis Lua 的原子性计费，按 Token 精确扣点，消费明细透明可追溯，每一点数都清清楚楚', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z', color: '#10B981', tags: ['原子扣点', '点数余额', '消费追溯'] },
   { title: '实时数据分析', desc: '可视化用量仪表盘，支持多维度筛选、趋势分析、异常告警，帮助你优化 AI 调用策略', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', color: '#06B6D4', tags: ['可视化', '趋势分析', '异常告警'] },
   { title: '流式对话引擎', desc: '120FPS 零卡顿流式输出，支持 SSE/WebSocket 双协议，Pretext 渲染引擎确保极致流畅体验', icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4', color: '#F59E0B', tags: ['120FPS', 'SSE/WS', 'Pretext 渲染'] },
   { title: '开发者友好 API', desc: '完全兼容 OpenAI SDK，零学习成本接入。完善的文档、SDK 和示例代码，5 分钟即可集成', icon: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4', color: '#EC4899', tags: ['OpenAI 兼容', '零学习成本', '5 分钟集成'] },
@@ -1501,6 +1502,7 @@ export default function WelcomePage() {
   }, [mobileMenuOpen])
 
   const t = (zh: string, en: string) => lang === 'zh' ? zh : en
+  const userDisplayName = getUserDisplayName(user, t('第三方账号', 'External account'))
 
   const handleNavigateToChat = useCallback(() => {
     setShowTransition(true)
@@ -1719,13 +1721,13 @@ export default function WelcomePage() {
                 </GlowButton>
                 <div className="flex items-center gap-2 sm:gap-3">
                   <span className="text-xs sm:text-sm font-medium hidden lg:inline" style={{ color: isDark ? 'rgba(255,255,255,0.8)' : 'rgba(15,23,42,0.7)' }}>
-                    {user.username}
+                    {userDisplayName}
                   </span>
                   <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs font-bold" style={{
                     background: 'linear-gradient(135deg, #8B5CF6, #6366F1)',
                     color: '#FFFFFF',
                   }}>
-                    {user.username?.charAt(0).toUpperCase()}
+                    {userDisplayName.charAt(0).toUpperCase()}
                   </div>
                 </div>
               </>

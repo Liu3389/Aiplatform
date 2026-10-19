@@ -2,15 +2,18 @@ package com.ai.gateway.interceptor;
 
 import com.ai.gateway.common.Result;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.util.concurrent.TimeUnit;
+import java.util.UUID;
 
 /**
  * 用户限流拦截器 — 滑动窗口算法
@@ -29,33 +32,41 @@ public class UserRateLimitInterceptor implements HandlerInterceptor {
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     private static final String USER_RATE_LIMIT_PREFIX = "rate_limit:user:";
-    private static final int MAX_REQUESTS_PER_MINUTE = 60;
     private static final long WINDOW_MILLIS = 60_000;
+
+    @Value("${rate-limit.user-max-requests:60}")
+    private int maxRequestsPerMinute = 60;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        Long userId = (Long) request.getAttribute("userId");
-        if (userId == null) {
+        // SSE 的 ASYNC 续派不是新的客户端请求，不能重复消费用户限额。
+        // API Key 有按 key 配置的独立限流策略，不再叠加平台用户 Token 限额。
+        if (request.getDispatcherType() == DispatcherType.ASYNC || request.getAttribute("apiKey") != null) {
             return true;
         }
+
+        Object userIdAttribute = request.getAttribute("userId");
+        if (!(userIdAttribute instanceof Number)) return true;
+        Long userId = ((Number) userIdAttribute).longValue();
         
         String key = USER_RATE_LIMIT_PREFIX + userId;
         long now = System.currentTimeMillis();
         
-        redisTemplate.opsForZSet().add(key, String.valueOf(now), (double) now);
+        // 每个请求使用唯一 member，避免同一毫秒内的并发请求在 ZSet 中互相覆盖。
+        redisTemplate.opsForZSet().add(key, now + ":" + UUID.randomUUID(), (double) now);
         redisTemplate.opsForZSet().removeRangeByScore(key, 0, now - WINDOW_MILLIS);
         
         Long count = redisTemplate.opsForZSet().zCard(key);
         redisTemplate.expire(key, 65, TimeUnit.SECONDS);
         
-        if (count != null && count > MAX_REQUESTS_PER_MINUTE) {
-            log.warn("用户请求频率过高(滑动窗口): userId={}, count={}", userId, count);
+        if (count != null && count > maxRequestsPerMinute) {
+            log.warn("用户请求频率过高(滑动窗口): userId={}, count={}, limit={}", userId, count, maxRequestsPerMinute);
             
             response.setStatus(429);
             response.setContentType("application/json;charset=UTF-8");
             
-            Result<Void> result = Result.error(429, 
-                "请求过于频繁，请稍后再试（限制：" + MAX_REQUESTS_PER_MINUTE + "次/分钟）");
+            Result<Void> result = Result.error(429,
+                    "请求过于频繁，请稍后再试（限制：" + maxRequestsPerMinute + "次/分钟）");
             
             response.getWriter().write(objectMapper.writeValueAsString(result));
             return false;

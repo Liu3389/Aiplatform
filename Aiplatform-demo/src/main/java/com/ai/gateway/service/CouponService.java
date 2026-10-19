@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,6 +26,9 @@ public class CouponService {
     private final CouponMapper couponMapper;
     private final CouponUsageRecordMapper couponUsageRecordMapper;
     private final UserMapper userMapper;
+    private final NotificationFacadeService notificationFacade;
+
+    private static final DateTimeFormatter EXPIRE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     public List<Coupon> listByUser(Long userId) {
         LambdaQueryWrapper<Coupon> wrapper = new LambdaQueryWrapper<>();
@@ -59,6 +63,25 @@ public class CouponService {
         return c;
     }
 
+    /**
+     * 发券后同步发送通知（与发券同事务，保证一致性）。
+     */
+    private void notifyCouponSent(Long userId, Coupon coupon) {
+        try {
+            String expireText = coupon.getExpireTime() != null
+                    ? "，有效期至 " + coupon.getExpireTime().format(EXPIRE_FMT)
+                    : "，长期有效";
+            String planText = (coupon.getApplicablePlan() == null || coupon.getApplicablePlan().isEmpty())
+                    ? "通用" : coupon.getApplicablePlan() + " 套餐";
+            String content = "面值 ¥" + coupon.getAmount() + "（" + planText + "）" + expireText;
+            String metadata = "{\"couponId\":" + coupon.getId() + ",\"amount\":" + coupon.getAmount() + "}";
+            notificationFacade.sendToUser(userId, "您获得一张代金券", content, "coupon", coupon.getId(), metadata);
+        } catch (Exception e) {
+            // 通知发送失败不应回滚发券事务，仅记录日志
+            log.warn("发券通知发送失败: userId={}, couponId={}", userId, coupon.getId(), e);
+        }
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public int sendToAllUsers(BigDecimal amount, BigDecimal thresholdAmount,
                                String applicablePlan, LocalDateTime expireTime) {
@@ -76,7 +99,8 @@ public class CouponService {
                 skipCount++;
                 continue;
             }
-            createCoupon(u.getId(), amount, thresholdAmount, applicablePlan, expireTime);
+            Coupon coupon = createCoupon(u.getId(), amount, thresholdAmount, applicablePlan, expireTime);
+            notifyCouponSent(u.getId(), coupon);
             sentCount++;
         }
         log.info("群发代金卷完成: sent={}, skipped={}, amount={}", sentCount, skipCount, amount);
@@ -102,7 +126,8 @@ public class CouponService {
                 skipCount++;
                 continue;
             }
-            createCoupon(u.getId(), amount, thresholdAmount, applicablePlan, expireTime);
+            Coupon coupon = createCoupon(u.getId(), amount, thresholdAmount, applicablePlan, expireTime);
+            notifyCouponSent(u.getId(), coupon);
             sentCount++;
         }
         log.info("按会员发代金卷完成: membership={}, sent={}, skipped={}, amount={}", membership, sentCount, skipCount, amount);
@@ -129,7 +154,8 @@ public class CouponService {
                 skipCount++;
                 continue;
             }
-            createCoupon(u.getId(), amount, thresholdAmount, applicablePlan, expireTime);
+            Coupon coupon = createCoupon(u.getId(), amount, thresholdAmount, applicablePlan, expireTime);
+            notifyCouponSent(u.getId(), coupon);
             sentCount++;
         }
         log.info("按新用户发代金卷完成: days={}, sent={}, skipped={}, amount={}", days, sentCount, skipCount, amount);
@@ -153,26 +179,32 @@ public class CouponService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public BigDecimal useCoupon(Long userId, Long couponId, BigDecimal orderAmount, String plan, 
+    public BigDecimal useCoupon(Long userId, Long couponId, BigDecimal orderAmount, String plan,
                                 String orderType, String orderId) {
+        // 先查询券信息用于业务校验（门槛、适用套餐等）
         Coupon c = couponMapper.selectById(couponId);
         if (c == null || !c.getUserId().equals(userId)) throw new RuntimeException("代金卷不存在");
-        if (Boolean.TRUE.equals(c.getUsed())) throw new RuntimeException("代金卷已使用");
-        if (c.getExpireTime() != null && c.getExpireTime().isBefore(LocalDateTime.now()))
-            throw new RuntimeException("代金卷已过期");
         if (c.getThresholdAmount().compareTo(BigDecimal.ZERO) > 0 && orderAmount.compareTo(c.getThresholdAmount()) < 0)
             throw new RuntimeException("未达到使用门槛 ¥" + c.getThresholdAmount());
         if (c.getApplicablePlan() != null && !c.getApplicablePlan().isEmpty() && !c.getApplicablePlan().equals(plan))
             throw new RuntimeException("此代金卷仅适用于 " + c.getApplicablePlan() + " 套餐");
 
+        // 原子条件更新：仅当未使用且未过期时才标记为已使用，消除 TOCTOU 竞态
+        int affected = couponMapper.updateToUsedIfAvailable(couponId, userId);
+        if (affected == 0) {
+            // 抢占失败，查询具体原因给出明确提示
+            if (Boolean.TRUE.equals(c.getUsed())) {
+                throw new RuntimeException("代金卷已使用");
+            }
+            if (c.getExpireTime() != null && c.getExpireTime().isBefore(LocalDateTime.now())) {
+                throw new RuntimeException("代金卷已过期");
+            }
+            throw new RuntimeException("代金卷使用失败，可能已被其他请求占用");
+        }
+
         BigDecimal discount = c.getAmount().min(orderAmount);
         BigDecimal actualAmount = orderAmount.subtract(discount);
-        
-        // 标记优惠券为已使用
-        c.setUsed(true);
-        c.setUsedTime(LocalDateTime.now());
-        couponMapper.updateById(c);
-        
+
         // 记录优惠券使用历史
         CouponUsageRecord usageRecord = new CouponUsageRecord();
         usageRecord.setUserId(userId);
@@ -187,8 +219,8 @@ public class CouponService {
         usageRecord.setUsageTime(LocalDateTime.now());
         usageRecord.setRemark("优惠券使用 - " + (plan != null ? plan : "通用"));
         couponUsageRecordMapper.insert(usageRecord);
-        
-        log.info("代金卷已使用: userId={}, couponId={}, discount={}, orderType={}, orderId={}", 
+
+        log.info("代金卷已使用: userId={}, couponId={}, discount={}, orderType={}, orderId={}",
                 userId, couponId, discount, orderType, orderId);
         return discount;
     }

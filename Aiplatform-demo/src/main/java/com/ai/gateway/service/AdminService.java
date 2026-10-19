@@ -74,16 +74,16 @@ public class AdminService {
             }
         }
         
-        // 批量获取所有用户的调用次数和消费金额
+        // 批量获取所有用户的调用次数和点数消耗
         Map<Long, Long> userCallsMap = new HashMap<>();
-        Map<Long, BigDecimal> userCostMap = new HashMap<>();
+        Map<Long, BigDecimal> userPointsMap = new HashMap<>();
         if (!users.isEmpty()) {
             List<Long> userIds = users.stream().map(User::getId).collect(Collectors.toList());
             List<Map<String, Object>> callStats = callLogMapper.getUserCallStats(userIds);
             for (Map<String, Object> row : callStats) {
                 Long userId = ((Number) row.get("user_id")).longValue();
                 userCallsMap.put(userId, ((Number) row.get("calls")).longValue());
-                userCostMap.put(userId, new BigDecimal(row.get("cost").toString()));
+                userPointsMap.put(userId, new BigDecimal(row.get("points").toString()));
             }
         }
         
@@ -98,7 +98,7 @@ public class AdminService {
 
             vo.setApiKeyCount(apiKeyCountMap.getOrDefault(user.getId(), 0));
             vo.setTotalCalls(userCallsMap.getOrDefault(user.getId(), 0L));
-            vo.setTotalCost(userCostMap.getOrDefault(user.getId(), BigDecimal.ZERO));
+            vo.setTotalPointsConsumed(userPointsMap.getOrDefault(user.getId(), BigDecimal.ZERO));
             vo.setCreateTime(user.getCreateTime() != null ? user.getCreateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
             return vo;
         }).collect(Collectors.toList());
@@ -121,14 +121,14 @@ public class AdminService {
             log.warn("获取调用总数失败", e);
         }
         stats.setTotalCalls(totalCalls);
-        stats.setTotalCost(callLogMapper.sumCost());
+        stats.setTotalPointsConsumed(callLogMapper.sumPointsConsumed());
 
         LocalDate today = LocalDate.now();
         LocalDateTime startOfDay = today.atStartOfDay();
         stats.setTodayCalls(callLogMapper.countTodayCalls(startOfDay));
         
-        BigDecimal todayCost = callLogMapper.sumCostByDate(startOfDay);
-        stats.setTodayCost(todayCost != null ? todayCost : BigDecimal.ZERO);
+        BigDecimal todayPoints = callLogMapper.sumPointsByDate(startOfDay);
+        stats.setTodayPointsConsumed(todayPoints != null ? todayPoints : BigDecimal.ZERO);
 
         return stats;
     }
@@ -150,7 +150,7 @@ public class AdminService {
         // 修复 P0-3: 从 call_log 聚合真实调用数据
         Map<String, Object> callStats = callLogMapper.getUserCallStatsSingle(userId);
         vo.setTotalCalls(callStats != null ? ((Number) callStats.get("calls")).longValue() : 0L);
-        vo.setTotalCost(callStats != null ? new BigDecimal(callStats.get("cost").toString()) : BigDecimal.ZERO);
+        vo.setTotalPointsConsumed(callStats != null ? new BigDecimal(callStats.get("points").toString()) : BigDecimal.ZERO);
         vo.setCreateTime(user.getCreateTime() != null ? user.getCreateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
 
         return vo;
@@ -177,11 +177,11 @@ public class AdminService {
             item.put("date", dateStr);
             if (row != null) {
                 item.put("calls", ((Number) row.get("calls")).longValue());
-                item.put("cost", new BigDecimal(row.get("cost").toString()).setScale(2, BigDecimal.ROUND_HALF_UP));
+                item.put("points", new BigDecimal(row.get("points").toString()).setScale(2, BigDecimal.ROUND_HALF_UP));
                 item.put("tokens", ((Number) row.get("tokens")).longValue());
             } else {
                 item.put("calls", 0L);
-                item.put("cost", BigDecimal.ZERO);
+                item.put("points", BigDecimal.ZERO.setScale(2, BigDecimal.ROUND_HALF_UP));
                 item.put("tokens", 0L);
             }
             result.add(item);
@@ -200,7 +200,7 @@ public class AdminService {
             Map<String, Object> item = new HashMap<>();
             item.put("model", row.get("model"));
             item.put("calls", row.get("calls"));
-            item.put("cost", new BigDecimal(row.get("cost").toString()).setScale(2, BigDecimal.ROUND_HALF_UP));
+            item.put("points", new BigDecimal(row.get("points").toString()).setScale(2, BigDecimal.ROUND_HALF_UP));
             result.add(item);
         }
         return result;
@@ -226,7 +226,7 @@ public class AdminService {
     }
 
     public List<Map<String, Object>> getTopUsers() {
-        List<Map<String, Object>> result = callLogMapper.getTopUsersByCost(10);
+        List<Map<String, Object>> result = callLogMapper.getTopUsersByPoints(10);
         for (int i = 0; i < result.size(); i++) {
             result.get(i).put("rank", i + 1);
         }
@@ -248,6 +248,15 @@ public class AdminService {
             BigDecimal revenue = stats.getTotalRevenue() != null ? stats.getTotalRevenue() : BigDecimal.ZERO;
             revenueMap.merge(month, revenue, BigDecimal::add);
         }
+
+        // 对话成本使用点数统计，不能与人民币营收混用。
+        Map<String, BigDecimal> pointsMap = new HashMap<>();
+        for (Map<String, Object> row : callLogMapper.aggregateRevenueByMonth(startDate.atStartOfDay())) {
+            String month = String.valueOf(row.get("month"));
+            BigDecimal points = row.get("points") == null
+                    ? BigDecimal.ZERO : new BigDecimal(row.get("points").toString());
+            pointsMap.put(month, points);
+        }
         
         List<Map<String, Object>> result = new ArrayList<>();
         for (int m = months - 1; m >= 0; m--) {
@@ -257,7 +266,7 @@ public class AdminService {
             Map<String, Object> item = new HashMap<>();
             item.put("month", monthKey);
             item.put("revenue", revenueMap.getOrDefault(monthKey, BigDecimal.ZERO).setScale(2, BigDecimal.ROUND_HALF_UP));
-            item.put("costs", 0.0);
+            item.put("points", pointsMap.getOrDefault(monthKey, BigDecimal.ZERO).setScale(2, BigDecimal.ROUND_HALF_UP));
             result.add(item);
         }
         return result;
@@ -337,13 +346,13 @@ public class AdminService {
         // 修复 P2-36: 批量获取用户调用统计，避免 N+1 查询
         List<Long> userIds = result.getRecords().stream().map(User::getId).collect(Collectors.toList());
         Map<Long, Long> userCallsMap = new HashMap<>();
-        Map<Long, BigDecimal> userCostMap = new HashMap<>();
+        Map<Long, BigDecimal> userPointsMap = new HashMap<>();
         if (!userIds.isEmpty()) {
             List<Map<String, Object>> callStats = callLogMapper.getUserCallStats(userIds);
             for (Map<String, Object> row : callStats) {
                 Long uid = ((Number) row.get("user_id")).longValue();
                 userCallsMap.put(uid, ((Number) row.get("calls")).longValue());
-                userCostMap.put(uid, new BigDecimal(row.get("cost").toString()));
+                userPointsMap.put(uid, new BigDecimal(row.get("points").toString()));
             }
         }
 
@@ -357,7 +366,7 @@ public class AdminService {
             item.put("status", user.getStatus() == 1 ? "ACTIVE" : "DISABLED");
             item.put("membership", user.getMembership() != null ? user.getMembership() : "free");
             item.put("totalCalls", userCallsMap.getOrDefault(user.getId(), 0L));
-            item.put("totalCost", userCostMap.getOrDefault(user.getId(), BigDecimal.ZERO));
+            item.put("totalPointsConsumed", userPointsMap.getOrDefault(user.getId(), BigDecimal.ZERO));
             item.put("createTime", user.getCreateTime() != null ? user.getCreateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
             return item;
         }).collect(Collectors.toList());
@@ -430,13 +439,13 @@ public class AdminService {
         // 修复 P0-2: 批量获取用户调用统计，避免 N+1 查询
         List<Long> userIds = result.getRecords().stream().map(User::getId).collect(Collectors.toList());
         Map<Long, Long> userCallsMap = new HashMap<>();
-        Map<Long, BigDecimal> userCostMap = new HashMap<>();
+        Map<Long, BigDecimal> userPointsMap = new HashMap<>();
         if (!userIds.isEmpty()) {
             List<Map<String, Object>> callStats = callLogMapper.getUserCallStats(userIds);
             for (Map<String, Object> row : callStats) {
                 Long uid = ((Number) row.get("user_id")).longValue();
                 userCallsMap.put(uid, ((Number) row.get("calls")).longValue());
-                userCostMap.put(uid, new BigDecimal(row.get("cost").toString()));
+                userPointsMap.put(uid, new BigDecimal(row.get("points").toString()));
             }
         }
 
@@ -453,7 +462,7 @@ public class AdminService {
             item.put("dailyFreeCount", user.getDailyFreeCount());
             item.put("membershipExpireTime", user.getMembershipExpireTime());
             item.put("totalCalls", userCallsMap.getOrDefault(user.getId(), 0L));
-            item.put("totalCost", userCostMap.getOrDefault(user.getId(), BigDecimal.ZERO));
+            item.put("totalPointsConsumed", userPointsMap.getOrDefault(user.getId(), BigDecimal.ZERO));
             item.put("createTime", user.getCreateTime() != null ? user.getCreateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
             return item;
         }).collect(Collectors.toList());
@@ -480,6 +489,7 @@ public class AdminService {
         wrapper.in(User::getId, userIds).set(User::getStatus, status);
         
         int rows = userMapper.update(null, wrapper);
+        if (status == 0) userIds.forEach(userService::revokeUserSessions);
         log.info("批量更新用户状态: 总数={}, 成功={}, 新状态={}", userIds.size(), rows, status);
         return rows;
     }
@@ -523,6 +533,25 @@ public class AdminService {
                 "管理员调整: " + reason, null, 0);
         
         log.info("调整用户点数: userId={}, 调整={}, 类型={}, 原因={}", userId, points, changeType, reason);
+    }
+
+    /**
+     * 手动增减用户余额（仅超级管理员可用，由控制器保证权限）
+     * @return 调整后的余额
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public BigDecimal adjustUserBalance(Long userId, BigDecimal delta, String reason) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+        BigDecimal current = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
+        BigDecimal updated = current.add(delta).setScale(3, java.math.RoundingMode.HALF_UP);
+        user.setBalance(updated);
+        userMapper.updateById(user);
+
+        log.info("调整用户余额: userId={}, 调整={}, 调整后={}, 原因={}", userId, delta, updated, reason);
+        return updated;
     }
 
     /**
