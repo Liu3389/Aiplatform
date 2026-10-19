@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 preflight = (ROOT / "scripts/local-release-preflight.sh").read_text(encoding="utf-8")
 deploy = (ROOT / "scripts/server-deploy.sh").read_text(encoding="utf-8")
 compose = ROOT / "docker-compose.server.yml"
+env_template = (ROOT / ".env.prod.example").read_text(encoding="utf-8")
 
 assert 'PREFLIGHT_MODE="${1:-full}"' in preflight
 assert '[[ "$PREFLIGHT_MODE" == "--local-only" ]]' in preflight
@@ -83,6 +84,10 @@ def compose_config(values: dict[str, str]) -> dict:
 configured_backend_env = compose_config(required | optional)["services"]["backend"]["environment"]
 for name, expected in optional.items():
     assert configured_backend_env.get(name) == expected, f"server Compose does not pass through {name}"
+    assert f"{name}=" in env_template, f"production template does not document {name}"
+
+assert "scripts/server-deploy.sh" in env_template, "production template must direct operators through the gated deploy script"
+assert "docker-compose.prod.yml" not in env_template, "production template must not advertise the obsolete deployment command"
 
 default_backend_env = compose_config(required)["services"]["backend"]["environment"]
 assert default_backend_env.get("RABBITMQ_ENABLED") == "false", "RabbitMQ must remain opt-in by default"

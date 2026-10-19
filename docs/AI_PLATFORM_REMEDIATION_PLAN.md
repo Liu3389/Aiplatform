@@ -292,7 +292,7 @@
 - [x] 2026-10-19 根据用户确认“生产凭据已在服务器受控环境配置”，将部署流程拆分为本地功能验收与目标服务器密钥校验：`local-release-preflight.sh --local-only` 不要求把服务器密钥复制到开发机；`server-deploy.sh` 仍在任何镜像传输前执行目标机 `docker compose ... config -q`。`test-deploy-preflight-routing.py`、Bash 语法检查及完整 `--local-only` 本地预检通过（后端 101 项、0 失败/错误、2 项 Rabbit opt-in 跳过；前端构建与 `verify-chat` 通过）。
 - [x] 2026-10-19 使用用户提供的主机、用户和本机私钥路径完成严格主机校验下的远端只读 Compose 检查，并列出现有容器状态；未输出密钥值，未执行镜像或容器变更。当前 shell 尚未常驻设置部署脚本所需环境变量；获准部署时再按需注入。
 - [x] 2026-10-19 远程校验后再次扫描当前本地 `main` 的完整推送历史：1 个目标引用、1,387 个文件对象、34 个提交，`scripts/check-push-history-secrets.py` 通过。`origin/main` 未修改且仍保留旧历史；本次没有推送。
-- [x] 2026-10-19 复核服务器 Compose 时发现 RabbitMQ、OSS、SMTP/短信和 Google OIDC 环境变量未传入后端容器；已在 `docker-compose.server.yml` 补齐显式透传，默认仍关闭 RabbitMQ、外发验证和 Google OAuth，敏感项默认空值。`scripts/test-deploy-preflight-routing.py` 用临时合成环境动态渲染 Compose 并逐项断言变量可达，同时验证默认关闭；测试及 `git diff --check` 通过，没有启动或修改容器。生产服务是否真实可用仍需单独联调。
+- [x] 2026-10-19 复核服务器 Compose 时发现 RabbitMQ、OSS、SMTP/短信和 Google OIDC 环境变量未传入后端容器；已在 `docker-compose.server.yml` 补齐显式透传，默认仍关闭 RabbitMQ、外发验证和 Google OAuth，敏感项默认空值。`scripts/test-deploy-preflight-routing.py` 用临时合成环境动态渲染 Compose 并逐项断言变量可达、检查 `.env.prod.example` 字段齐全和部署命令指引有效，同时验证默认关闭；凭据扫描、测试及 `git diff --check` 通过。没有启动或修改容器；生产服务是否真实可用仍需单独联调。
 - [x] 2026-10-19 远端只读核对仅输出变量名和存在状态，未读取或回传任何值：`/root/lingdian/.env.prod` 中 RabbitMQ、OSS、SMTP/短信和 Google OIDC 配置项均缺失；当前 `lingdian-backend` 容器中对应环境变量也均不存在。因此这些生产外部能力当前确实未配置；本次没有修改服务器文件或容器，待凭据所有者将非敏感配置及密钥安全写入服务器后，再按受控发布门禁验收。
 - [x] 2026-10-19 最新本地检查点 `39e66f1` 完成后，针对 `main` 再次扫描完整推送历史：1 个目标引用、1,399 个文件对象、37 个提交，通过；没有推送，远端历史仍未变更。
 
