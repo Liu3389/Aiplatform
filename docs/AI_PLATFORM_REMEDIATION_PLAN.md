@@ -14,7 +14,7 @@
 以下列出仍需完成的真实依赖或发布前人工核验；具体完成状态以各整改批次的证据为准。未完成相应门禁前不得开放线上功能或发布。凭据放入权限受限的本地/服务器环境文件或密钥管理器，不要提交 Git，也不要粘贴到聊天。
 
 - **Google OIDC 沙箱与生产门禁**：本地开发项目已创建 Web OAuth 客户端并完成真实登录验收；本地凭据仅保存在被 Git 忽略且权限为 `600` 的 `.runtime/local.env`。独立生产项目 `lingdian-ai-production` 已创建；2026-10-19 经用户授权后，Google Auth Platform 品牌配置已保存为“凌点 AI”，受众为“外部/测试”，`liu771862@gmail.com` 已登记为唯一测试用户，授权域名为 `lingdian-ai.top`，首页为 `https://lingdian-ai.top/welcome`。生产项目尚无 Web OAuth 客户端；服务器 `.env.prod` 中 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GOOGLE_OAUTH_REDIRECT_URI` 均缺失，公网授权入口返回业务码 503。安全配置加载路径已加入 `application.yml`（可从容器内 `/app/google-oauth.properties` 读取）并推送到 `main` 提交 `f028fe7`，但尚未部署。客户端必须在独立生产项目创建，不能复用本地客户端。隐私/服务条款页面与运营主体信息仍未完成正式发布，因此目前仅限测试用户登录，不代表可向公众发布或通过 OAuth 审核。
-- **DeepSeek 上游**：现有配置凭据已通过官方 `GET /models` 鉴权，并完成本地非流式与 SSE 真实聊天验收；无需为本地联调申请新 Key。凭据仅存于权限 `600` 的 Git 忽略文件 `.runtime/local.env`。用户已授权清理本地 `main` 历史；最新 `main` 与 `origin/main` 已推送同步至 `f028fe7`，推送扫描通过。本地回滚引用仍保留重写前对象；没有撤销或轮换现有 Key。线上数据库中的模型 Key 未在本轮读取；生产上游仍需单独进行脱敏联调验收。
+- **DeepSeek 上游**：现有配置凭据已通过官方 `GET /models` 鉴权，并完成本地非流式与 SSE 真实聊天验收；无需为本地联调申请新 Key。凭据仅存于权限 `600` 的 Git 忽略文件 `.runtime/local.env`。用户已授权清理本地 `main` 历史；当前 `main` 与 `origin/main` 同步，推送扫描通过。本地回滚引用仍保留重写前对象；没有撤销或轮换现有 Key。线上数据库中的模型 Key 未在本轮读取；生产上游仍需单独进行脱敏联调验收。
 - **邮件与短信**：真实邮件需配置 SMTP `SPRING_MAIL_*`；真实短信需配置 `VERIFICATION_DELIVERY_MODE=external`、`VERIFICATION_SMS_URL`、`VERIFICATION_SMS_TOKEN`、`VERIFICATION_SMS_TEMPLATE_ID`，之后分别验收投递与验证绑定。
 - **真实 RabbitMQ 与 OSS**：部署环境需配置 `RABBITMQ_HOST`、`RABBITMQ_PORT`、`RABBITMQ_USERNAME`、`RABBITMQ_PASSWORD`、`RABBITMQ_VHOST`，并联调队列、监控和重启恢复；OSS 使用 `ALIYUN_OSS_ENDPOINT`、`ALIYUN_OSS_ACCESS_KEY_ID`、`ALIYUN_OSS_ACCESS_KEY_SECRET`、`ALIYUN_OSS_BUCKET`、`ALIYUN_OSS_DOMAIN`。若要实际使用 OSS，还需将 `APP_STORAGE_PREFER_LOCAL=false`；模板默认 true 会继续优先本地存储。本地 RabbitMQ 与本地文件存储已各自验证，不能替代生产联调。
 - **线上发布配置**：最新只读核验发现 `MYSQL_PASSWORD`、`SECONDARY_PASSWORD` 已设置而 `REDIS_PASSWORD` 为空。用户明确选择保持现有 Redis/backend 配置，暂不启用 Redis 认证；因此不要求现在设置 Redis 密码，也不为此重启 Redis。使用旧 `server-deploy.sh`/Compose 的镜像发布仍会因严格 Redis 密码门禁拒绝；当前新增的原容器内 JAR/静态文件发布流程不使用 Compose，不新建镜像/容器。其他服务器必需密码不需要复制到开发机或聊天中。以后执行受控发布需设置 `AI_PLATFORM_DEPLOY_HOST` 和 `AI_PLATFORM_DEPLOY_SSH_KEY`。
@@ -69,7 +69,7 @@
 
 ### 批次 E：配置、凭据与部署边界
 
-- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；本机暂存/工作区凭据扫描通过。用户已授权并完成本地 `main` 历史脱敏；当前 `main` 与 `origin/main` 已同步至 `f028fe7`，推送扫描通过。本地回滚引用仍保留重写前对象；不因格式命中推断密钥当前有效，也未撤销或轮换凭据。服务器 `.env.prod` 为 `0600`；`MYSQL_PASSWORD`、`SECONDARY_PASSWORD` 非空，`REDIS_PASSWORD` 为空，且用户明确选择暂不启用 Redis 认证。Google 测试模式品牌配置已完成，但生产客户端凭据未创建；RabbitMQ、OSS、SMTP/短信生产配置仍为空/未完成联调；服务器凭据不应复制到开发机或聊天中。
+- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；本机暂存/工作区凭据扫描通过。用户已授权并完成本地 `main` 历史脱敏；当前 `main` 与 `origin/main` 同步，推送扫描通过。本地回滚引用仍保留重写前对象；不因格式命中推断密钥当前有效，也未撤销或轮换凭据。服务器 `.env.prod` 为 `0600`；`MYSQL_PASSWORD`、`SECONDARY_PASSWORD` 非空，`REDIS_PASSWORD` 为空，且用户明确选择暂不启用 Redis 认证。Google 测试模式品牌配置已完成，但生产客户端凭据未创建；RabbitMQ、OSS、SMTP/短信生产配置仍为空/未完成联调；服务器凭据不应复制到开发机或聊天中。
 - [x] **E2 前端 API 路由不被静态扩展规则截获（P2-19）**：`/api/`、`/chat/`、`/v1/` 已使用 `^~` 前缀优先匹配。临时 Nginx 与 mock 后端验证了带 `.png`、`.pdf`、`.svg`、`.json` 后缀的 API/SSE 请求均转发到后端，SSE 未缓冲，静态资源缓存保持正常；`nginx -t` 通过。
 - [x] **E3 聊天页首屏包体过大（本地构建新发现，P3-21）**：聊天页 Markdown、Mermaid、代码高亮、公式渲染已按需加载。构建后 ChatPage 入口为 94.97 KB（gzip 25.97 KB），较整改前约减少 93%；浏览器回归确认 Markdown、代码高亮、KaTeX 和 Mermaid 均正常。ECharts 与其他页面共享 chunk 仍超过 500 KB，但不在 ChatPage 静态依赖图中，作为独立页面优化跟踪。
 
