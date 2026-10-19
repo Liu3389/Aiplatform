@@ -343,4 +343,16 @@
 - [x] 2026-10-19 本地检查点提交为 `802f5ed`，仅包含本计划与删除含非占位密码字段的旧 `.env.example`；现有其他代码/配置改动保持在工作区。
 - [x] 2026-10-19 最新本地全链路复验：`./scripts/local-release-preflight.sh --local-only` 通过；34 个 Surefire suite 共 101 项（0 失败、0 错误、2 项 Rabbit opt-in 跳过），前端生产构建通过；`verify-chat` 覆盖 CAPTCHA 错误/重放、模型可用性、联系方式、充值关闭、越权路径、幂等/SSE、限流/管理员权限及 B4 恢复，12 次模拟上游请求（3 次 SSE）、20 条消息持久化、11 笔结算。结束后 MySQL、Redis、backend、web、mock 仍运行，代理为 local。
 - [ ] 剩余未提交工作区文件包含 IDE/旧文档/其他运维与游戏文件，本轮未纳入整改提交；整改代码已推送但尚未部署。线上发布仍受服务器 Redis 认证配置、现有容器替换授权、Google 生产域名与 OAuth 配置、生产 RabbitMQ/OSS/邮件/短信联调及旧数据完整性核验等门禁约束。MySQL 与二级口令已确认非空；Redis 密码当前为空，不可按已配置处理。
+
 - [x] 2026-10-19 本地 `main` 整改提交已推送。首次安全推送被 GitHub 拒绝：历史中的根目录 `mysql8.tar` 为 244,640,256 bytes，远端 `main` 未改变。用户当前工作区没有该归档文件；本地 `main` 历史已移除该文件并保留 `refs/backup/main-before-large-file-removal` 回退引用；pre-push 检查新增 100 MiB blob 限制，模拟回归通过。随后使用 `--force-with-lease` 成功更新远端 `main`，并通过 `git ls-remote` 与 `git fetch` 确认远端、本地分支均为 `d4e4a63`。尚未部署。
+
+### 生产发布验收（2026-10-19，代码提交 `9df82a6`）
+
+- [x] 本地发布门禁先于生产操作完成：`./scripts/local-release-preflight.sh --local-only` 通过；Maven 101 项测试通过（2 项 RabbitMQ opt-in 测试按条件跳过），前端构建及 `verify-chat` 通过，覆盖验证码、模型可用状态、聊天幂等/归属/限流、SSE、点数结算与恢复。
+- [x] 将线上 `ai_gateway` 的仅结构 mysqldump（无业务数据）导入现有本地 MySQL 临时库，按 v8→v17 连续执行两遍；9 个必需列、7 张新表、4 个新索引及 `points_bill.change_type` 长度 32 均通过核对，临时库已删除。
+- [x] 线上先在权限 `700` 的 `/root/lingdian/backups` 备份数据库、当前后端 JAR 与前端静态文件；备份文件均为 `600`，数据库与前端压缩包通过完整性检查。备份时间为 `20261019T065519Z`。
+- [x] 线上现有 MySQL 容器内执行 v8→v17 迁移并核对结构。用户确认旧限时赠点按永久点数保留；迁移前后用户点数合计均为 `53934.000`，旧限时账本均为 6 笔、`790.000` 点，未回填或改写旧余额。
+- [x] 后端 JAR 与前端静态资源已部署到原有容器；后端在原容器内重启，未构建/加载镜像、未创建或替换容器。后端、前端、MySQL、Redis 容器 ID 与发布前一致；Redis/MySQL 未重启，Redis 认证按用户选择继续暂缓。
+- [x] 发布后后端 `/api/health` 与登录验证码接口均返回 200；前端首页返回 200，页面引用的 15 个 JS/CSS 资源均返回 200；Nginx 配置检查成功。新文件恢复扫描将原先 2 个过期 `PARSING` 任务恢复为 `SUCCESS`，目前 58 个文件解析任务均为成功。
+- [ ] 本次没有发起新的线上模型请求或付费聊天；本地模拟上游和真实凭据验收记录仍按各自章节区分。Google 生产 OAuth 尚需正式 HTTPS 来源/回调、首页/隐私政策/服务条款 URL 和独立生产客户端；SMTP/短信、RabbitMQ、OSS 尚未完成线上配置与联调。直充仍按用户决定关闭。
+- [ ] 旧 Token 因缺少设备绑定映射按失败关闭策略需要用户重新登录；历史邮箱不会自动视为已验证，用户需重新验证。旧伪 OAuth/TOTP Redis 数据不迁移。生产 Redis 仍无认证且未公开宿主机端口，`.env.prod` 权限为 `600`；Redis 认证保持暂缓，启用前需安排现有 Redis/backend 的一致配置和重启。
