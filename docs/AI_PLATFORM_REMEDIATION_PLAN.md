@@ -316,7 +316,7 @@
 - [x] 2026-10-19 本地浏览器只读视觉复验：`/login` 实际渲染用户名/密码、验证码输入框与图片、刷新按钮、“5 分钟内有效”提示、登录与 Google 登录入口；页面结构与截图显示一致。本次未填写账号、解答验证码或提交登录。
 - [x] 2026-10-19 完整 `scripts/local-release-preflight.sh` 复验：本地 `verify` 通过；后端 34 个 Surefire suite 共 101 项、0 失败、0 错误、2 项 Rabbit opt-in 跳过；`npm run build` 通过；`verify-chat` 覆盖登录验证码错误/重放拒绝、模型可用性、联系方式、路径权限、充值关闭、聊天幂等与持久化、SSE、限流、管理员权限、结算重放及 B4 故障恢复，模拟上游收到 12 次请求（3 次 SSE），20 条消息持久化、11 笔结算完成。最后在生产配置门禁因缺少 `MYSQL_PASSWORD`、`REDIS_PASSWORD`、`SECONDARY_PASSWORD` 退出码 1；未连接、推送或部署远端。
 - [x] 随后单独重跑 `RabbitEventPublisherIntegrationTest`：使用隔离的 RabbitMQ 4.2.9 容器和随机 loopback 端口，两项测试均通过（publisher confirm/持久化/mandatory unroutable return；listener 分派后 ACK），Surefire 记录 2 项、0 失败/错误/跳过。测试容器已删除，没有修改默认本地栈或接触生产 broker。
-- [x] 复验后本地 MySQL/Redis、后端、前端和 mock 均运行，前端 API 代理仍指向 `http://127.0.0.1:18080`；`.runtime/local.env` 权限 `600`。`scripts/check-staged-env-secrets.py` 通过；本地检查点提交后针对当前 `main` 的 pre-push 扫描通过（1 个引用、1,372 个文件对象、29 个提交）。远端 `origin/main` 仍为旧历史，因此这些本地检查不授权推送。
+- [x] 复验后本地 MySQL/Redis、后端、前端和 mock 均运行，前端 API 代理仍指向 `http://127.0.0.1:18080`；`.runtime/local.env` 权限 `600`。`scripts/check-staged-env-secrets.py` 通过；本地检查点提交后针对当前 `main` 的 pre-push 扫描通过。远端 `origin/main` 仍为旧历史，因此这些本地检查不授权推送。
 
 - [x] C3 会话过期恢复单测复验通过：`npm run test:auth-session`，7 项通过、0 失败，覆盖首次 HTTP 401、刷新后重试仍为 HTTP 401 时清理会话，以及非认证错误保留会话；`npm run build` 和 `git diff --check` 通过。构建仍提示独立图表 chunk 超过 500 KB，E3 已记录这些 chunk 不在聊天入口静态依赖图内。
 - [x] 本轮 `./scripts/ai-local-env.sh verify` 通过：MySQL/Redis 健康、后端启用模型列表、未登录聊天 401 边界、前端首页和本地代理模型列表均正常。
