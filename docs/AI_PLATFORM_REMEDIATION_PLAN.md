@@ -13,11 +13,11 @@
 
 以下列出仍需完成的真实依赖或发布前人工核验；具体完成状态以各整改批次的证据为准。未完成相应门禁前不得开放线上功能或发布。凭据放入权限受限的本地/服务器环境文件或密钥管理器，不要提交 Git，也不要粘贴到聊天。
 
-- **Google OIDC 沙箱**：本地开发项目已创建 Web OAuth 客户端并完成真实登录验收；当前控制台为“外部/测试”，当前账号已列为测试用户，品牌支持邮箱已按用户选择设置，Web 来源与回调指向 `127.0.0.1:13000`。凭据仅保存在被 Git 忽略且权限为 `600` 的 `.runtime/local.env`。用户已提供生产域名 `https://lingdian-ai.top/`、首页 `/welcome`、隐私 `/privacy`、条款 `/terms`；本地刚加入了两条独立路由，但正文仍是待确认草案，线上仍是旧前端回退行为，故目前不能作为 Google 生产 OAuth 法律页面。生产需使用独立项目/客户端、正式 HTTPS 域名与回调、经运营方确认且内容真实的法律页面，并按 Google 要求完成发布/验证；不能复用本地客户端。
-- **DeepSeek 上游**：现有配置凭据已通过官方 `GET /models` 鉴权，并完成本地非流式与 SSE 真实聊天验收；无需为本地联调申请新 Key。凭据仅存于权限 `600` 的 Git 忽略文件 `.runtime/local.env`。用户已授权清理本地 `main` 历史，当前 `main` 的推送扫描通过；`origin/main` 与本地备份引用仍保留重写前历史，因此远端推送门禁尚未解除。没有撤销或轮换现有 Key；生产仍需由凭据所有者安全配置并单独验收。
+- **Google OIDC 沙箱**：本地开发项目已创建 Web OAuth 客户端并完成真实登录验收；当前控制台为“外部/测试”，当前账号已列为测试用户，品牌支持邮箱已按用户选择设置，Web 来源与回调指向 `127.0.0.1:13000`。凭据仅保存在被 Git 忽略且权限为 `600` 的 `.runtime/local.env`。用户已提供生产域名 `https://lingdian-ai.top/`、首页 `/welcome`、隐私 `/privacy`、条款 `/terms`；独立生产项目 `lingdian-ai-production` 已创建，但 Google Auth Platform 尚未配置。本地法律路由正文仍是待确认草案，线上浏览器访问隐私/条款路径会回到 `/welcome`，故目前不能作为 Google 生产 OAuth 法律页面。生产需经运营方确认真实法律内容后再配置品牌与客户端；不能复用本地客户端。
+- **DeepSeek 上游**：现有配置凭据已通过官方 `GET /models` 鉴权，并完成本地非流式与 SSE 真实聊天验收；无需为本地联调申请新 Key。凭据仅存于权限 `600` 的 Git 忽略文件 `.runtime/local.env`。用户已授权清理本地 `main` 历史；截至提交 `d31d134`，本地 `main` 与 `origin/main` 已同步，推送扫描通过。本地回滚引用仍保留重写前对象；没有撤销或轮换现有 Key。线上数据库中的模型 Key 未在本轮读取；生产上游仍需单独进行脱敏联调验收。
 - **邮件与短信**：真实邮件需配置 SMTP `SPRING_MAIL_*`；真实短信需配置 `VERIFICATION_DELIVERY_MODE=external`、`VERIFICATION_SMS_URL`、`VERIFICATION_SMS_TOKEN`、`VERIFICATION_SMS_TEMPLATE_ID`，之后分别验收投递与验证绑定。
 - **真实 RabbitMQ 与 OSS**：部署环境需配置 `RABBITMQ_HOST`、`RABBITMQ_PORT`、`RABBITMQ_USERNAME`、`RABBITMQ_PASSWORD`、`RABBITMQ_VHOST`，并联调队列、监控和重启恢复；OSS 使用 `ALIYUN_OSS_ENDPOINT`、`ALIYUN_OSS_ACCESS_KEY_ID`、`ALIYUN_OSS_ACCESS_KEY_SECRET`、`ALIYUN_OSS_BUCKET`、`ALIYUN_OSS_DOMAIN`。若要实际使用 OSS，还需将 `APP_STORAGE_PREFER_LOCAL=false`；模板默认 true 会继续优先本地存储。本地 RabbitMQ 与本地文件存储已各自验证，不能替代生产联调。
-- **线上发布配置**：用户此前确认服务器 `/root/lingdian/.env.prod` 中三项密码已配置；但 2026-10-19 最新只读核验发现 `MYSQL_PASSWORD`、`SECONDARY_PASSWORD` 已设置而 `REDIS_PASSWORD` 为空。无密码执行 Redis `PING` 返回 `PONG`，当前 backend 的 Redis 密码变量也为空。此前远端旧 Compose 的 `config -q` 允许 Redis 密码为空，因此不能据此认定 Redis 凭据齐全。更新后的本地 Compose 已要求非空 Redis 密码，并通过 SSH stdin 对服务器 `.env.prod` 做只读解析时按预期拒绝；没有读取或输出密码值。后续需由凭据所有者在服务器设置强 Redis 密码，并安排现有 Redis/backend 使用同一密码；该操作会重启现有 Redis，当前没有执行。其他服务器必需密码不需要复制到开发机，也不需要从 Google 或 DeepSeek 获取。以后部署需设置 `AI_PLATFORM_DEPLOY_HOST` 和 `AI_PLATFORM_DEPLOY_SSH_KEY`。
+- **线上发布配置**：最新只读核验发现 `MYSQL_PASSWORD`、`SECONDARY_PASSWORD` 已设置而 `REDIS_PASSWORD` 为空。用户明确选择保持现有 Redis/backend 配置，暂不启用 Redis 认证；因此不要求现在设置 Redis 密码，也不为此重启 Redis。使用旧 `server-deploy.sh`/Compose 的镜像发布仍会因严格 Redis 密码门禁拒绝；当前新增的原容器内 JAR/静态文件发布流程不使用 Compose，不新建镜像/容器。其他服务器必需密码不需要复制到开发机或聊天中。以后执行受控发布需设置 `AI_PLATFORM_DEPLOY_HOST` 和 `AI_PLATFORM_DEPLOY_SSH_KEY`。
 - **历史数据/凭据人工核验**：上线前需按 B3、B5、C1-C4、E1 各节盘点旧 Redis 结算快照、临时赠点、伪 TOTP/OAuth 数据、旧 Token、历史联系方式与已暴露密钥；涉及用户余额、身份或联系方式的迁移/冲销不能自动猜测。
 - **支付**：按用户决定暂不接支付接口；直充路径继续关闭，待以后另选渠道并单独验收。
 
@@ -69,7 +69,7 @@
 
 ### 批次 E：配置、凭据与部署边界
 
-- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；本机暂存/工作区凭据扫描通过。用户已授权并完成本地 `main` 历史脱敏；2026-10-19 已将脱敏后的历史推送到远端 `main`，并验证本地 `main` 与 `origin/main` 一致。本地回滚引用仍保留重写前历史；不因格式命中推断密钥当前有效，也未撤销或轮换凭据。生产 Redis 密码当前为空且 Redis 未启用认证；旧远端 Compose 校验曾因默认允许空密码而通过，新的严格 Compose 已在远端 `.env.prod` 上正确拒绝。E1 仍待启用现有 Redis 认证及其他生产服务/模型配置核验；服务器凭据不应复制到开发机或聊天中。
+- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；本机暂存/工作区凭据扫描通过。用户已授权并完成本地 `main` 历史脱敏；当前 `main` 与 `origin/main` 已同步至 `d31d134`，推送扫描通过。本地回滚引用仍保留重写前对象；不因格式命中推断密钥当前有效，也未撤销或轮换凭据。服务器 `.env.prod` 为 `0600`；`MYSQL_PASSWORD`、`SECONDARY_PASSWORD` 非空，`REDIS_PASSWORD` 为空，且用户明确选择暂不启用 Redis 认证。OAuth、RabbitMQ、OSS、SMTP/短信生产配置仍为空/未完成联调；服务器凭据不应复制到开发机或聊天中。
 - [x] **E2 前端 API 路由不被静态扩展规则截获（P2-19）**：`/api/`、`/chat/`、`/v1/` 已使用 `^~` 前缀优先匹配。临时 Nginx 与 mock 后端验证了带 `.png`、`.pdf`、`.svg`、`.json` 后缀的 API/SSE 请求均转发到后端，SSE 未缓冲，静态资源缓存保持正常；`nginx -t` 通过。
 - [x] **E3 聊天页首屏包体过大（本地构建新发现，P3-21）**：聊天页 Markdown、Mermaid、代码高亮、公式渲染已按需加载。构建后 ChatPage 入口为 94.97 KB（gzip 25.97 KB），较整改前约减少 93%；浏览器回归确认 Markdown、代码高亮、KaTeX 和 Mermaid 均正常。ECharts 与其他页面共享 chunk 仍超过 500 KB，但不在 ChatPage 静态依赖图中，作为独立页面优化跟踪。
 
@@ -98,7 +98,7 @@
 
 ### 真实 DeepSeek 本地上游验收（2026-10-19）
 
-- [x] 复用仓库历史 DeepSeek 配置指南中的现有凭据，官方 `GET /models` 鉴权成功并返回模型元数据；凭据只写入 Git 忽略的 `.runtime/local.env`（权限 `600`），没有回显或新增到代码/提交。后续用户授权重写本地 `main` 已移除其中的格式命中；`origin/main` 与本地回滚备份仍有旧历史，E1 远端发布门禁仍未解除；未撤销或轮换。
+- [x] 复用仓库历史 DeepSeek 配置指南中的现有凭据，官方 `GET /models` 鉴权成功并返回模型元数据；凭据只写入 Git 忽略的 `.runtime/local.env`（权限 `600`），没有回显或新增到代码/提交。后续用户授权重写本地 `main` 已移除其中的格式命中；当前 `origin/main` 与本地 `main` 同步至 `d31d134`，仅本地回滚引用仍保留旧历史；未撤销或轮换。
 - [x] 后端 `DEEPSEEK_API_KEY` 环境变量回退使 3 个已有 DeepSeek 模型在脱敏模型列表中标记为可对话，接口未暴露凭据。真实 `DeepSeek-V4-Flash` 非流式与 SSE 请求均经本地前端代理到达供应商并成功；响应消息持久化为 4 条，本地完成 2 笔结算并扣除相应点数。短输出上限为 8 token。
 - [x] 因真实 Key 会让 DeepSeek 模型正常可用，修正 `verify-chat` 夹具只从非 DeepSeek 模型中选取“未配置模型”；默认完整回归与 `AI_VERIFY_DEEPSEEK_FALLBACK=true` 合成 Responses mock 全量回归均通过。合成回退测试确认结束后已恢复原模型状态和本地凭据。
 - [x] 复验后本地 `verify` 通过：17 个启用模型、4 个可对话、13 个未接入；MySQL、Redis、后端、前端和 mock 均运行，前端代理为 local。
@@ -295,16 +295,16 @@
 - [x] `scripts/test-production-security-guards.py` 覆盖密钥文件权限、缺失/占位/弱值、Git 索引、通配来源、未跟踪环境模板和两份 Compose 的必填变量；全量 `mvn -q -Dapp.messaging.rabbit-enabled=false test` 通过：84 项、0 失败、0 错误、0 跳过；本地基础验证通过。没有连接或部署到线上。
 - [x] 2026-10-19 澄清本机与服务器环境差异：本机完整 `.env.prod` 预检曾因服务器密码未复制到开发机而拒绝；用户当时确认线上三项已配置，因此部署流程改为 `--local-only` 执行本地功能验收，再通过 SSH 只读校验服务器 Compose，不要求复制服务器密码。后续严格配置检查发现服务器 Redis 密码实际为空，见本节最新核验记录。
 - [x] 2026-10-19 经用户授权，仅重写本地 `main` 历史以脱敏扫描器命中的高置信度凭据格式；重写后同一 pre-push 扫描器通过（1 个目标引用、1,369 个带路径文件对象、28 个提交），`scripts/test-push-history-secrets.py` 通过。当前工作区凭据扫描也通过（42 个暂存变更、349 个跟踪文件、157 个未跟踪文件、2 个环境模板）；为避免旧索引中的测试 Key 再次进入暂存区，将初始化器和 `rebuild.sql` 的索引项恢复到已脱敏 `main`，对应工作区文件字节未变。`.runtime/local.env` 权限仍为 `600`，DeepSeek 与 Google OIDC 配置仍存在；没有撤销本地凭据。
-- [ ] 远端 `origin/main` 仍保留旧历史，本次未推送或改写远端；原历史也保存在本地 `refs/backup`、`refs/original` 和工作区恢复 stash 中以便回退。先前用户确认服务器生产凭据已配置，但最新只读核验发现 Redis 密码为空；远端历史协调和真实生产模型/服务联调也仍未完成。本轮没有部署。
+- [x] 历史记录：该次复核时 `origin/main` 尚未更新，后续已按用户授权完成历史清理并推送；截至 `d31d134` 远端与本地 `main` 同步。旧对象仍保留在本地回滚引用中。生产 Redis 认证按用户选择暂缓；真实生产模型与外部服务仍需分别联调。本项状态已由 2026-10-19 最新核验更新。
 - [x] 服务器旧 Compose 只读校验曾通过，同次 `docker ps` 确认现有 7 个容器均运行，其中 MySQL/Redis 报健康；该旧 Compose 允许 Redis 密码为空。2026-10-19 使用更新后的本地 Compose 对远端 `.env.prod` 做 stdin 只读解析时，因 `REDIS_PASSWORD` 为空而按预期拒绝。旧容器健康状态不证明 Redis 已启用认证；现有 Redis 无密码 `PING` 返回 `PONG`，backend Redis 密码环境变量为空。
 - [x] 2026-10-19 根据用户确认“生产凭据已在服务器受控环境配置”，将部署流程拆分为本地功能验收与目标服务器密钥校验：`local-release-preflight.sh --local-only` 不要求把服务器密钥复制到开发机；`server-deploy.sh` 仍在任何镜像传输前执行目标机 `docker compose ... config -q`。`test-deploy-preflight-routing.py`、Bash 语法检查及完整 `--local-only` 本地预检通过（后端 101 项、0 失败/错误、2 项 Rabbit opt-in 跳过；前端构建与 `verify-chat` 通过）。
 - [x] 2026-10-19 使用用户提供的主机、用户和本机私钥路径完成严格主机校验下的远端只读 Compose 检查，并列出现有容器状态；未输出密钥值，未执行镜像或容器变更。当前 shell 尚未常驻设置部署脚本所需环境变量；获准部署时再按需注入。
-- [x] 2026-10-19 远程校验后再次扫描当前本地 `main` 的完整推送历史：1 个目标引用、1,387 个文件对象、34 个提交，`scripts/check-push-history-secrets.py` 通过。`origin/main` 未修改且仍保留旧历史；本次没有推送。
+- [x] 历史记录：当时完整推送历史扫描通过，但 `origin/main` 尚未更新；之后已完成推送。当前远端状态以本节末尾 `d31d134` 检查点为准。
 - [x] 2026-10-19 复核服务器 Compose 时发现 RabbitMQ、OSS、SMTP/短信和 Google OIDC 环境变量未传入后端容器；已在 `docker-compose.server.yml` 与 `docker-compose.prod.yml` 补齐透传，默认仍关闭 RabbitMQ、外发验证和 Google OAuth，敏感项默认空值。`scripts/test-deploy-preflight-routing.py` 用临时合成环境动态渲染服务器 Compose 并逐项断言变量可达；`scripts/test-production-security-guards.py` 同时验收两份 Compose 的 Redis 认证/健康检查和可选变量透传；`.env.prod.example` 字段完整，凭据扫描、测试及 `git diff --check` 通过。没有启动或修改容器；生产服务是否真实可用仍需单独联调。
 - [x] 2026-10-19 部署脚本不再只更新镜像而沿用服务器旧 Compose：先把本地 `docker-compose.server.yml` 通过 SSH stdin 与服务器 `.env.prod` 做只读解析，再传输并二次校验隐藏暂存文件；镜像加载成功后备份旧配置并原子替换，最后只 `up -d redis backend frontend`。部署前确认 MySQL、Redis、backend、frontend 四个指定现有容器都在运行；不会重启 MySQL、改动数据卷或新增服务。两个生产 Compose 均要求 Redis 密码并用 RedisCLI_AUTH 做认证健康检查；服务契约测试覆盖认证参数、持久化数据卷和部署顺序，未执行部署。
 - [x] 2026-10-19 远端只读核对仅输出变量名和存在状态，未读取或回传任何值：`/root/lingdian/.env.prod` 中 `REDIS_PASSWORD` 为空；`MYSQL_PASSWORD`、`SECONDARY_PASSWORD`、`API_ENCRYPTION_KEY`、`ALLOWED_ORIGINS` 非空。当前 Redis 无密码，backend 的 Redis 密码变量也为空。RabbitMQ、OSS、SMTP/短信和 Google OIDC 配置项在 `.env.prod` 和当前 backend 环境中均缺失。本次没有修改服务器文件或容器；各外部服务需由凭据所有者配置后按门禁验收。
 - [x] 2026-10-19 再次只读检查发现服务器 `.env.prod` 属主为 `root`、权限为 `644`；新的服务器环境检查器按预期拒绝该权限，要求改为 `600` 后才继续检查变量。`server-deploy.sh` 已增加 stdin 传送检查器源码的只读门禁，在镜像传输前依次检查现有容器运行状态、服务器环境文件权限/必需变量和 Compose 解析；检查只报告变量名，不输出任何配置值。没有 chmod、写入环境文件、传输镜像或变更容器。服务器当前需由所有者将 `.env.prod` 收紧至 `600` 并设置强 `REDIS_PASSWORD`；改完后再做只读复核。
-- [x] 2026-10-19 用户要求沿用现有容器且不新建镜像/容器；只读检查确认 backend 以 `/app/app.jar` 启动、frontend 静态根为 `/usr/share/nginx/html`，Redis 未启用认证。当前 Compose 部署会加载新镜像并替换同名 Redis/backend/frontend 容器，不能在未获明确授权时执行；`server-deploy.sh` 已增加默认拒绝的 `AI_PLATFORM_ALLOW_IMAGE_AND_CONTAINER_REPLACEMENT=true` 门禁。替换仍会保留现有服务名和数据卷，但会生成新镜像和容器实例；用户授权前不运行。
+- [x] 2026-10-19 用户要求沿用现有容器且不新建镜像/容器；只读检查确认 backend 以 `/app/app.jar` 启动、frontend 静态根为 `/usr/share/nginx/html`，Redis 未启用认证。`server-deploy.sh` 的 Compose 路径仍会加载镜像并替换容器，因此保留显式默认拒绝门禁；后续只考虑新增的 `deploy-existing-containers.sh` 原容器内更新路径。该路径尚未应用，当前被线上法律页缺失阻挡。
 - [x] 2026-10-19 最新本地检查点 `39e66f1` 完成后，针对 `main` 再次扫描完整推送历史：1 个目标引用、1,399 个文件对象、37 个提交，通过；没有推送，远端历史仍未变更。
 
 ### E2 Nginx API 路由优先级验收（2026-10-19）
@@ -350,7 +350,7 @@
 - [x] 2026-10-19 当前工作区全量复验：后端 `mvn -Dapp.messaging.rabbit-enabled=false test` 为 99 项、0 失败、0 错误、0 跳过；前端 `test:auth-session` 7 项、`test:model-availability` 3 项通过，`npm run build` 成功；登录页 CAPTCHA API 与错误码实测通过；`./scripts/ai-local-env.sh verify` 通过。后端测试使用临时 MySQL 数据库副本和独立 Redis 容器，二者均已清理，本地开发栈仍健康且代理保持 local。
 - [x] 2026-10-19 本地检查点提交为 `802f5ed`，仅包含本计划与删除含非占位密码字段的旧 `.env.example`；现有其他代码/配置改动保持在工作区。
 - [x] 2026-10-19 最新本地全链路复验：`./scripts/local-release-preflight.sh --local-only` 通过；34 个 Surefire suite 共 101 项（0 失败、0 错误、2 项 Rabbit opt-in 跳过），前端生产构建通过；`verify-chat` 覆盖 CAPTCHA 错误/重放、模型可用性、联系方式、充值关闭、越权路径、幂等/SSE、限流/管理员权限及 B4 恢复，12 次模拟上游请求（3 次 SSE）、20 条消息持久化、11 笔结算。结束后 MySQL、Redis、backend、web、mock 仍运行，代理为 local。
-- [ ] 剩余未提交工作区文件包含 IDE/旧文档/其他运维与游戏文件，本轮未纳入整改提交；整改代码已推送但尚未部署。线上发布仍受服务器 Redis 认证配置、现有容器替换授权、Google 生产域名与 OAuth 配置、生产 RabbitMQ/OSS/邮件/短信联调及旧数据完整性核验等门禁约束。MySQL 与二级口令已确认非空；Redis 密码当前为空，不可按已配置处理。
+- [ ] 工作区仍有用户保留的未提交文件，本轮未纳入整改提交。现有容器内 JAR/静态资源发布路径已经实现并受法律内容门禁保护；线上发布仍待完成 Google 法律页及 OAuth 资料、必要的生产外部服务联调、旧数据完整性核验和旧会话兼容安排。MySQL 与二级口令已确认非空；Redis 认证按用户选择暂缓，不作为本轮擅自变更项。
 
 - [x] 2026-10-19 本地 `main` 整改提交已推送。首次安全推送被 GitHub 拒绝：历史中的根目录 `mysql8.tar` 为 244,640,256 bytes，远端 `main` 未改变。用户当前工作区没有该归档文件；本地 `main` 历史已移除该文件并保留 `refs/backup/main-before-large-file-removal` 回退引用；pre-push 检查新增 100 MiB blob 限制，模拟回归通过。随后使用 `--force-with-lease` 成功更新远端 `main`，并通过 `git ls-remote` 与 `git fetch` 确认远端、本地分支均为 `d4e4a63`。尚未部署。
 
@@ -366,7 +366,9 @@
 - [ ] 旧 Token 因缺少设备绑定映射按失败关闭策略需要用户重新登录；前端本地失效提示已完成，生产发布前仍需安排公告和兼容窗口。历史邮箱不会自动视为已验证，用户需重新验证。旧伪 OAuth/TOTP Redis 数据不迁移。生产 Redis 仍无认证且未公开宿主机端口，`.env.prod` 权限为 `600`；Redis 认证保持暂缓，启用前需安排现有 Redis/backend 的一致配置和重启。
 - [x] 2026-10-19 可选 Rabbit 健康修复已发布：本地全量预检通过后，提交 `e435d70` 已推送；权限 `600` 的原 JAR 备份为 `/root/lingdian/backups/backend-pre-rabbit-health-20261019T073350Z.jar`，新 Jar SHA-256 与本地产物一致，只在原 `lingdian-backend` 容器内替换 `/app/app.jar` 并重启，未新建镜像/容器，也未重启 MySQL、Redis 或 frontend。backend 容器 ID 保持不变；发布后公网 `/api/actuator/health` 返回 HTTP 200、`status=UP`，验证码接口返回 HTTP 200、业务码 200、图片数据存在且 TTL 300 秒。本次未发起线上模型请求或付费聊天。Google 生产 URL 已收齐，但 `/privacy` 与 `/terms` 当前回退到欢迎页，发布真实法律正文并核验前不能配置生产 OAuth 客户端。
 - [x] 2026-10-19 CORS 加固已保存为本地 `main` 提交 `b14415c`；远端 `origin/main` 仍保留旧版引用，本次没有向远端推送。已备份旧 JAR `/root/lingdian/backups/backend-pre-cors-20261019T075800Z.jar` 和配置 `/root/lingdian/backups/env-prod-pre-cors-20261019T075800Z.bak`（均权限 `600`），候选 JAR SHA-256 为 `bbd040343ce9ddf417c5c6aefabe2abb1f76c9dbd2fde95410a165208ac647a0`；服务器 `.env.prod` 权限保持 `600`，`ALLOWED_ORIGINS` 已设为正式两个域名。由于 Redis 曾被正常 SIGTERM 停止，已启动同一 Redis 容器并确认数据集载入后 `PONG`；健康恢复后只在原 backend 容器内替换 JAR并重启，backend/Redis/MySQL/frontend 容器 ID 均保持不变。公网两个正式来源 OPTIONS 返回精确 ACAO 且 `ACAC=true`，陌生来源无 CORS 允许头并返回 403；Actuator `UP`、登录验证码接口业务码 200 且图像存在。没有发起线上模型请求或付费聊天。
-- [ ] Google 生产 OAuth 的域名、首页及隐私/条款 URL 已由用户提供，独立项目 `lingdian-ai-production` 已创建；但线上 `/privacy` 与 `/terms` 仍返回与首页相同的 SPA 壳，本地法律页仍是待确认草案。运营主体全称及公开客服/隐私邮箱待用户补充；账号暂按停用处理，数据删除范围待用户确认。完成真实法律内容和上述信息后再配置品牌及生产 OAuth 客户端。SMTP/短信、RabbitMQ、OSS 尚未完成线上配置与联调；直充仍按用户决定关闭。
+- [ ] Google 生产 OAuth 的域名、首页及隐私/条款 URL 已由用户提供，独立项目 `lingdian-ai-production` 已创建；线上 `/privacy` 与 `/terms` 当前在浏览器中均落回 `/welcome`，本地法律页仍是待确认草案。运营主体全称及公开客服/隐私邮箱待用户补充；账号暂按停用处理，数据删除范围待用户确认。完成真实法律内容和上述信息后再配置品牌及生产 OAuth 客户端。SMTP/短信、RabbitMQ、OSS 尚未完成线上配置与联调；直充仍按用户决定关闭。
 - [ ] 2026-10-19 最新生产只读复核：线上 `/privacy` 与 `/terms` 均重定向到 `/welcome`，当前不能用于 Google 审核；现有 7 个 `lingdian-*` 容器均运行，未更换容器。服务器 `.env.prod` 为 `0600`，MySQL/二级口令已设；Redis 口令为空（按用户决定暂不启用认证）；生产 Google OAuth、RabbitMQ、OSS、SMTP、短信变量均未设。此次仅查询变量是否存在，未输出任何密钥；未读生产数据库 Key，也不要求申请新 DeepSeek Key。当前生产 JAR SHA-256 为 `bbd040343ce9ddf417c5c6aefabe2abb1f76c9dbd2fde95410a165208ac647a0`，本地已验收账号停用候选 JAR 为 `58f9924f90bd542c76d7e947ff80e82f00f1c6220adb72da371ea0a884fb3036`，账号停用功能仍未部署。远端 `main` 与本地已同步至 `d58fa3b`；本次未改生产环境。
 - [x] 2026-10-19 Google 生产资料与账号语义确认：正式域名 `https://lingdian-ai.top/`、首页 `/welcome`、隐私政策 `/privacy`、服务条款 `/terms`；使用当前 Google 账号作为 OAuth 支持邮箱，生产 OAuth 放在独立项目 `lingdian-ai-production`。运营主体全称及公开客服/隐私邮箱由用户后续补充；账号按停用处理，数据删除范围留待后续确认。法律页仍是本地草案，OAuth 生产客户端和法律页面发布继续受此门禁阻挡。
 - [x] 2026-10-19 新增复用现有容器的受控发布脚本：默认 `--plan` 不联网；`--apply` 先要求法律页确认并拒绝草案标记，再运行本地全量预检，远端只用 `docker inspect/cp/exec/restart`，备份原 JAR/静态资源、核验七个容器 ID 与非 backend 启动时间，并在健康/验证码/静态资源检查失败时回滚。`bash -n` 与 `python3 scripts/test-existing-container-deploy.py` 通过；当前法律页尚未完成，因此未连接服务器、未部署。
+- [x] 2026-10-19 最新本地与远端状态核验（提交 `d31d134`）：`./scripts/local-release-preflight.sh --local-only` 通过；35 个 Surefire suite 共 105 项、0 失败/错误、2 项 Rabbit opt-in 跳过；前端构建成功（ECharts 仍有既有大 chunk 警告）；`verify-chat` 通过 12 次模拟上游请求（3 次 SSE）、20 条消息和 11 笔结算，覆盖验证码错误/重放、幂等、权限/限流及 B4 故障恢复。随后 `./scripts/ai-local-env.sh verify` 通过，MySQL、Redis、backend、web、mock 仍健康，代理为 local；浏览器登录页显示图形验证码、刷新按钮和 5 分钟提示。远端只读核验确认 7 个容器均运行、`.env.prod` 为 `0600`；MySQL/二级口令已设，Redis 密码为空（按用户决定暂不认证），Google/RabbitMQ/OSS/SMTP/短信配置未设置。公网 health 为 200；浏览器访问 `/privacy`、`/terms` 均导航回 `/welcome`，故没有部署代码或法律草案。`origin/main` 与本地同步至 `d31d134`；没有读取或输出线上 API Key/密码，也没有发起线上 AI 或付费请求。
+- [x] 2026-10-19 Google 生产控制台复核：浏览器当前选中项目 `lingdian-ai-production`，Google Auth Platform 显示“尚未配置”，尚无生产 OAuth 客户端。生产项目与本地测试项目已分离；等待运营主体全称、公开联系邮箱和法律内容确认后再继续设置品牌、同意屏幕与回调。
