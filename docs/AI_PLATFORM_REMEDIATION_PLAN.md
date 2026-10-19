@@ -355,6 +355,6 @@
 - [x] 线上现有 MySQL 容器内执行 v8→v17 迁移并核对结构。用户确认旧限时赠点按永久点数保留；迁移前后用户点数合计均为 `53934.000`，旧限时账本均为 6 笔、`790.000` 点，未回填或改写旧余额。
 - [x] 后端 JAR 与前端静态资源已部署到原有容器；后端在原容器内重启，未构建/加载镜像、未创建或替换容器。后端、前端、MySQL、Redis 容器 ID 与发布前一致；Redis/MySQL 未重启，Redis 认证按用户选择继续暂缓。
 - [x] 发布后两条正式 HTTPS 域名的 `/api/health` 与登录验证码接口均返回 200；前端首页及其引用的 15 个 JS/CSS 资源均返回 200；Nginx 配置检查成功。新文件恢复扫描将原先 2 个过期 `PARSING` 任务恢复为 `SUCCESS`，目前 58 个文件解析任务均为成功。
-- [ ] 本次没有发起新的线上模型请求或付费聊天；本地模拟上游和真实凭据验收记录仍按各自章节区分。Google 生产 OAuth 尚需正式 HTTPS 来源/回调、首页/隐私政策/服务条款 URL 和独立生产客户端；SMTP/短信、RabbitMQ、OSS 尚未完成线上配置与联调。直充仍按用户决定关闭。
+- [ ] 本次没有发起新的线上模型请求或付费聊天；本地模拟上游和真实凭据验收记录仍按各自章节区分。Google 生产 OAuth 的域名、首页及隐私/条款 URL 已由用户提供，但 `/privacy` 与 `/terms` 目前仍回退到欢迎页，需先发布真实法律正文，再配置独立生产客户端；SMTP/短信、RabbitMQ、OSS 尚未完成线上配置与联调。直充仍按用户决定关闭。
 - [ ] 旧 Token 因缺少设备绑定映射按失败关闭策略需要用户重新登录；历史邮箱不会自动视为已验证，用户需重新验证。旧伪 OAuth/TOTP Redis 数据不迁移。生产 Redis 仍无认证且未公开宿主机端口，`.env.prod` 权限为 `600`；Redis 认证保持暂缓，启用前需安排现有 Redis/backend 的一致配置和重启。
-- [x] 2026-10-19 可选 Rabbit 健康修复：`RABBITMQ_ENABLED=false` 时 Actuator 不再因未部署的可选 Broker 误报 DOWN；基础验证与全量本地发布预检通过，相关变更尚待提交/部署。生产 Google URL 已收齐，但 `/privacy` 与 `/terms` 当前回退到欢迎页，必须先发布真实法律正文并核验后，才可配置生产 OAuth 客户端。
+- [x] 2026-10-19 可选 Rabbit 健康修复已发布：本地全量预检通过后，提交 `e435d70` 已推送；权限 `600` 的原 JAR 备份为 `/root/lingdian/backups/backend-pre-rabbit-health-20261019T073350Z.jar`，新 Jar SHA-256 与本地产物一致，只在原 `lingdian-backend` 容器内替换 `/app/app.jar` 并重启，未新建镜像/容器，也未重启 MySQL、Redis 或 frontend。backend 容器 ID 保持不变；发布后公网 `/api/actuator/health` 返回 HTTP 200、`status=UP`，验证码接口返回 HTTP 200、业务码 200、图片数据存在且 TTL 300 秒。本次未发起线上模型请求或付费聊天。Google 生产 URL 已收齐，但 `/privacy` 与 `/terms` 当前回退到欢迎页，发布真实法律正文并核验前不能配置生产 OAuth 客户端。
