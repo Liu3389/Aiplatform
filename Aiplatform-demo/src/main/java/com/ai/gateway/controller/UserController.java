@@ -239,17 +239,19 @@ public class UserController {
         return Result.success("已移除所有登录设备", null);
     }
 
-    @Operation(summary = "注销账户", description = "需传密码且 confirm=DELETE 确认")
-    @PostMapping("/delete-account")
-    public Result<Void> deleteAccount(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
+    @Operation(summary = "停用账户", description = "需传密码且 confirm=DEACTIVATE 确认；/delete-account 保留为兼容路径")
+    @PostMapping({"/deactivate-account", "/delete-account"})
+    public Result<Void> deactivateAccount(@RequestHeader("X-User-Token") String token, @RequestBody Map<String, String> body) {
         Long userId = tokenService.getUserIdFromToken(token);
         if (userId == null) return Result.error(401, "Token无效或已过期");
         String password = body.get("password");
         String confirm = body.get("confirm");
         if (password == null) return Result.error("密码不能为空");
-        if (!"DELETE".equals(confirm)) return Result.error("请输入 DELETE 确认注销");
-        userService.deleteAccount(userId, password);
-        return Result.success("账户已注销", null);
+        if (!"DEACTIVATE".equals(confirm) && !"DELETE".equals(confirm)) {
+            return Result.error("账号停用确认参数无效");
+        }
+        userService.deactivateAccount(userId, password);
+        return Result.success("账号已停用，账号资料和历史数据已保留", null);
     }
 
     @Operation(summary = "查询充值记录", description = "分页：page、size")

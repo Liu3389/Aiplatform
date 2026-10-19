@@ -579,7 +579,7 @@ public class UserService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public void deleteAccount(Long userId, String password) {
+    public void deactivateAccount(Long userId, String password) {
         User user = userMapper.selectById(userId);
         if (user == null) {
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
@@ -590,13 +590,11 @@ public class UserService {
         }
 
         user.setStatus(0);
-        user.setUsername("[DELETED]" + user.getUsername() + "_" + user.getId());
-        user.setEmail(null);
         user.setUpdateTime(LocalDateTime.now());
         userMapper.updateById(user);
         sessionService.revokeAllUserSessions(userId, false);
 
-        log.info("账户已注销: userId={}", userId);
+        log.info("账户已停用，资料与历史数据保留: userId={}", userId);
     }
 
     public Map<String, Object> getRechargeRecords(Long userId, int page, int size) {

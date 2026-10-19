@@ -29,7 +29,7 @@ const OAUTH_PROVIDERS: { key: ProviderKey; label: string }[] = [
 
 function SecurityPage() {
   const navigate = useNavigate()
-  const { token, user, fetchUserInfo } = useAppStore()
+  const { token, user, fetchUserInfo, logout } = useAppStore()
   const { showToast } = useToastStore()
 
   const showSuccess = (msg: string) => showToast({ title: '成功', message: msg, type: 'success' })
@@ -38,7 +38,7 @@ function SecurityPage() {
   // ---- Tab ----
   const [tab, setTab] = useState<
     'password' | 'recharge' | 'coupons' | 'bind' | '2fa' | 'devices' |
-    'invoice' | 'delete' | 'recharge-history'
+    'invoice' | 'deactivate' | 'recharge-history'
   >('password')
 
   // ---- 修改密码 ----
@@ -93,8 +93,9 @@ function SecurityPage() {
     return () => window.clearTimeout(timer)
   }, [bindCountdown])
 
-  // ---- 删除账号 ----
-  const [deletePassword, setDeletePassword] = useState('')
+  // ---- 停用账号 ----
+  const [deactivatePassword, setDeactivatePassword] = useState('')
+  const [deactivateLoading, setDeactivateLoading] = useState(false)
 
   useEffect(() => {
     if (!token) return
@@ -357,19 +358,22 @@ function SecurityPage() {
     }
   }
 
-  // ==================== 删除账号 ====================
-  const handleDeleteAccount = async () => {
-    if (!deletePassword) {
+  // ==================== 停用账号 ====================
+  const handleDeactivateAccount = async () => {
+    if (!deactivatePassword) {
       showError('请输入密码确认')
       return
     }
+    setDeactivateLoading(true)
     try {
-      await accountApi.deleteAccount(deletePassword)
-      showSuccess('账号已提交注销申请')
-      authApi.logout()
+      await accountApi.deactivateAccount(deactivatePassword)
+      showSuccess('账号已停用，账号资料和历史数据已保留')
+      logout()
       navigate('/login')
     } catch (e: any) {
-      showError(e.message || '注销失败')
+      showError(e.message || '停用失败')
+    } finally {
+      setDeactivateLoading(false)
     }
   }
 
@@ -398,7 +402,7 @@ function SecurityPage() {
     { key: 'invoice', label: '发票' },
     { key: 'devices', label: '登录设备' },
     { key: 'recharge-history', label: '充值记录' },
-    { key: 'delete', label: '账号注销' },
+    { key: 'deactivate', label: '停用账号' },
   ] as const
 
   return (
@@ -890,25 +894,36 @@ function SecurityPage() {
         </div>
       )}
 
-      {/* ---- 账号注销 ---- */}
-      {tab === 'delete' && (
-        <div className="max-w-md space-y-4">
-          <h3 className="text-lg font-semibold mb-2 text-red-600">账号注销</h3>
-          <p className="text-xs text-gray-500">注销后相关数据将被清除，请谨慎操作</p>
-          <input
-            className="w-full border rounded-lg px-4 py-2"
-            type="password"
-            placeholder="输入密码确认"
-            value={deletePassword}
-            onChange={e => setDeletePassword(e.target.value)}
-          />
+      {/* ---- 停用账号 ---- */}
+      {tab === 'deactivate' && (
+        <section className="max-w-xl rounded-2xl border border-red-200 bg-red-50/60 p-5 space-y-4 dark:border-red-900/60 dark:bg-red-950/20 sm:p-6">
+          <div>
+            <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">停用账号</h3>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">停用后你将立即退出，且无法继续登录或使用 API。</p>
+          </div>
+          <div className="rounded-xl bg-white/70 p-4 text-sm leading-6 text-gray-700 dark:bg-black/10 dark:text-gray-300">
+            此操作会撤销所有登录会话。账号资料、手机号与 Google 绑定、历史对话、文件和账务记录会保留；停用不等同于删除账号，数据删除范围仍待确认。
+          </div>
+          <label className="block space-y-1.5 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+            当前密码
+            <input
+              className="w-full rounded-lg border px-4 py-2.5 font-normal"
+              type="password"
+              autoComplete="current-password"
+              placeholder="输入当前密码"
+              value={deactivatePassword}
+              onChange={e => setDeactivatePassword(e.target.value)}
+              disabled={deactivateLoading}
+            />
+          </label>
           <button
-            onClick={handleDeleteAccount}
-            className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors"
+            onClick={handleDeactivateAccount}
+            disabled={deactivateLoading || !deactivatePassword}
+            className="w-full rounded-lg bg-red-600 py-2.5 font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            确认注销
+            {deactivateLoading ? '正在停用…' : '确认停用并退出'}
           </button>
-        </div>
+        </section>
       )}
     </div>
   )

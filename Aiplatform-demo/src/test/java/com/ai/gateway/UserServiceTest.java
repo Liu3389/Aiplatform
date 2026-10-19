@@ -1,11 +1,17 @@
 package com.ai.gateway;
 
 import com.ai.gateway.dto.UserRegisterRequest;
+import com.ai.gateway.exception.BusinessException;
+import com.ai.gateway.entity.User;
+import com.ai.gateway.mapper.UserMapper;
+import com.ai.gateway.service.SessionService;
 import com.ai.gateway.service.UserService;
 import com.ai.gateway.vo.UserInfoVO;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -19,6 +25,12 @@ class UserServiceTest {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private UserMapper userMapper;
+
+    @Autowired
+    private SessionService sessionService;
 
     @Test
     void testRegister() {
@@ -49,5 +61,51 @@ class UserServiceTest {
         
         assertNotNull(balance);
         assertEquals(0, balance.compareTo(java.math.BigDecimal.ZERO));
+    }
+
+    @Test
+    void testDeactivateAccountPreservesIdentityAndHistoryWhileRevokingSessions() {
+        String suffix = UUID.randomUUID().toString().replace("-", "");
+        String username = "deactivate_" + suffix;
+        String password = "Passw0rd!";
+        Long userId = null;
+        try {
+            UserRegisterRequest request = new UserRegisterRequest();
+            request.setUsername(username);
+            request.setPassword(password);
+            UserInfoVO created = userService.register(request);
+            Long createdUserId = created.getId();
+            userId = createdUserId;
+
+            User before = userMapper.selectById(createdUserId);
+            String email = "deactivate_" + suffix + "@example.test";
+            String phone = "test-" + suffix.substring(0, 12);
+            before.setEmail(email);
+            before.setPhone(phone);
+            userMapper.updateById(before);
+
+            String deviceId = "deactivation-test-device";
+            String token = "deactivation-test-token-" + suffix;
+            assertTrue(sessionService.createSession(createdUserId, deviceId, token));
+            assertTrue(sessionService.hasActiveSession(createdUserId));
+
+            assertThrows(BusinessException.class, () -> userService.deactivateAccount(createdUserId, "wrong-password"));
+            assertEquals(1, userMapper.selectById(createdUserId).getStatus(), "wrong password must not deactivate the account");
+
+            userService.deactivateAccount(createdUserId, password);
+
+            User after = userMapper.selectById(createdUserId);
+            assertEquals(0, after.getStatus());
+            assertEquals(username, after.getUsername());
+            assertEquals(email, after.getEmail());
+            assertEquals(phone, after.getPhone());
+            assertFalse(sessionService.hasActiveSession(createdUserId));
+            assertFalse(sessionService.validateSession(createdUserId, deviceId, token));
+        } finally {
+            if (userId != null) {
+                sessionService.revokeAllUserSessions(userId, false);
+                userMapper.deleteById(userId);
+            }
+        }
     }
 }

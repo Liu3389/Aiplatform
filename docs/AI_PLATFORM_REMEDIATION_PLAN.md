@@ -31,7 +31,8 @@
 
 - [x] **模型接入状态与聊天可用性（本地审计新增）**：`/platform-model/list` 与 `/platform-model/available` 用不含凭据的 `chatEnabled` 布尔字段反映 provider、实际模型、上游地址和 API Key 是否配置齐全；聊天页、设置面板与模型商城禁止选择未接入模型并说明原因；首页只展示已接入模型且使用真实 `displayName/provider` 契约。后端对缺少上游配置的请求在预扣和调用上游前拒绝。验收：接口不泄露密钥；用户模型列表正确返回接入状态；本地 mock 可正常聊天，未配置模型不会误选、不会扣点或调用上游。
 - [x] **Google 法律页路由缺失（本地运行复核新增）**：此前 `/privacy`、`/terms` 未注册，未知路径被重定向到 `/welcome`。现已新增两条公开路由、基于项目实际能力撰写的本地政策草案及欢迎页真实链接；前端构建与本地浏览器可见文本验收通过。页面明确显示草案提示，尚未部署。
-- [ ] **账户注销的数据清理不完整（隐私审计新增）**：`UserService.deleteAccount` 目前停用账号、匿名化用户名、清除邮箱并撤销会话，但没有清除手机号、第三方 OAuth 身份映射、历史聊天或账务数据的处理；需根据账务留存要求设计可审计的删除/匿名化流程，并补集成测试后再发布最终隐私政策。
+- [x] **账号停用语义与行为统一（隐私审计新增）**：账号设置已明确执行“停用”，停用后禁止继续登录/使用 API 并撤销所有会话，同时保留账号资料、联系方式、第三方身份、对话、文件与账务数据；前后端文案及本地法律草案与行为一致。服务回归测试验证资料未变且会话失效；删除数据的范围仍单独待确认。
+- [ ] **账号数据删除范围与流程待定（隐私审计新增）**：用户已决定先停用账号，账号数据删除范围稍后确认。在范围、法定账务留存期限与申请处理流程经运营方确认前，不执行资料匿名化、身份解绑或内容/账务清除，也不将账号停用描述为注销或删除。
 - [x] **可选 RabbitMQ 令 Actuator 健康误报（运行复核新增）**：`RABBITMQ_ENABLED=false` 时 Spring Boot 仍探测默认 RabbitMQ 并使 `/api/actuator/health` 返回 503；已将 Rabbit 健康指示器绑定到 `app.messaging.rabbit-enabled`，并让本地代理/后端验收断言 `status=UP`。2026-10-19 `./scripts/local-release-preflight.sh --local-only` 通过：34 个 Surefire suite、101 项测试、0 失败/错误、2 项 Rabbit opt-in 跳过；前端生产构建、验证码与模拟聊天/SSE/结算回归通过；结束后 `./scripts/ai-local-env.sh verify` 再次确认后端与前端代理健康为 UP。Rabbit 显式启用时仍须检查真实 Broker。
 - [x] **生产 CORS 通配符风险（运行复核新增）**：线上 backend 原容器环境注入 `ALLOWED_ORIGINS=*` 且凭据跨域已启用；后端现拒绝通配符并降级到 `https://lingdian-ai.top`、`https://www.lingdian-ai.top`，生产环境校验器拒绝任意含 `*` 的来源。`CorsConfigTest` 3 项、生产配置正反向门禁、本地全量预检和本地/公网 OPTIONS 验收均通过；陌生来源均无 ACAO 并返回 403。已备份权限 `600` 的旧 JAR 与 `.env.prod`，将服务器 `.env.prod` 收紧为两个正式 HTTPS 来源；新 JAR 已在原 `lingdian-backend` 容器内替换并通过 SHA-256、健康、登录验证码和 CORS 验收。现有容器 ID 未变、没有创建镜像/容器；因容器环境仍保留旧 `*`，新代码运行时会安全降级并记录告警。
 

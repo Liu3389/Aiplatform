@@ -708,7 +708,7 @@ export const loginDeviceApi = {
 };
 
 export const accountApi = {
-  deleteAccount: (password: string) => request<null>('/user/delete-account', { method: 'POST', body: JSON.stringify({ password, confirm: 'DELETE' }) }),
+  deactivateAccount: (password: string) => request<null>('/user/deactivate-account', { method: 'POST', body: JSON.stringify({ password, confirm: 'DEACTIVATE' }) }),
 };
 
 export const invoiceApi = {
