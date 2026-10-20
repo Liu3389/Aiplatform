@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestTemplate;
 
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -101,6 +102,23 @@ class GoogleOidcClientTest {
     void rejectsAnExpiredOrAlreadyUsedAuthorizationCodeAtTokenExchange() {
         rejectCode.set(true);
         assertThrows(OAuthException.class, () -> client.exchangeAndVerify("expired-code", "verifier", NONCE));
+    }
+
+    @Test
+    void reportsProviderUnavailableWhenTokenEndpointCannotBeReached() throws Exception {
+        int unavailablePort;
+        try (ServerSocket socket = new ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
+            unavailablePort = socket.getLocalPort();
+        }
+        GoogleOidcClient unavailableClient = new GoogleOidcClient(new RestTemplate(), CLIENT_ID, "local-secret",
+                "http://127.0.0.1/callback", baseUri.resolve("/authorize"),
+                URI.create("http://127.0.0.1:" + unavailablePort + "/token"), baseUri.resolve("/jwks"));
+
+        OAuthException error = assertThrows(OAuthException.class,
+                () -> unavailableClient.exchangeAndVerify("one-time-code", "verifier", NONCE));
+
+        assertEquals(503, error.getStatus());
+        assertEquals("Google 登录服务暂时不可用，请稍后重试", error.getMessage());
     }
 
     private void assertRejected(String token, String nonce) {

@@ -20,11 +20,16 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.io.IOException;
+import java.net.ConnectException;
+import java.net.NoRouteToHostException;
+import java.net.SocketTimeoutException;
 import java.net.URI;
-import java.net.URL;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.security.MessageDigest;
@@ -33,6 +38,7 @@ import java.util.Base64;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
+import javax.net.ssl.SSLException;
 
 /** Google authorization-code + OIDC ID-token validation. */
 @Slf4j
@@ -142,9 +148,29 @@ public class GoogleOidcClient {
         } catch (OAuthException e) {
             throw e;
         } catch (Exception e) {
+            if (isProviderNetworkFailure(e)) {
+                log.warn("Google OIDC provider is temporarily unreachable ({})", e.getClass().getSimpleName());
+                throw new OAuthException(503, "Google 登录服务暂时不可用，请稍后重试", e);
+            }
             log.warn("Google OIDC token exchange or validation failed: {}", e.getClass().getSimpleName());
             throw new OAuthException(401, "第三方身份验证失败", e);
         }
+    }
+
+    private boolean isProviderNetworkFailure(Throwable failure) {
+        Throwable current = failure;
+        for (int depth = 0; current != null && depth < 16; depth++, current = current.getCause()) {
+            if (current instanceof ResourceAccessException
+                    || current instanceof UnknownHostException
+                    || current instanceof ConnectException
+                    || current instanceof NoRouteToHostException
+                    || current instanceof SocketTimeoutException
+                    || current instanceof SSLException
+                    || current instanceof IOException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void validateClaims(JWTClaimsSet claims, String expectedNonce) throws Exception {

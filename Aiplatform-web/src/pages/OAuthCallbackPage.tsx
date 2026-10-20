@@ -4,6 +4,7 @@ import { authApi } from '@/services/api'
 import { useAppStore } from '@/stores/appStore'
 import { motion } from 'framer-motion'
 import { runOnceWhilePending } from '@/utils/runOnceWhilePending'
+import { oauthCallbackErrorMessage } from '@/utils/oauthCallbackError'
 
 export default function OAuthCallbackPage() {
   const [searchParams] = useSearchParams()
@@ -33,12 +34,17 @@ export default function OAuthCallbackPage() {
       const code = searchParams.get('code')
       const state = searchParams.get('state')
       const providerError = searchParams.get('error')
+      if (code || state || providerError) {
+        // Authorization codes are single-use; remove them from browser history as soon as captured.
+        window.history.replaceState({}, document.title, window.location.pathname)
+      }
 
       if (providerError || !provider || !code || !state) {
         if (active) {
-          setError(providerError ? '第三方授权未完成' : '授权信息不完整或已过期，请重新发起登录')
+          setError(providerError
+            ? 'Google 授权未完成或已取消，请返回登录页重新发起。'
+            : '授权信息不完整或已过期，请返回登录页重新发起 Google 登录。')
           localStorage.removeItem('oauth_provider')
-          setTimeout(() => navigate('/login', { replace: true }), 3000)
         }
         return
       }
@@ -69,8 +75,7 @@ export default function OAuthCallbackPage() {
         if (!active) return
         localStorage.removeItem('oauth_provider')
         localStorage.removeItem('oauth_return_to')
-        setError((err as Error).message || '第三方登录失败，请重试')
-        setTimeout(() => navigate('/login', { replace: true }), 3000)
+        setError(oauthCallbackErrorMessage(err))
       }
     }
     void handleCallback()
@@ -103,11 +108,11 @@ export default function OAuthCallbackPage() {
         animate={{ opacity: 1, scale: 1 }}
         className="relative z-10 w-full max-w-sm p-8 rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-xl text-center"
       >
-        {error && <p className="text-accent-rose text-sm mb-4">{error}</p>}
         {requiresTwoFactor ? (
           <form onSubmit={completeTwoFactor} className="space-y-4">
             <h1 className="text-white font-semibold">完成两步验证</h1>
             <p className="text-neutral-400 text-sm">输入动态验证码或一次性备用码</p>
+            {error && <p role="alert" className="text-accent-rose text-sm">{error}</p>}
             <input
               autoComplete="one-time-code"
               value={twoFactorCode}
@@ -119,6 +124,27 @@ export default function OAuthCallbackPage() {
               {submitting ? '验证中…' : '验证并登录'}
             </button>
           </form>
+        ) : error ? (
+          <div className="space-y-4">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-rose-400/20 bg-rose-400/10 text-rose-300" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 8v4m0 4h.01" />
+              </svg>
+            </div>
+            <h1 className="text-white font-semibold">无法完成 Google 登录</h1>
+            <p role="alert" className="text-accent-rose text-sm leading-6">{error}</p>
+            <p className="text-neutral-400 text-xs leading-5">
+              授权状态只能使用一次。请重新发起登录；如果仍然失败，请联系管理员检查 Google 登录服务连接。
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/login', { replace: true })}
+              className="w-full rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white transition hover:bg-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:ring-offset-2 focus:ring-offset-[#0B1020]"
+            >
+              返回登录页并重新发起
+            </button>
+          </div>
         ) : (
           <div>
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-12 h-12 mx-auto mb-4">
@@ -126,7 +152,7 @@ export default function OAuthCallbackPage() {
                 <path d="M12 2a10 10 0 019.95 9" strokeLinecap="round" />
               </svg>
             </motion.div>
-            <p className="text-white text-sm">{error ? '即将返回登录页…' : status}</p>
+            <p className="text-white text-sm">{status}</p>
           </div>
         )}
       </motion.div>
