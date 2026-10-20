@@ -381,3 +381,11 @@
 - [x] `npm run build`、`./scripts/ai-local-env.sh verify` 和完整 `./scripts/ai-local-env.sh verify-chat` 均通过；后者覆盖验证码拒绝、模拟流式对话、权限/限流、持久化与点数结算。本地栈已恢复运行并保持 `local` 代理；这些聊天验收使用本地 mock，不代表 Google OAuth 或线上模型验收。
 - [x] 本地浏览器再次确认登录表单显示图形验证码、5 分钟有效提示和 Google 登录入口；`/privacy`、`/terms` 本地路由可见，但内容仍明确标为草案。
 - [ ] 生产 Google OAuth 仍未完成：测试受众和授权域名已在控制台保存；生产 Web 客户端 JSON 已收到但回调/来源登记不匹配。Google Auth Platform > Clients 中将授权来源设为 `https://lingdian-ai.top`，移除 HTTP 来源；将授权重定向 URI 设为 `https://lingdian-ai.top/oauth/callback`，然后重新导出 JSON。凭据未写入服务器；线上 OAuth 授权接口仍返回业务码 503，没有部署或改动线上容器。
+
+### 2026-10-20 Google OIDC 线上测试配置续记
+
+- [x] 用户在生产项目 `lingdian-ai-production` 确认现有 Web 客户端的授权来源为 `https://lingdian-ai.top`、授权重定向 URI 为 `https://lingdian-ai.top/oauth/callback`。本地下载的 JSON 仍带旧 URI/HTTP 来源，但客户端 ID 与控制台一致；服务器回调值按用户刚确认的控制台配置显式设置，未更换或撤销密钥。
+- [x] 在服务器 `.env.prod` 中安全写入 `GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、`GOOGLE_OAUTH_REDIRECT_URI`，原子回读校验通过；文件权限保持 `0600`，更新前受限备份也为 `0600`。没有输出密钥，也未读取或修改其他生产凭据。
+- [x] 现有 `lingdian-backend` 容器原先未注入 Google 环境变量，且 Docker 不会因重启自动重读主机 `.env.prod`。为遵守复用容器、不创建镜像/容器的约束，向原容器 `/app/application.properties` 写入仅含上述三项的外部 Spring 配置（权限 `0600`）并重启；容器 ID 保持不变。Spring Boot 3.2 默认从当前工作目录加载外部 `application.properties`。
+- [x] 发布后原 backend 容器状态为运行，公网 `/api/actuator/health` 返回 HTTP 200/`UP`；`/api/auth/oauth/url?provider=google&purpose=login` 返回 HTTP 200/业务码 200。生成的 Google 授权 URL 使用确认的客户端 ID 和回调，包含 `openid email profile`、PKCE `S256`、state、nonce；浏览器绑定 Cookie 带 `Secure`、`HttpOnly`、`SameSite=Lax`。
+- [ ] 真实登录往返仍待完成：浏览器已进入 Google 账号验证页并选中已加入测试名单的账号；Google 要求使用该账号的通行密钥验证。用户需完成验证后再确认回调落地、账号登录成功。OAuth 应用当前为外部测试模式；公开用户上线仍受正式隐私政策、服务条款、运营主体和公开联系邮箱门禁约束。
