@@ -69,7 +69,7 @@
 
 ### 批次 E：配置、凭据与部署边界
 
-- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；本机暂存/工作区凭据扫描通过。用户已授权并完成本地 `main` 历史脱敏；本轮新增的计划提交待推送，本地回滚引用仍保留重写前对象；不因格式命中推断密钥当前有效，也未撤销或轮换凭据。服务器 `.env.prod` 为 `0600`；`MYSQL_PASSWORD`、`SECONDARY_PASSWORD` 非空，`REDIS_PASSWORD` 为空，且用户明确选择暂不启用 Redis 认证。生产 Google OIDC 凭据已安全配置到服务器受限文件，但真实回调仍被 Google 出站网络阻断；RabbitMQ、OSS、SMTP/短信生产配置仍未完成联调；服务器凭据不应复制到开发机或聊天中。
+- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；本机暂存/工作区凭据扫描通过。用户已授权并完成本地 `main` 历史脱敏；本轮计划状态更新已推送到 main，当前本地与 origin/main 同步，本地回滚引用仍保留重写前对象；不因格式命中推断密钥当前有效，也未撤销或轮换凭据。服务器 `.env.prod` 为 `0600`；`MYSQL_PASSWORD`、`SECONDARY_PASSWORD` 非空，`REDIS_PASSWORD` 为空，且用户明确选择暂不启用 Redis 认证。生产 Google OIDC 凭据已安全配置到服务器受限文件，但真实回调仍被 Google 出站网络阻断；RabbitMQ、OSS、SMTP/短信生产配置仍未完成联调；服务器凭据不应复制到开发机或聊天中。
 - [x] **E2 前端 API 路由不被静态扩展规则截获（P2-19）**：`/api/`、`/chat/`、`/v1/` 已使用 `^~` 前缀优先匹配。临时 Nginx 与 mock 后端验证了带 `.png`、`.pdf`、`.svg`、`.json` 后缀的 API/SSE 请求均转发到后端，SSE 未缓冲，静态资源缓存保持正常；`nginx -t` 通过。
 - [x] **E3 聊天页首屏包体过大（本地构建新发现，P3-21）**：聊天页 Markdown、Mermaid、代码高亮、公式渲染已按需加载。构建后 ChatPage 入口为 94.97 KB（gzip 25.97 KB），较整改前约减少 93%；浏览器回归确认 Markdown、代码高亮、KaTeX 和 Mermaid 均正常。ECharts 与其他页面共享 chunk 仍超过 500 KB，但不在 ChatPage 静态依赖图中，作为独立页面优化跟踪。
 
