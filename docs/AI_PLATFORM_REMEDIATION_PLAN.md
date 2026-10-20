@@ -69,7 +69,7 @@
 
 ### 批次 E：配置、凭据与部署边界
 
-- [ ] **E1 生产凭据脱离 Git（P1-05）**：本地环境文件未跟踪、被忽略且权限为 `600`；`.env.example` 已从本地 `main` 删除，`.env.prod.example` 通过模板占位符检查；本机暂存/工作区凭据扫描通过。用户已授权并完成本地 `main` 历史脱敏；本轮计划状态更新已推送到 main，当前本地与 origin/main 同步，本地回滚引用仍保留重写前对象；不因格式命中推断密钥当前有效，也未撤销或轮换凭据。服务器 `.env.prod` 为 `0600`；`MYSQL_PASSWORD`、`SECONDARY_PASSWORD` 非空，`REDIS_PASSWORD` 为空，且用户明确选择暂不启用 Redis 认证。生产 Google OIDC 凭据已安全配置到服务器受限文件，但真实回调仍被 Google 出站网络阻断；RabbitMQ、OSS、SMTP/短信生产配置仍未完成联调；服务器凭据不应复制到开发机或聊天中。
+- [x] **E1 生产凭据脱离 Git（P1-05）**：凭据隔离门禁已完成。本机 `.runtime/local.env` 与 `.env.prod` 均未跟踪、被忽略且权限 `0600`；`.env.prod.example` 是占位模板；`check-staged-env-secrets.py` 覆盖当前暂存/工作区通过，生产密钥门禁正反向测试和推送扫描器回归通过。针对当前 `main` 全历史的推送扫描覆盖 1 个目标引用、1944 个文件对象和 73 个提交并通过；本地 `main` 与 `origin/main` 已同步。服务器 `.env.prod` 权限 `0600`，MySQL、二级口令及 Google OAuth 配置项已设置；未读取或输出任何值。历史凭据格式扫描不代表凭据有效性，也未撤销或轮换凭据；本地回滚引用仍保留历史对象。RabbitMQ、OSS、SMTP/短信联调和 Google 出站网络属于各自独立门禁；Redis 认证按用户决定暂缓。
 - [x] **E2 前端 API 路由不被静态扩展规则截获（P2-19）**：`/api/`、`/chat/`、`/v1/` 已使用 `^~` 前缀优先匹配。临时 Nginx 与 mock 后端验证了带 `.png`、`.pdf`、`.svg`、`.json` 后缀的 API/SSE 请求均转发到后端，SSE 未缓冲，静态资源缓存保持正常；`nginx -t` 通过。
 - [x] **E3 聊天页首屏包体过大（本地构建新发现，P3-21）**：聊天页 Markdown、Mermaid、代码高亮、公式渲染已按需加载。构建后 ChatPage 入口为 94.97 KB（gzip 25.97 KB），较整改前约减少 93%；浏览器回归确认 Markdown、代码高亮、KaTeX 和 Mermaid 均正常。ECharts 与其他页面共享 chunk 仍超过 500 KB，但不在 ChatPage 静态依赖图中，作为独立页面优化跟踪。
 
@@ -256,7 +256,7 @@
 - [x] 安全中心使用主题变量、可滚动页面容器和手机底部留白。通过本地浏览器将真实 React 页面接入仅用于预览的合成 API 响应，检查桌面布局、窄屏绑定表单、2FA 状态和设备卡片；验证码页面正常显示。预览只使用合成账号数据，没有发起真实 OAuth、验证码投递或改绑。
 - [x] `mvn -q -Dapp.messaging.rabbit-enabled=false test` 通过：80 项，0 失败、0 错误、0 跳过；生命周期测试断言未验证资料为 `false`、完成绑定后对应字段为 `true`。`npm run build` 通过。
 - [x] `./scripts/ai-local-env.sh switch local` 按新源码重建并重启后端/前端；`verify` 和 `verify-chat` 均通过，后者覆盖登录验证码、邮件/手机绑定、聊天、SSE、权限和计费恢复。环境仍指向本地代理。
-- [ ] 生产 SMTP/短信投递、生产 Google OAuth 客户端和生产 DeepSeek 上游仍需独立配置并验收；本地 DeepSeek 真实调用已通过（见“真实 DeepSeek 本地上游验收”）；Google 本地开发沙箱已完成真实登录测试（见 C2）；旧历史邮箱不会被自动认定为已验证。
+- [ ] 生产 SMTP/短信投递、生产 DeepSeek 上游仍需分别配置和验收；Google 生产客户端与服务器配置已完成，但授权码交换受服务器出站网络阻断，待恢复后做真实回调验收。本地 DeepSeek 真实调用已通过（见“真实 DeepSeek 本地上游验收”）；Google 本地开发沙箱已完成真实登录测试（见 C2）；旧历史邮箱不会被自动认定为已验证。
 
 ### D1 文件解析任务重启恢复验收（2026-10-18）
 
@@ -309,6 +309,7 @@
 - [x] 2026-10-19 用户要求沿用现有容器且不新建镜像/容器；只读检查确认 backend 以 `/app/app.jar` 启动、frontend 静态根为 `/usr/share/nginx/html`，Redis 未启用认证。`server-deploy.sh` 的 Compose 路径仍会加载镜像并替换容器，因此保留显式默认拒绝门禁；后续只考虑新增的 `deploy-existing-containers.sh` 原容器内更新路径。该路径尚未应用，当前被线上法律页缺失阻挡。
 - [x] 2026-10-19 最新本地检查点 `39e66f1` 完成后，针对 `main` 再次扫描完整推送历史：1 个目标引用、1,399 个文件对象、37 个提交，通过；没有推送，远端历史仍未变更。
 
+- [x] 2026-10-20 E1 复验：`python3 scripts/check-staged-env-secrets.py` 通过（31 个暂存变更、492 个跟踪文件、19 个未跟踪文件、2 个环境模板）；`test-production-security-guards.py` 与 `test-push-history-secrets.py` 均通过；当前 `main` 完整历史扫描通过。服务器只读核验显示 `.env.prod` 为 `0600`，所需 MySQL/二级口令和 Google 配置项存在；没有回传值。
 ### E2 Nginx API 路由优先级验收（2026-10-19）
 
 - [x] `/api/`、`/chat/`、`/v1/` 改为 `^~` 前缀，确保 API 路径中的 `.png`、`.pdf` 等后缀不会被后续静态扩展名正则规则截获；静态资源缓存规则保持原样。
@@ -352,7 +353,7 @@
 - [x] 2026-10-19 当前工作区全量复验：后端 `mvn -Dapp.messaging.rabbit-enabled=false test` 为 99 项、0 失败、0 错误、0 跳过；前端 `test:auth-session` 7 项、`test:model-availability` 3 项通过，`npm run build` 成功；登录页 CAPTCHA API 与错误码实测通过；`./scripts/ai-local-env.sh verify` 通过。后端测试使用临时 MySQL 数据库副本和独立 Redis 容器，二者均已清理，本地开发栈仍健康且代理保持 local。
 - [x] 2026-10-19 本地检查点提交为 `802f5ed`，仅包含本计划与删除含非占位密码字段的旧 `.env.example`；现有其他代码/配置改动保持在工作区。
 - [x] 2026-10-19 最新本地全链路复验：`./scripts/local-release-preflight.sh --local-only` 通过；34 个 Surefire suite 共 101 项（0 失败、0 错误、2 项 Rabbit opt-in 跳过），前端生产构建通过；`verify-chat` 覆盖 CAPTCHA 错误/重放、模型可用性、联系方式、充值关闭、越权路径、幂等/SSE、限流/管理员权限及 B4 恢复，12 次模拟上游请求（3 次 SSE）、20 条消息持久化、11 笔结算。结束后 MySQL、Redis、backend、web、mock 仍运行，代理为 local。
-- [ ] 工作区仍有用户保留的未提交文件，本轮未纳入整改提交。现有容器内 JAR/静态资源发布路径已经实现并受法律内容门禁保护；线上发布仍待完成 Google 法律页及 OAuth 资料、必要的生产外部服务联调、旧数据完整性核验和旧会话兼容安排。MySQL 与二级口令已确认非空；Redis 认证按用户选择暂缓，不作为本轮擅自变更项。
+- [ ] 工作区仍有用户保留的未提交文件，本轮不纳入整改提交。现有容器内 JAR/静态资源发布路径已经实现；线上发布仍待正式法律页面/运营主体信息、Google 出站网络、必要的生产外部服务联调、旧数据完整性核验和旧会话兼容安排。生产 Google 客户端及服务器凭据配置已完成，真实登录验收被 Google 出站网络阻断。MySQL 与二级口令已确认非空；Redis 认证按用户选择暂缓。
 
 - [x] 2026-10-19 本地 `main` 整改提交已推送。首次安全推送被 GitHub 拒绝：历史中的根目录 `mysql8.tar` 为 244,640,256 bytes，远端 `main` 未改变。用户当前工作区没有该归档文件；本地 `main` 历史已移除该文件并保留 `refs/backup/main-before-large-file-removal` 回退引用；pre-push 检查新增 100 MiB blob 限制，模拟回归通过。随后使用 `--force-with-lease` 成功更新远端 `main`，并通过 `git ls-remote` 与 `git fetch` 确认远端、本地分支均为 `d4e4a63`。尚未部署。
 
@@ -364,12 +365,12 @@
 - [x] 线上现有 MySQL 容器内执行 v8→v17 迁移并核对结构。用户确认旧限时赠点按永久点数保留；迁移前后用户点数合计均为 `53934.000`，旧限时账本均为 6 笔、`790.000` 点，未回填或改写旧余额。
 - [x] 后端 JAR 与前端静态资源已部署到原有容器；后端在原容器内重启，未构建/加载镜像、未创建或替换容器。后端、前端、MySQL、Redis 容器 ID 与发布前一致；Redis/MySQL 未重启，Redis 认证按用户选择继续暂缓。
 - [x] 发布后两条正式 HTTPS 域名的 `/api/health` 与登录验证码接口均返回 200；前端首页及其引用的 15 个 JS/CSS 资源均返回 200；Nginx 配置检查成功。新文件恢复扫描将原先 2 个过期 `PARSING` 任务恢复为 `SUCCESS`，目前 58 个文件解析任务均为成功。
-- [ ] 本次没有发起新的线上模型请求或付费聊天；本地模拟上游和真实凭据验收记录仍按各自章节区分。Google 生产 OAuth 的域名、首页及隐私/条款 URL 已由用户提供；线上 `/privacy` 与 `/terms` 仍回退到欢迎页，本地页面目前是待确认草案，需完成数据删除流程、补齐运营主体/公开联系邮箱并确认法律内容后才能部署和配置独立生产客户端。SMTP/短信、RabbitMQ、OSS 尚未完成线上配置与联调。直充仍按用户决定关闭。
+- [x] 2026-10-19 生产发布历史快照：当时未发起新的线上模型请求或付费聊天，生产隐私/条款正文、主体/邮箱与 OAuth 客户端配置仍未完成。后续已完成生产 OAuth 客户端和服务器凭据配置；当前登录验收受 Google 出站网络阻断，正式法律页面/运营信息及 SMTP、短信、RabbitMQ、OSS 联调仍是独立门禁。直充继续按用户决定关闭。
 - [ ] 旧 Token 因缺少设备绑定映射按失败关闭策略需要用户重新登录；前端本地失效提示已完成，生产发布前仍需安排公告和兼容窗口。历史邮箱不会自动视为已验证，用户需重新验证。旧伪 OAuth/TOTP Redis 数据不迁移。生产 Redis 仍无认证且未公开宿主机端口，`.env.prod` 权限为 `600`；Redis 认证保持暂缓，启用前需安排现有 Redis/backend 的一致配置和重启。
 - [x] 2026-10-19 可选 Rabbit 健康修复已发布：本地全量预检通过后，提交 `e435d70` 已推送；权限 `600` 的原 JAR 备份为 `/root/lingdian/backups/backend-pre-rabbit-health-20261019T073350Z.jar`，新 Jar SHA-256 与本地产物一致，只在原 `lingdian-backend` 容器内替换 `/app/app.jar` 并重启，未新建镜像/容器，也未重启 MySQL、Redis 或 frontend。backend 容器 ID 保持不变；发布后公网 `/api/actuator/health` 返回 HTTP 200、`status=UP`，验证码接口返回 HTTP 200、业务码 200、图片数据存在且 TTL 300 秒。本次未发起线上模型请求或付费聊天。Google 生产 URL 已收齐，但 `/privacy` 与 `/terms` 当前回退到欢迎页，发布真实法律正文并核验前不能配置生产 OAuth 客户端。
 - [x] 2026-10-19 CORS 加固已保存为本地 `main` 提交 `b14415c`；远端 `origin/main` 仍保留旧版引用，本次没有向远端推送。已备份旧 JAR `/root/lingdian/backups/backend-pre-cors-20261019T075800Z.jar` 和配置 `/root/lingdian/backups/env-prod-pre-cors-20261019T075800Z.bak`（均权限 `600`），候选 JAR SHA-256 为 `bbd040343ce9ddf417c5c6aefabe2abb1f76c9dbd2fde95410a165208ac647a0`；服务器 `.env.prod` 权限保持 `600`，`ALLOWED_ORIGINS` 已设为正式两个域名。由于 Redis 曾被正常 SIGTERM 停止，已启动同一 Redis 容器并确认数据集载入后 `PONG`；健康恢复后只在原 backend 容器内替换 JAR并重启，backend/Redis/MySQL/frontend 容器 ID 均保持不变。公网两个正式来源 OPTIONS 返回精确 ACAO 且 `ACAC=true`，陌生来源无 CORS 允许头并返回 403；Actuator `UP`、登录验证码接口业务码 200 且图像存在。没有发起线上模型请求或付费聊天。
-- [ ] Google 生产 OAuth 的域名、首页及隐私/条款 URL 已由用户提供，独立项目 `lingdian-ai-production` 已创建；线上 `/privacy` 与 `/terms` 当前在浏览器中均落回 `/welcome`，本地法律页仍是待确认草案。运营主体全称及公开客服/隐私邮箱待用户补充；账号暂按停用处理，数据删除范围待用户确认。完成真实法律内容和上述信息后再配置品牌及生产 OAuth 客户端。SMTP/短信、RabbitMQ、OSS 尚未完成线上配置与联调；直充仍按用户决定关闭。
-- [ ] 2026-10-19 最新生产只读复核：线上 `/privacy` 与 `/terms` 均重定向到 `/welcome`，当前不能用于 Google 审核；现有 7 个 `lingdian-*` 容器均运行，未更换容器。服务器 `.env.prod` 为 `0600`，MySQL/二级口令已设；Redis 口令为空（按用户决定暂不启用认证）；生产 Google OAuth、RabbitMQ、OSS、SMTP、短信变量均未设。此次仅查询变量是否存在，未输出任何密钥；未读生产数据库 Key，也不要求申请新 DeepSeek Key。当前生产 JAR SHA-256 为 `bbd040343ce9ddf417c5c6aefabe2abb1f76c9dbd2fde95410a165208ac647a0`，本地已验收账号停用候选 JAR 为 `58f9924f90bd542c76d7e947ff80e82f00f1c6220adb72da371ea0a884fb3036`，账号停用功能仍未部署。远端 `main` 与本地已同步至 `d58fa3b`；本次未改生产环境。
+- [x] 2026-10-19 生产 Google 资料历史快照：当时已收齐域名和页面 URL，法律页仍为本地草案，主体/公开邮箱及数据删除范围待确认，客户端尚未配置。此状态已由 2026-10-20 生产凭据配置与回调诊断更新；法律正文、运营主体/联系邮箱和数据删除范围仍按各自门禁跟踪。
+- [x] 2026-10-19 最新生产只读复核（历史快照，已被 2026-10-20 复核更新）
 - [x] 2026-10-19 Google 生产资料与账号语义确认：正式域名 `https://lingdian-ai.top/`、首页 `/welcome`、隐私政策 `/privacy`、服务条款 `/terms`；使用当前 Google 账号作为 OAuth 支持邮箱，生产 OAuth 放在独立项目 `lingdian-ai-production`。运营主体全称及公开客服/隐私邮箱由用户后续补充；账号按停用处理，数据删除范围留待后续确认。法律页仍是本地草案，OAuth 生产客户端和法律页面发布继续受此门禁阻挡。
 - [x] 2026-10-19 新增复用现有容器的受控发布脚本：默认 `--plan` 不联网；`--apply` 先要求法律页确认并拒绝草案标记，再运行本地全量预检，远端只用 `docker inspect/cp/exec/restart`，备份原 JAR/静态资源、核验七个容器 ID 与非 backend 启动时间，并在健康/验证码/静态资源检查失败时回滚。`bash -n` 与 `python3 scripts/test-existing-container-deploy.py` 通过；当前法律页尚未完成，因此未连接服务器、未部署。
 - [x] 2026-10-19 最新本地与远端状态核验（提交 `d31d134`）：`./scripts/local-release-preflight.sh --local-only` 通过；35 个 Surefire suite 共 105 项、0 失败/错误、2 项 Rabbit opt-in 跳过；前端构建成功（ECharts 仍有既有大 chunk 警告）；`verify-chat` 通过 12 次模拟上游请求（3 次 SSE）、20 条消息和 11 笔结算，覆盖验证码错误/重放、幂等、权限/限流及 B4 故障恢复。随后 `./scripts/ai-local-env.sh verify` 通过，MySQL、Redis、backend、web、mock 仍健康，代理为 local；浏览器登录页显示图形验证码、刷新按钮和 5 分钟提示。远端只读核验确认 7 个容器均运行、`.env.prod` 为 `0600`；MySQL/二级口令已设，Redis 密码为空（按用户决定暂不认证），Google/RabbitMQ/OSS/SMTP/短信配置未设置。公网 health 为 200；浏览器访问 `/privacy`、`/terms` 均导航回 `/welcome`，故没有部署代码或法律草案。`origin/main` 与本地同步至 `d31d134`；没有读取或输出线上 API Key/密码，也没有发起线上 AI 或付费请求。
@@ -389,4 +390,5 @@
 - [x] 现有 `lingdian-backend` 容器原先未注入 Google 环境变量，且 Docker 不会因重启自动重读主机 `.env.prod`。为遵守复用容器、不创建镜像/容器的约束，向原容器 `/app/application.properties` 写入仅含上述三项的外部 Spring 配置（权限 `0600`）并重启；容器 ID 保持不变。Spring Boot 3.2 默认从当前工作目录加载外部 `application.properties`。
 - [x] 发布后原 backend 容器状态为运行，公网 `/api/actuator/health` 返回 HTTP 200/`UP`；`/api/auth/oauth/url?provider=google&purpose=login` 返回 HTTP 200/业务码 200。生成的 Google 授权 URL 使用确认的客户端 ID 和回调，包含 `openid email profile`、PKCE `S256`、state、nonce；浏览器绑定 Cookie 带 `Secure`、`HttpOnly`、`SameSite=Lax`。
 - [x] 2026-10-20 生产登录回调诊断：用户完成 Google 授权后，回调已到达 backend；日志显示 3 次令牌交换报 `ResourceAccessException`。在服务器主机和现有 backend 容器内，DNS 可解析 Google，但到 `oauth2.googleapis.com:443` 的 IPv4 连接超时、IPv6 不通；同机访问百度 HTTPS 返回 200，说明是 Google 出站链路不可用。代码在令牌交换前通过 Redis `GET_AND_DELETE` 消费 state，因此重试旧回调会显示“OAuth state 无效或已过期”；该提示是第一次令牌交换失败后的旧回调重放结果。
-- [ ] 生产 OAuth 外网门禁：为现有 backend 提供可信的 Google HTTPS 出站链路，至少能访问 `oauth2.googleapis.com:443`（授权码换令牌）和 `www.googleapis.com:443`（OIDC 公钥）。可由服务器网络策略放通，或配置用户控制的可信 HTTPS 代理；不要使用公开未知代理。连通后从 `https://lingdian-ai.top/login` 重新发起全新授权，再验收回调、用户会话和页面跳转。旧回调链接不能复用。OAuth 当前仍是外部测试模式；`/privacy`、`/terms` 回退至 `/welcome`，正式法律页面、运营主体和公开联系邮箱仍是公开上线门禁。
+- [ ] 生产 OAuth 外网门禁：为现有 backend 提供可信的 Google HTTPS 出站链路，至少能访问 `oauth2.googleapis.com:443`（授权码换令牌）和 `www.googleapis.com:443`（OIDC 公钥）。可由服务器网络策略放通，或配置用户控制的可信 HTTPS 代理；不要使用公开未知代理。连通后从 `https://lingdian-ai.top/login` 重新发起全新授权，再验收回调、用户会话和页面跳转。旧回调链接不能复用。OAuth 当前仍是外部测试模式；`/privacy`、`/terms` 虽返回 HTTP 200，但两页 HTML 与首页相同，仍是 SPA 壳。正式法律页面、运营主体和公开联系邮箱仍是公众上线门禁。
+- [x] 2026-10-20 生产外部门禁复核：服务器 `.env.prod` 中 Google OAuth 三项已设置；`RABBITMQ_HOST`、OSS endpoint、SMTP host、SMS URL 均未配置；Redis 口令为空并按用户决定暂缓认证。线上 `/privacy` 与 `/terms` 均返回 200，但正文 SHA-256 与首页相同，仍是 SPA 壳，不是正式法律正文。只读检查没有改动容器或配置值。
