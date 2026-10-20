@@ -26,7 +26,7 @@ const privacy: LegalDocument = {
       id: 'operator',
       title: '1. 运营主体与适用范围',
       paragraphs: [
-        '本服务的产品名称为“凌点 AI”。对外运营主体的法定名称、公开联系地址和隐私联系邮箱尚待运营方确认；确认前，本页仅供本地审阅，不构成正式发布的隐私政策。',
+        '本服务的产品名称为“凌点 AI”。拟议运营主体名称为“武汉凌点人工智能科技有限公司”，这只是名称候选，尚未核实工商登记或其是否为本服务实际运营者；正式运营主体必须以真实登记信息及网站备案主体为准。确认前，本页仅供本地审阅，不构成正式发布的隐私政策。',
         '本政策适用于 lingdian-ai.top 网站及凌点 AI 提供的账号、模型调用、对话、文件处理和相关功能。',
       ],
     },
@@ -82,7 +82,7 @@ const privacy: LegalDocument = {
       id: 'contact',
       title: '8. 联系方式与更新',
       paragraphs: [
-        '隐私联系邮箱：待运营方提供。正式发布前请补充可持续接收隐私请求的联系渠道，并确认运营主体、数据留存期限、删除范围和第三方处理方。',
+        '隐私联系邮箱：liu771862@gmail.com。你可以通过该邮箱咨询个人信息处理、提出查阅、更正或删除请求；运营方应核验请求并依法处理。正式发布前仍需核实运营主体、数据留存期限、删除范围和第三方处理方。',
         '本政策的生效日期和更新记录将在运营方审核完成后填写。重大变更会通过网站或产品内公告说明。',
       ],
     },
@@ -99,7 +99,7 @@ const terms: LegalDocument = {
       id: 'operator',
       title: '1. 服务提供方与接受条款',
       paragraphs: [
-        '本服务以“凌点 AI”为产品名称。实际运营主体的法定名称和联系信息尚待确认，因此本页面目前是本地审阅草案。注册、登录或使用服务前，请阅读正式发布的条款。',
+        '本服务以“凌点 AI”为产品名称。拟议运营主体名称为“武汉凌点人工智能科技有限公司”，这只是名称候选，尚未核实工商登记或其是否为本服务实际运营者；正式运营主体必须以真实登记信息及网站备案主体为准，因此本页面目前是本地审阅草案。注册、登录或使用服务前，请阅读正式发布的条款。',
         '本服务包括账号管理、AI 模型调用、对话保存、文件解析、API 调用和与之相关的功能；实际开放范围以产品页面和账号权限为准。',
       ],
     },
@@ -147,7 +147,7 @@ const terms: LegalDocument = {
       id: 'contact',
       title: '8. 联系方式与条款更新',
       paragraphs: [
-        '服务联系邮箱：待运营方提供。正式发布前请补充运营主体全称和有效客服渠道，并审核点数、内容授权、服务暂停及争议处理条款。',
+        '客服与服务联系邮箱：liu771862@gmail.com。正式发布前仍需核实运营主体全称，并审核点数、内容授权、服务暂停及争议处理条款。',
         '条款生效日期将在正式审核后填写。平台会在本页面更新版本，并对重大变更作出合理提示。',
       ],
     },
@@ -186,7 +186,7 @@ function LegalDocumentPage({ kind }: { kind: 'privacy' | 'terms' }) {
             <span className="mt-0.5 text-amber-500" aria-hidden="true">●</span>
             <div>
               <p className="text-sm font-semibold">本地草案，尚未具备正式发布条件</p>
-              <p className="mt-1 text-sm leading-6" style={{ color: 'var(--text-secondary)' }}>运营主体、公开联系邮箱、数据保留与删除范围仍待确认。请勿将此草案用于 Google OAuth 生产审核或替代正式法律审阅。</p>
+              <p className="mt-1 text-sm leading-6" style={{ color: 'var(--text-secondary)' }}>公开联系邮箱已提供；运营主体登记信息、数据保留与删除范围仍待核实。请勿将此草案用于 Google OAuth 生产审核或替代正式法律审阅。</p>
             </div>
           </div>
         </div>
@@ -214,7 +214,11 @@ function LegalDocumentPage({ kind }: { kind: 'privacy' | 'terms' }) {
                 <section key={section.id} id={section.id} className="scroll-mt-8">
                   <h2 className="text-lg font-semibold sm:text-xl">{section.title}</h2>
                   {section.paragraphs?.map((paragraph) => (
-                    <p key={paragraph} className="mt-3 text-sm leading-7 sm:text-[15px]" style={{ color: 'var(--text-secondary)' }}>{paragraph}</p>
+                    <p key={paragraph} className="mt-3 text-sm leading-7 sm:text-[15px]" style={{ color: 'var(--text-secondary)' }}>
+                      {paragraph.split(/(liu771862@gmail\.com)/g).map((part, index) => part === 'liu771862@gmail.com'
+                        ? <a key={index} href="mailto:liu771862@gmail.com" className="underline underline-offset-4" style={{ color: 'var(--accent-purple)' }}>{part}</a>
+                        : part)}
+                    </p>
                   ))}
                   {section.bullets && (
                     <ul className="mt-3 space-y-3">
