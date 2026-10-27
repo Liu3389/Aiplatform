@@ -7,6 +7,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import NotificationBell from '@/components/NotificationBell'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { getUserDisplayName } from '@/utils/userDisplay'
+import UserAvatar from '@/components/UserAvatar'
+import PlatformMark from '@/components/PlatformMark'
 
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'admin']
 
@@ -74,14 +76,10 @@ export default function AppLayout() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/welcome')}
-            className="w-8 h-8 rounded-lg flex items-center justify-center shadow-lg transition-all hover:scale-105 active:scale-95"
-            style={{
-              background: 'linear-gradient(135deg, #8B5CF6, #6366F1)',
-              boxShadow: '0 4px 16px rgba(139,92,246,0.25)',
-            }}
+            className="h-8 w-8 rounded-lg transition-all hover:scale-105 active:scale-95"
             title={t('返回欢迎页', 'Back to Welcome')}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <PlatformMark className="h-8 w-8 rounded-lg" />
           </button>
           <span className="hidden sm:inline text-[15px] font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
             凌点 AI
@@ -126,10 +124,8 @@ export default function AppLayout() {
             )}
           </button>
           <button onClick={() => navigate('/user')} className="hidden sm:flex items-center gap-2 p-1 rounded-lg transition-all hover:bg-[var(--hover-bg)]" title={userDisplayName || t('个人中心', 'Profile')}>
-            <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-              style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
-              {userDisplayName[0]?.toUpperCase() || 'U'}
-            </div>
+            <UserAvatar name={userDisplayName} avatarUrl={user?.avatarUrl} className="h-7 w-7 text-[10px] font-bold text-white"
+              style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }} />
             <span className="text-[12px] font-medium hidden lg:inline max-w-[150px] truncate" style={{ color: 'var(--text-secondary)' }}>
               {userDisplayName}
             </span>

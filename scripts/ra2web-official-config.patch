@@ -1,0 +1,17 @@
+diff --git a/config.json b/config.json
+index 5a5f5d5..5a5f5d5 100644
+--- a/config.json
++++ b/config.json
+@@ -2,8 +2,8 @@
+   "serversUrl": "servers.json",
+   "discordUrl": "https://qm.qq.com/q/8wt3F0yUbm",
+   "autoLoadGameRes": true,
+-  "gameresBaseUrl": "//res2.wangerhuoda.cn/",
+-  "gameresBaseUrls": ["//wyhjres2.bun.sh.cn/","//werhd.k0s.cn/"],
++  "gameresBaseUrl": "https://wyhjres.ra2web.cn/",
++  "gameresBaseUrls": ["https://wyhjres.ra2web.cn/","//wyhjres2.bun.sh.cn/","//werhd.k0s.cn/"],
+-  "campaignBaseUrl": "//res2.wangerhuoda.cn/campaign/",
+-  "campaignBaseUrls": ["//wyhjres2.bun.sh.cn/campaign/","//werhd.k0s.cn/campaign/"],
++  "campaignBaseUrl": "https://wyhjres.ra2web.cn/campaign/",
++  "campaignBaseUrls": ["https://wyhjres.ra2web.cn/campaign/","//res2.wangerhuoda.cn/campaign/","//wyhjres2.bun.sh.cn/campaign/","//werhd.k0s.cn/campaign/"],
+   "mapsBaseUrl": "//gmap.wangerhuoda.cn/map/",

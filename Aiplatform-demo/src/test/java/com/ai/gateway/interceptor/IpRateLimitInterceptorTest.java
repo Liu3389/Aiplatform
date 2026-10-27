@@ -47,6 +47,19 @@ class IpRateLimitInterceptorTest {
     }
 
     @Test
+    void rateLimitsRegistrationEmailSendingByClientIp() throws Exception {
+        String key = "ai_gateway:captcha_issue_limit:198.51.100.25";
+        when(redisTemplate.execute(any(RedisScript.class), eq(List.of(key)), eq("60"))).thenReturn(11L);
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/register/email-code");
+        request.addHeader("X-Real-IP", "198.51.100.25");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertFalse(interceptor.preHandle(request, response, new Object()));
+        assertEquals(429, response.getStatus());
+        verify(redisTemplate).execute(any(RedisScript.class), eq(List.of(key)), eq("60"));
+    }
+
+    @Test
     void ignoresClientControlledForwardedForWhenNoTrustedRealIpIsPresent() throws Exception {
         String key = "ai_gateway:captcha_issue_limit:203.0.113.8";
         when(redisTemplate.execute(any(RedisScript.class), eq(List.of(key)), eq("60"))).thenReturn(1L);

@@ -86,10 +86,11 @@ load_local_env() {
   set +a
   : "${VERIFICATION_DELIVERY_MODE:=local}"
   : "${VERIFICATION_ALLOW_LOCAL_CAPTURE:=true}"
+  : "${REGISTRATION_EMAIL_VERIFICATION_REQUIRED:=true}"
   # Daily grants run at midnight in normal environments; disabling them here keeps
   # long-running local acceptance checks deterministic. Set a cron in local.env to test it.
   : "${APP_POINTS_DAILY_GRANT_CRON:=-}"
-  export VERIFICATION_DELIVERY_MODE VERIFICATION_ALLOW_LOCAL_CAPTURE APP_POINTS_DAILY_GRANT_CRON
+  export VERIFICATION_DELIVERY_MODE VERIFICATION_ALLOW_LOCAL_CAPTURE REGISTRATION_EMAIL_VERIFICATION_REQUIRED APP_POINTS_DAILY_GRANT_CRON
 }
 
 compose() {
@@ -357,7 +358,10 @@ apply_local_schema_migrations() {
     "$ROOT/Aiplatform-demo/src/main/resources/sql/migration-v14-file-parse-recovery.sql" \
     "$ROOT/Aiplatform-demo/src/main/resources/sql/migration-v15-chat-message-idempotency.sql" \
     "$ROOT/Aiplatform-demo/src/main/resources/sql/migration-v16-model-output-token-cap.sql" \
-    "$ROOT/Aiplatform-demo/src/main/resources/sql/migration-v17-ai-charge-review-audit.sql"; do
+    "$ROOT/Aiplatform-demo/src/main/resources/sql/migration-v17-ai-charge-review-audit.sql" \
+    "$ROOT/Aiplatform-demo/src/main/resources/sql/migration-v18-oauth-avatar.sql" \
+    "$ROOT/Aiplatform-demo/src/main/resources/sql/migration-v19-user-avatar.sql" \
+    "$ROOT/Aiplatform-demo/src/main/resources/sql/migration-v20-user-nickname.sql"; do
   docker exec -i "$MYSQL_CONTAINER" sh -c \
     'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot "$1"' \
     sh "$MYSQL_DATABASE" < "$migration" >/dev/null
@@ -490,6 +494,7 @@ verify_chat() {
   echo "本地模拟模型已在后端缓存预热前配置，Token 上限接口测试开始。"
 
   local captcha_response captcha_id captcha_code username register_payload register_response login_captcha_response login_captcha_id login_captcha_code bad_login_code bad_login_payload bad_login_response replay_login_payload replay_login_response login_payload login_response token user_id bind_email bind_phone bind_email_hash bind_phone_hash bind_email_code bind_phone_code bind_send_payload bind_send_response bind_response bind_state recharge_state_before recharge_state_after recharge_cache_before recharge_cache_after recharge_response recharge_coupon_response coupon_list_response coupon_use_response coupon_redeem_response path_sentinel path_payload path_response mock_stats_before mock_stats_after state_before state_after points_before points_after chat_payload chat_response conversation_id owned_chat_payload owned_chat_response other_username other_user_id other_register_captcha_response other_register_captcha_id other_register_captcha_code other_register_payload other_register_response other_login_captcha_response other_login_captcha_id other_login_captcha_code other_login_payload other_login_response other_token idor_chat_payload idor_chat_response idor_stream_response idor_state_before idor_state_after other_points_before other_points_after rate_limited_payload rate_http_code rate_limited_response rate_state_before rate_state_after rate_points_before rate_points_after other_chat_payload other_chat_response admin_cache_url admin_unauth_read admin_unauth_init admin_user_read admin_user_init admin_user_clear admin_init_response admin_check_response admin_init_all_response admin_clear_response admin_audit_count user_sse_rate_count api_key_payload api_key_response api_key api_key_id stream_payload stream_response api_stream_response rate_count mock_stats counts revoke_response revoked_info_response revoked_chat_response revoked_stream_response
+  local register_email register_email_hash register_email_code email_code_payload email_code_response other_register_email other_register_email_hash other_register_email_code other_email_code_payload other_email_code_response
   local d2_key d2_request_id d2_payload d2_before_state d2_before_points d2_mock_before d2_first_response d2_first_state d2_first_points d2_second_response d2_second_state d2_second_points d2_request_rows d2_mock_after d2_stream_key d2_stream_request_id d2_stream_payload d2_stream_before_state d2_stream_before_points d2_stream_mock_before d2_stream_first d2_stream_first_state d2_stream_first_points d2_stream_second d2_stream_second_state d2_stream_second_points d2_stream_rows d2_stream_mock_after d2_failure_key d2_failure_request_id d2_failure_payload d2_failure_before_state d2_failure_before_points d2_failure_response d2_failure_curl_status d2_failure_after_state d2_failure_after_points d2_failure_rows
   local available_models_response unconfigured_model unconfigured_payload unconfigured_response unconfigured_state_before unconfigured_state_after unconfigured_points_before unconfigured_points_after unconfigured_mock_before unconfigured_mock_after
   local deepseek_fallback_payload deepseek_fallback_response deepseek_fallback_stream_payload deepseek_fallback_stream_response deepseek_fallback_state_before deepseek_fallback_state_after deepseek_fallback_points_before deepseek_fallback_points_after deepseek_fallback_mock_before deepseek_fallback_mock_after
@@ -498,7 +503,14 @@ verify_chat() {
   captcha_code="$(docker exec "$REDIS_CONTAINER" redis-cli GET "ai_gateway:captcha:register:$captcha_id")"
   [[ -n "$captcha_code" && "$captcha_code" != nil ]] || { echo "无法从专用本地 Redis 取回测试验证码。" >&2; return 1; }
   username="local_smoke_$(date +%s)_${RANDOM}"
-  register_payload="$(CAPTCHA_ID="$captcha_id" CAPTCHA_CODE="$captcha_code" USERNAME="$username" python3 -c 'import json,os; print(json.dumps({"username":os.environ["USERNAME"],"password":"LocalSmoke123","captchaId":os.environ["CAPTCHA_ID"],"captchaCode":os.environ["CAPTCHA_CODE"]}))')"
+  register_email="${username}@example.test"
+  email_code_payload="$(EMAIL="$register_email" CAPTCHA_ID="$captcha_id" CAPTCHA_CODE="$captcha_code" python3 -c 'import json,os; print(json.dumps({"email":os.environ["EMAIL"],"captchaId":os.environ["CAPTCHA_ID"],"captchaCode":os.environ["CAPTCHA_CODE"]}))')"
+  email_code_response="$(curl --silent --show-error --fail --max-time 15 -X POST "$LOCAL_TARGET/api/auth/register/email-code" -H 'Content-Type: application/json' --data-binary "$email_code_payload")"
+  printf '%s' "$email_code_response" | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p.get("code")==200,p.get("message")'
+  register_email_hash="$(EMAIL="$register_email" python3 -c 'import hashlib,os; print(hashlib.sha256(os.environ["EMAIL"].lower().encode()).hexdigest())')"
+  register_email_code="$(docker exec "$REDIS_CONTAINER" redis-cli GET "verification:local:registration:email:$register_email_hash")"
+  [[ -n "$register_email_code" && "$register_email_code" != nil ]] || { echo "本地注册邮箱验证码投递失败。" >&2; return 1; }
+  register_payload="$(EMAIL="$register_email" EMAIL_CODE="$register_email_code" USERNAME="$username" python3 -c 'import json,os; print(json.dumps({"username":os.environ["USERNAME"],"password":"LocalSmoke123","email":os.environ["EMAIL"],"emailCode":os.environ["EMAIL_CODE"]}))')"
   register_response="$(curl --silent --show-error --fail --max-time 15 -X POST "$LOCAL_TARGET/api/auth/register" -H 'Content-Type: application/json' --data-binary "$register_payload")"
   user_id="$(printf '%s' "$register_response" | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p.get("code")==200,p.get("message"); print(p["data"]["id"])')"
   [[ "$user_id" =~ ^[0-9]+$ ]] || { echo "本地测试注册未返回有效用户 ID。" >&2; return 1; }
@@ -807,7 +819,14 @@ PY
   other_register_captcha_id="$(printf '%s' "$other_register_captcha_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["captchaId"])')"
   other_register_captcha_code="$(docker exec "$REDIS_CONTAINER" redis-cli GET "ai_gateway:captcha:register:$other_register_captcha_id")"
   [[ -n "$other_register_captcha_code" && "$other_register_captcha_code" != nil ]] || { echo "无法读取本地 IDOR 测试注册验证码。" >&2; return 1; }
-  other_register_payload="$(CAPTCHA_ID="$other_register_captcha_id" CAPTCHA_CODE="$other_register_captcha_code" USERNAME="$other_username" python3 -c 'import json,os; print(json.dumps({"username":os.environ["USERNAME"],"password":"LocalSmoke123","captchaId":os.environ["CAPTCHA_ID"],"captchaCode":os.environ["CAPTCHA_CODE"]}))')"
+  other_register_email="${other_username}@example.test"
+  other_email_code_payload="$(EMAIL="$other_register_email" CAPTCHA_ID="$other_register_captcha_id" CAPTCHA_CODE="$other_register_captcha_code" python3 -c 'import json,os; print(json.dumps({"email":os.environ["EMAIL"],"captchaId":os.environ["CAPTCHA_ID"],"captchaCode":os.environ["CAPTCHA_CODE"]}))')"
+  other_email_code_response="$(curl --silent --show-error --fail --max-time 15 -X POST "$LOCAL_TARGET/api/auth/register/email-code" -H 'Content-Type: application/json' --data-binary "$other_email_code_payload")"
+  printf '%s' "$other_email_code_response" | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p.get("code")==200,p.get("message")'
+  other_register_email_hash="$(EMAIL="$other_register_email" python3 -c 'import hashlib,os; print(hashlib.sha256(os.environ["EMAIL"].lower().encode()).hexdigest())')"
+  other_register_email_code="$(docker exec "$REDIS_CONTAINER" redis-cli GET "verification:local:registration:email:$other_register_email_hash")"
+  [[ -n "$other_register_email_code" && "$other_register_email_code" != nil ]] || { echo "本地 IDOR 测试注册邮箱验证码投递失败。" >&2; return 1; }
+  other_register_payload="$(EMAIL="$other_register_email" EMAIL_CODE="$other_register_email_code" USERNAME="$other_username" python3 -c 'import json,os; print(json.dumps({"username":os.environ["USERNAME"],"password":"LocalSmoke123","email":os.environ["EMAIL"],"emailCode":os.environ["EMAIL_CODE"]}))')"
   other_register_response="$(curl --silent --show-error --fail --max-time 15 -X POST "$LOCAL_TARGET/api/auth/register" -H 'Content-Type: application/json' --data-binary "$other_register_payload")"
   other_user_id="$(printf '%s' "$other_register_response" | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p.get("code")==200,p.get("message"); print(p["data"]["id"])')"
   other_login_captcha_response="$(curl --silent --show-error --fail --max-time 10 "$LOCAL_TARGET/api/auth/login/captcha")"

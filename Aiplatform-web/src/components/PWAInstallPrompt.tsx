@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useLocation } from 'react-router-dom'
 import { useThemeStore } from '@/stores/themeStore'
 import { useI18nStore } from '@/stores/i18nStore'
 
@@ -11,7 +12,9 @@ interface BeforeInstallPromptEvent extends Event {
 export default function PWAInstallPrompt() {
   const { theme } = useThemeStore()
   const { lang } = useI18nStore()
+  const { pathname } = useLocation()
   const isDark = theme === 'dark'
+  const isAuthPage = pathname === '/login' || pathname === '/register' || pathname === '/oauth/callback'
   
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [showPrompt, setShowPrompt] = useState(false)
@@ -56,7 +59,7 @@ export default function PWAInstallPrompt() {
     setShowPrompt(false)
   }
 
-  if (!showPrompt || isInstalled) return null
+  if (!showPrompt || isInstalled || isAuthPage) return null
 
   return (
     <AnimatePresence>

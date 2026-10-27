@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { adminApi, adminNotificationApi, adminCouponApi, adminFinanceApi, adminStatsApi, systemControlApi, adminLogApi, adminUserApi } from '@/services/api'
 import type { ContainerStatus } from '@/services/api'
 import { useThemeStore } from '@/stores/themeStore'
@@ -8,17 +8,23 @@ import PointsIcon from '@/components/PointsIcon'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import AdminUserActionDialog, { type AdminUserAction } from '@/components/AdminUserActionDialog'
 import ManualChargeReviewPanel from '@/components/admin/ManualChargeReviewPanel'
+import AdminDataTable from '@/components/admin/AdminDataTable'
+import AdminUserDetailDrawer from '@/components/admin/AdminUserDetailDrawer'
+import UserAvatar from '@/components/UserAvatar'
+import type { ColumnDef } from '@tanstack/react-table'
 
 type ECharts = echarts.ECharts
 type EChartsOption = echarts.EChartsOption
 
 interface AdminUser {
-  id: number; username: string; email: string | null; balance: number
+  id: number; username: string; nickname?: string | null; displayName?: string | null; avatarUrl?: string | null
+  email: string | null; phone?: string | null; balance: number; points?: number
   role: string; status: string; membership: string
-  apiKeyCount: number; totalCalls: number; totalPointsConsumed: number; points?: number; membershipExpireTime?: string; createTime: string
+  oauthProviders?: string[]; apiKeyCount: number; totalCalls: number; totalPointsConsumed: number; membershipExpireTime?: string; createTime: string
 }
 interface AdminInfo {
-  id: number; username: string; email: string | null; role: string; status: string; createTime: string
+  id: number; username: string; nickname?: string | null; displayName?: string | null; avatarUrl?: string | null
+  email: string | null; role: string; status: string; createTime: string
 }
 interface AnalyticsData {
   totalUsers: number; activeUsers: number; totalApiKeys: number
@@ -119,6 +125,7 @@ export default function AdminPage() {
   const [pendingRoleUser, setPendingRoleUser] = useState<AdminUser | null>(null)
   const [roleUpdating, setRoleUpdating] = useState(false)
   const [userAction, setUserAction] = useState<{ user: AdminUser; action: AdminUserAction } | null>(null)
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null)
 
   // 管理员操作日志
   const [operationLogs, setOperationLogs] = useState<any[]>([])
@@ -483,6 +490,83 @@ export default function AdminPage() {
     return () => { window.removeEventListener('resize', h); Object.values(chartInst.current).forEach((c:any) => c?.dispose?.()) }
   }, [analytics, tab, isDark])
 
+  const userColumns = useMemo<ColumnDef<AdminUser, any>[]>(() => [
+    {
+      id: 'account', header: '用户', accessorFn: user => user.displayName || user.nickname || user.username,
+      size: 210, minSize: 160, meta: { grow: 1.5 },
+      cell: ({ row }) => {
+        const user = row.original
+        const name = user.displayName || user.nickname || user.username
+        return <button type="button" className="flex min-w-0 items-center gap-2.5 text-left" onClick={() => setSelectedUser(user)} aria-label={`查看${name}详情`}>
+          <UserAvatar name={name} avatarUrl={user.avatarUrl} className="h-8 w-8 border border-black/5 text-[10px] font-semibold text-white" style={{ background: 'linear-gradient(135deg,#8B5CF6,#4F46E5)' }} textClassName="text-white" />
+          <span className="flex min-w-0 flex-col"><strong className="truncate text-[11px]" style={{ color: tx.p }}>{name}</strong><small className="truncate text-[9px]" style={{ color: tx.m }}>{user.username}</small></span>
+        </button>
+      },
+    },
+    { accessorKey: 'id', header: '用户 ID', size: 84, minSize: 72, cell: ({ getValue }) => <span className="font-mono" style={{ color: tx.m }}>{getValue<number>()}</span> },
+    { accessorKey: 'email', header: '邮箱', size: 170, minSize: 130 },
+    { accessorKey: 'phone', header: '手机号', size: 112, minSize: 96 },
+    { id: 'oauth', header: '第三方登录', accessorFn: user => user.oauthProviders?.join(' ') || '未绑定', size: 120, minSize: 100, cell: ({ row }) => <span className="flex gap-1">{row.original.oauthProviders?.length ? row.original.oauthProviders.map(provider => <span key={provider} className="rounded px-1.5 py-0.5 text-[9px]" style={{ background: 'rgba(124,58,237,.1)', color: '#7C3AED' }}>{provider.toUpperCase()}</span>) : <span style={{ color: tx.m }}>未绑定</span>}</span> },
+    { accessorKey: 'membership', header: '会员', size: 90, minSize: 78, cell: ({ getValue }) => { const v = String(getValue() || 'free'); return <span className="rounded px-1.5 py-0.5 text-[9px]" style={{ color: v === 'diamond' ? '#7C3AED' : v === 'gold' ? '#B45309' : v === 'silver' ? '#475569' : tx.m, background: v === 'diamond' ? 'rgba(124,58,237,.1)' : v === 'gold' ? 'rgba(217,119,6,.1)' : 'var(--bg-surface)' }}>{({ diamond: '钻石', gold: '黄金', silver: '白银', free: '普通' } as Record<string, string>)[v] || v}</span> } },
+    { accessorKey: 'role', header: '角色', size: 96, minSize: 84, cell: ({ getValue }) => { const role = String(getValue()); return <span style={{ color: role === 'SUPER_ADMIN' ? '#7C3AED' : role === 'ADMIN' ? '#4F46E5' : tx.d }}>{role === 'SUPER_ADMIN' ? '超级管理员' : role === 'ADMIN' ? '管理员' : '用户'}</span> } },
+    { accessorKey: 'status', header: '状态', size: 78, minSize: 70, cell: ({ getValue }) => { const active = getValue() === 'ACTIVE'; return <span style={{ color: active ? '#059669' : '#E11D48' }}>{active ? '正常' : '封禁'}</span> } },
+    { accessorKey: 'points', header: '点数余额', size: 104, minSize: 90, cell: ({ getValue }) => <span className="tabular-nums" style={{ color: '#B45309' }}>{Number(getValue() || 0).toFixed(2)} 点</span> },
+    { accessorKey: 'balance', header: '账户余额', size: 104, minSize: 90, cell: ({ getValue }) => <span className="tabular-nums" style={{ color: tx.p }}>¥{Number(getValue() || 0).toFixed(2)}</span> },
+    { accessorKey: 'totalCalls', header: 'AI 调用', size: 80, minSize: 70, cell: ({ getValue }) => <span className="tabular-nums">{Number(getValue() || 0).toLocaleString()}</span> },
+    { accessorKey: 'createTime', header: '注册时间', size: 116, minSize: 100, cell: ({ getValue }) => <span className="text-[10px]">{getValue<string>() ? new Date(getValue<string>()).toLocaleDateString() : '-'}</span> },
+    { id: 'details', header: '详情', enableColumnFilter: false, size: 72, minSize: 64, cell: ({ row }) => <button type="button" onClick={() => setSelectedUser(row.original)} className="rounded-md px-2 py-1 text-[10px] font-medium" style={{ color: '#6D3BE8', background: 'rgba(124,58,237,.1)' }}>查看</button> },
+  ], [tx.p, tx.d, tx.m])
+
+  const adminColumns = useMemo<ColumnDef<AdminInfo, any>[]>(() => [
+    { accessorKey: 'id', header: 'ID', size: 76, minSize: 65 },
+    { id: 'username', header: '管理员', accessorFn: admin => admin.displayName || admin.nickname || admin.username, size: 190, minSize: 140, meta: { grow: 1.5 }, cell: ({ row }) => <span className="flex min-w-0 items-center gap-2"><UserAvatar name={row.original.displayName || row.original.nickname || row.original.username} avatarUrl={row.original.avatarUrl} className="h-7 w-7 border border-black/5 text-[9px] font-semibold text-white" style={{ background: 'linear-gradient(135deg,#8B5CF6,#4F46E5)' }} textClassName="text-white" /><span className="truncate">{row.original.displayName || row.original.nickname || row.original.username}</span></span> },
+    { accessorKey: 'email', header: '邮箱', size: 190, minSize: 140 },
+    { accessorKey: 'role', header: '角色', size: 120, minSize: 100, cell: ({ getValue }) => getValue() === 'SUPER_ADMIN' ? '超级管理员' : '管理员' },
+    { accessorKey: 'status', header: '状态', size: 85, minSize: 72, cell: ({ getValue }) => getValue() === 'ACTIVE' ? '正常' : '封禁' },
+    { accessorKey: 'createTime', header: '创建时间', size: 125, minSize: 105, cell: ({ getValue }) => getValue<string>() ? new Date(getValue<string>()).toLocaleDateString() : '-' },
+    { id: 'action', header: '操作', enableColumnFilter: false, size: 110, minSize: 95, cell: ({ row }) => row.original.role !== 'SUPER_ADMIN' ? <button type="button" onClick={() => void revokeAdmin(row.original.id)} className="rounded-md px-2 py-1 text-[10px]" style={{ color: '#E11D48', background: 'rgba(244,63,94,.1)' }}>取消管理员</button> : <span style={{ color: tx.m }}>保护账户</span> },
+  ], [tx.m])
+
+  const consistencyColumns = useMemo<ColumnDef<NonNullable<typeof consistencyData>['items'][number], any>[]>(() => [
+    { accessorKey: 'metric', header: '指标', size: 190, minSize: 130, meta: { grow: 1.4 } },
+    { accessorKey: 'sourceValue', header: '缓存/聚合值', size: 140, minSize: 110 },
+    { accessorKey: 'rawValue', header: '原始表值', size: 140, minSize: 110 },
+    { accessorKey: 'diff', header: '偏差', size: 110, minSize: 90 },
+    { accessorKey: 'diffPercent', header: '偏差率', size: 100, minSize: 82 },
+    { accessorKey: 'status', header: '状态', size: 82, minSize: 70, cell: ({ getValue }) => { const value = String(getValue()); return <span className="rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: value === 'OK' ? 'rgba(16,185,129,.15)' : value === 'WARN' ? 'rgba(245,158,11,.15)' : 'rgba(244,63,94,.15)', color: value === 'OK' ? '#059669' : value === 'WARN' ? '#B45309' : '#E11D48' }}>{value === 'OK' ? '正常' : value === 'WARN' ? '警告' : '错误'}</span> } },
+    { accessorKey: 'message', header: '说明', size: 250, minSize: 160, meta: { grow: 1.5 } },
+  ], [])
+
+  const logColumns = useMemo<ColumnDef<Record<string, any>, any>[]>(() => [
+    { id: 'created', header: '时间', accessorFn: row => row.createTime ? new Date(row.createTime).toLocaleString() : '-', size: 160, minSize: 135 },
+    { id: 'admin', header: '管理员', accessorFn: row => row.adminUsername || row.operatorName || row.adminId || '-', size: 120, minSize: 100 },
+    { id: 'type', header: '类型', accessorFn: row => LOG_TYPE_LABELS[row.operationType] || row.operationType || '-', size: 115, minSize: 95 },
+    { id: 'operation', header: '动作', accessorFn: row => row.operation || row.operationName || '-', size: 140, minSize: 110 },
+    { id: 'target', header: '目标', accessorFn: row => formatLogDetail(row.targetUserIds || row.targetIds || row.targetId), size: 120, minSize: 90 },
+    { id: 'result', header: '结果', accessorFn: row => row.result === 'SUCCESS' || row.status === 'SUCCESS' || row.success === true ? '成功' : '失败', size: 76, minSize: 65 },
+    { id: 'detail', header: '详情', accessorFn: row => formatLogDetail(row.operationDetail || row.errorMessage), size: 240, minSize: 140, meta: { grow: 1.5 } },
+    { id: 'ip', header: 'IP', accessorFn: row => row.ipAddress || row.ip || '-', size: 130, minSize: 95 },
+  ], [])
+
+  const financeColumns = useMemo<ColumnDef<Record<string, any>, any>[]>(() => finTab === 'orders' ? [
+    { id: 'orderId', header: '订单 ID', accessorFn: row => row.orderId || row.id, size: 130, minSize: 105 },
+    { accessorKey: 'userId', header: '用户 ID', size: 96, minSize: 78 },
+    { id: 'package', header: '套餐', accessorFn: row => row.packageName || row.packageCode, size: 160, minSize: 120, meta: { grow: 1.3 } },
+    { id: 'paid', header: '实付金额', accessorFn: row => Number(row.pricePaid || 0).toFixed(2), size: 110, minSize: 95, cell: ({ getValue }) => `¥${getValue()}` },
+    { id: 'discount', header: '优惠金额', accessorFn: row => Number(row.discountAmount || 0).toFixed(2), size: 110, minSize: 95, cell: ({ getValue }) => `¥${getValue()}` },
+    { accessorKey: 'status', header: '状态', size: 100, minSize: 82 },
+    { id: 'start', header: '生效时间', accessorFn: row => row.startTime ? new Date(row.startTime).toLocaleString() : '-', size: 160, minSize: 130 },
+    { id: 'expire', header: '到期时间', accessorFn: row => row.expireTime ? new Date(row.expireTime).toLocaleString() : '永久', size: 160, minSize: 130 },
+  ] : [
+    { accessorKey: 'id', header: '记录 ID', size: 100, minSize: 82 },
+    { accessorKey: 'userId', header: '用户 ID', size: 100, minSize: 82 },
+    { id: 'type', header: '类型', accessorFn: row => row.type === 2 ? '充值' : '扣费', size: 92, minSize: 75 },
+    { id: 'amount', header: finTab === 'consumption' ? '点数变动' : '金额', accessorFn: row => Number(row.amount || 0).toFixed(2), size: 110, minSize: 95, cell: ({ getValue }) => finTab === 'consumption' ? `${getValue()} 点` : `¥${getValue()}` },
+    { id: 'before', header: finTab === 'consumption' ? '变动前点数' : '变动前余额', accessorFn: row => Number(row.balanceBefore || 0).toFixed(2), size: 125, minSize: 105, cell: ({ getValue }) => finTab === 'consumption' ? `${getValue()} 点` : `¥${getValue()}` },
+    { id: 'after', header: finTab === 'consumption' ? '变动后点数' : '变动后余额', accessorFn: row => Number(row.balanceAfter || 0).toFixed(2), size: 125, minSize: 105, cell: ({ getValue }) => finTab === 'consumption' ? `${getValue()} 点` : `¥${getValue()}` },
+    { id: 'created', header: '时间', accessorFn: row => row.createTime ? new Date(row.createTime).toLocaleString() : '-', size: 160, minSize: 130 },
+  ], [finTab])
+
   if (loading && !analytics) {
     return <div className="flex items-center justify-center h-full"><div className="w-8 h-8 border-2 border-brand-purple/30 border-t-brand-purple rounded-full animate-spin" /></div>
   }
@@ -714,7 +798,8 @@ export default function AdminPage() {
                   {a.topUsers.slice(0,10).map((u:any, i:number) => (
                     <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg" style={{ background: 'var(--bg-surface)' }}>
                       <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: u.rank<=3 ? COLORS[u.rank-1] : tx.m }}>{u.rank}</span>
-                      <span className="flex-1 text-xs font-medium" style={{ color: tx.p }}>{u.username}</span>
+                      <UserAvatar name={u.displayName || u.username} avatarUrl={u.avatarUrl} className="h-7 w-7 border border-black/5 text-[9px] font-semibold text-white" style={{ background: 'linear-gradient(135deg,#8B5CF6,#4F46E5)' }} textClassName="text-white" />
+                      <span className="min-w-0 flex-1 truncate text-xs font-medium" style={{ color: tx.p }}>{u.displayName || u.username}</span>
                       <span className="text-[10px]" style={{ color: tx.d }}>{u.calls} 次</span>
                       <span className="text-[10px] font-mono" style={{ color: COLORS[4] }}>{Number(u.points || 0).toFixed(2)} 点</span>
                     </div>
@@ -764,37 +849,13 @@ export default function AdminPage() {
                 </div>
 
                 {/* 对账明细表 */}
-                <div className="hide-scrollbar overflow-x-auto rounded-lg" style={{ background: 'var(--bg-surface)' }}>
-                  <table className="w-full text-[11px]">
-                    <thead>
-                      <tr style={{ background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
-                        {['指标', '缓存/聚合值', '原始表值', '偏差', '偏差率', '状态'].map(h => (
-                          <th key={h} className="px-3 py-2 text-left font-medium" style={{ color: tx.m }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {consistencyData.items.map((item, i) => (
-                        <tr key={i} className="border-t" style={{ borderColor: brd }}>
-                          <td className="px-3 py-2" style={{ color: tx.p }}>{item.metric}</td>
-                          <td className="px-3 py-2 tabular-nums" style={{ color: tx.d }}>{item.sourceValue}</td>
-                          <td className="px-3 py-2 tabular-nums" style={{ color: tx.d }}>{item.rawValue}</td>
-                          <td className="px-3 py-2 tabular-nums" style={{ color: tx.d }}>{item.diff}</td>
-                          <td className="px-3 py-2 tabular-nums" style={{ color: tx.d }}>{item.diffPercent}</td>
-                          <td className="px-3 py-2">
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
-                              style={{
-                                background: item.status === 'OK' ? 'rgba(16,185,129,0.15)' : item.status === 'WARN' ? 'rgba(245,158,11,0.15)' : 'rgba(244,63,94,0.15)',
-                                color: item.status === 'OK' ? '#10B981' : item.status === 'WARN' ? '#F59E0B' : '#F43F5E',
-                              }}>
-                              {item.status === 'OK' ? '正常' : item.status === 'WARN' ? '警告' : '错误'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <AdminDataTable
+                  columns={consistencyColumns}
+                  data={consistencyData.items}
+                  getRowId={item => item.metric}
+                  className="rounded-lg border-0"
+                  sizingKey="admin-consistency-dense"
+                />
                 <div className="mt-2 text-[10px]" style={{ color: tx.m }}>
                   耗时 {consistencyData.summary.elapsedMs}ms · 偏差≤1% 正常，1%-5% 警告，&gt;5% 错误
                 </div>
@@ -823,7 +884,7 @@ export default function AdminPage() {
           <div className="flex flex-wrap items-end gap-3 rounded-2xl border p-4" style={{ background: 'var(--bg-card)', borderColor: brd }}>
             <label className="relative block w-full sm:w-[240px]">
               <span className="mb-1.5 block text-[10px] font-medium" style={{ color: tx.m }}>关键词</span>
-              <input value={filter.search} onChange={e => setFilter({...filter, search:e.target.value})} placeholder="用户 ID、用户名或邮箱"
+              <input value={filter.search} onChange={e => setFilter({...filter, search:e.target.value})} placeholder="ID、昵称、用户名、邮箱、手机或第三方昵称"
                 className="w-full rounded-xl border px-3 py-2.5 pr-9 text-xs outline-none" style={{ background:'var(--bg-input)', borderColor:brd, color:tx.p }} />
               {filter.search && <button type="button" aria-label="清除关键词" onClick={() => setFilter({...filter, search:''})} className="absolute bottom-2.5 right-2 flex h-5 w-5 items-center justify-center rounded-md" style={{ color: tx.m }}><AdminNavIcon kind="close" size={12} /></button>}
             </label>
@@ -849,47 +910,17 @@ export default function AdminPage() {
               className="rounded-xl px-3 py-2.5 text-xs" style={{ color:tx.d, border:`1px solid ${brd}` }}>重置条件</button>
           </div>
           <div className="flex h-[min(62vh,640px)] min-h-[420px] flex-col overflow-hidden rounded-2xl border" style={{ background:bg, borderColor:brd }}>
-            <div className="page-scroll min-h-0 flex-1 overflow-auto">
-              <table className="w-full min-w-[980px] text-xs">
-                <thead className="sticky top-0 z-10"><tr className="border-b" style={{ background: 'var(--bg-surface)', borderColor:brd }}>
-                  {['ID','用户名','会员','角色','状态','余额 ¥','点数','调用','时间','操作'].map(h => (
-                    <th key={h} className="text-left px-3 py-2.5 font-medium" style={{ color:tx.d }}>{h}</th>
-                  ))}
-                </tr></thead>
-                <tbody>
-                  {usersLoading ? (
-                    <tr key="users-loading"><td colSpan={10} className="px-4 py-14 text-center text-xs" style={{ color: tx.m }}>正在同步用户目录...</td></tr>
-                  ) : filtered.length === 0 ? (
-                    <tr key="users-empty"><td colSpan={10} className="px-4 py-14 text-center text-xs" style={{ color: tx.m }}>{filter.search || filter.membership || filter.status || filter.minBalance || filter.maxBalance ? '没有符合条件的账户' : '暂无用户数据'}</td></tr>
-                  ) : filtered.map(u => (
-                    <tr key={u.id} className="border-b hover:bg-[var(--bg-hover)]" style={{ borderColor:brd }}>
-                      <td className="px-3 py-2.5 font-mono" style={{ color:tx.m }}>{u.id}</td>
-                      <td className="px-3 py-2.5 font-medium" style={{ color:tx.p }}>{u.username}</td>
-                      <td className="px-3 py-2.5"><span className="px-1.5 py-0.5 rounded-md text-[10px]" style={{ background: u.membership==='diamond'?'rgba(139,92,246,0.15)':u.membership==='gold'?'rgba(245,158,11,0.15)':u.membership==='silver'?'rgba(148,163,184,0.15)':'rgba(156,163,175,0.15)', color: u.membership==='diamond'?'#8B5CF6':u.membership==='gold'?'#F59E0B':u.membership==='silver'?'#94A3B8':'#9CA3AF' }}>{u.membership==='diamond'?'钻石':u.membership==='gold'?'黄金':u.membership==='silver'?'白银':'普通'}</span></td>
-                      <td className="px-3 py-2.5" style={{ color: u.role==='SUPER_ADMIN'?'#A78BFA':u.role==='ADMIN'?'#8B5CF6':tx.d }}>{u.role==='SUPER_ADMIN'?'超管':u.role==='ADMIN'?'管理员':'用户'}</td>
-                      <td className="px-3 py-2.5"><span style={{ color: u.status==='ACTIVE'?'#10B981':'#F43F5E' }}>{u.status==='ACTIVE'?'正常':'禁用'}</span></td>
-                      <td className="px-3 py-2.5 font-mono" style={{ color:tx.p }}>¥{Number(u.balance||0).toFixed(2)}</td>
-                      <td className="px-3 py-2.5 font-mono" style={{ color:'#F59E0B' }}>{Number(u.points||0).toFixed(2)} 点</td>
-                      <td className="px-3 py-2.5" style={{ color:tx.d }}>{u.totalCalls||0}</td>
-                      <td className="px-3 py-2.5" style={{ color:tx.m, fontSize:10 }}>{u.createTime?new Date(u.createTime).toLocaleDateString():'-'}</td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex min-w-[340px] flex-wrap gap-1.5">
-                          <button onClick={() => setUserAction({ user: u, action: 'points' })} className="px-2 py-1 rounded-lg text-[10px] font-medium" style={{ background:'rgba(245,158,11,0.1)', color:'#F59E0B' }}>点数</button>
-                          {isSuperAdmin && <button onClick={() => setUserAction({ user: u, action: 'balance' })} className="px-2 py-1 rounded-lg text-[10px] font-medium" style={{ background:'rgba(16,185,129,0.1)', color:'#10B981' }}>余额</button>}
-                          <button onClick={() => setUserAction({ user: u, action: 'membership' })} className="px-2 py-1 rounded-lg text-[10px] font-medium" style={{ background:'rgba(139,92,246,0.1)', color:'#8B5CF6' }}>会员</button>
-                          <button onClick={() => setUserAction({ user: u, action: 'password' })} className="px-2 py-1 rounded-lg text-[10px] font-medium" style={{ background:'rgba(59,130,246,0.1)', color:'#3B82F6' }}>密码</button>
-                          {isSuperAdmin && u.role === 'USER' && <button onClick={() => setPendingRoleUser(u)} className="px-2 py-1 rounded-lg text-[10px] font-medium" style={{ background:'rgba(99,102,241,0.1)', color:'#6366F1' }}>设为管理员</button>}
-                          <button onClick={() => requestToggleStatus(u)} className="px-2 py-1 rounded-lg text-[10px] font-medium"
-                            style={{ background: u.status==='ACTIVE'?'rgba(244,63,94,0.1)':'rgba(16,185,129,0.1)', color: u.status==='ACTIVE'?'#F43F5E':'#10B981' }}>
-                            {u.status==='ACTIVE'?'封禁':'解封'}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <AdminDataTable
+              columns={userColumns}
+              data={filtered}
+              loading={usersLoading}
+              emptyMessage={filter.search || filter.membership || filter.status || filter.minBalance || filter.maxBalance ? '没有符合条件的账户' : '暂无用户数据'}
+              getRowId={user => String(user.id)}
+              onRowClick={user => setSelectedUser(user)}
+              className="min-h-0 flex-1 rounded-none border-0"
+              sizingKey="admin-users-dense"
+              toolbar={<div className="flex min-w-0 flex-wrap items-center justify-between gap-2"><span className="text-[10px]" style={{ color: tx.d }}>用户目录 · 共 {totalUsers} 个账户</span><span className="text-[9px]" style={{ color: tx.m }}>关键词和条件查询全库；列筛选作用于当前页</span></div>}
+            />
             <div className="flex min-h-[68px] shrink-0 flex-col items-stretch justify-center gap-2 border-t px-3 py-3 text-xs sm:flex-row sm:items-center sm:justify-between" style={{ background: 'var(--bg-card)', borderColor: brd }}>
               <div className="flex items-center justify-center gap-2 sm:justify-start">
                 <span style={{ color:tx.d }}>每页</span>
@@ -922,27 +953,7 @@ export default function AdminPage() {
             </div>
             <span className="text-[11px]" style={{ color: tx.m }}>当前管理员 {admins.length} 人</span>
           </div>
-          <div className="rounded-2xl border overflow-hidden" style={{ background:bg, borderColor:brd }}>
-            <div className="hide-scrollbar overflow-x-auto">
-              <table className="w-full min-w-[680px] text-xs">
-                <thead><tr className="border-b" style={{ background: 'var(--bg-surface)', borderColor:brd }}>{['ID','用户名','角色','状态','时间','操作'].map(h => <th key={h} className="text-left px-3 py-2.5 font-medium" style={{ color:tx.d }}>{h}</th>)}</tr></thead>
-              <tbody>
-                {admins.length === 0 ? (
-                  <tr key="admins-empty"><td colSpan={6} className="px-4 py-14 text-center text-xs" style={{ color: tx.m }}>暂无管理员记录</td></tr>
-                ) : admins.map(a => (
-                  <tr key={a.id} className="border-b hover:bg-[var(--bg-hover)]" style={{ borderColor:brd }}>
-                    <td className="px-3 py-2.5 font-mono" style={{ color:tx.m }}>{a.id}</td>
-                    <td className="px-3 py-2.5 font-medium" style={{ color:tx.p }}>{a.username}</td>
-                    <td className="px-3 py-2.5" style={{ color: a.role==='SUPER_ADMIN'?'#A78BFA':'#8B5CF6' }}>{a.role==='SUPER_ADMIN'?'超管':'管理员'}</td>
-                    <td className="px-3 py-2.5" style={{ color: a.status==='ACTIVE'?'#10B981':'#F43F5E' }}>{a.status==='ACTIVE'?'正常':'禁用'}</td>
-                    <td className="px-3 py-2.5" style={{ color:tx.m, fontSize:10 }}>{a.createTime?new Date(a.createTime).toLocaleDateString():'-'}</td>
-                    <td className="px-3 py-2.5">{a.role!=='SUPER_ADMIN' && <button onClick={() => revokeAdmin(a.id)} className="px-2 py-1 rounded-lg text-[10px] font-medium" style={{ background:'rgba(244,63,94,0.1)', color:'#F43F5E' }}>取消管理员</button>}</td>
-                  </tr>
-                ))}
-              </tbody>
-              </table>
-            </div>
-          </div>
+          <AdminDataTable columns={adminColumns} data={admins} emptyMessage="暂无管理员记录" getRowId={admin => String(admin.id)} sizingKey="admin-roles-dense" />
         </div>
       )}
 
@@ -998,36 +1009,7 @@ export default function AdminPage() {
           </div>
 
           <div className="flex h-[min(62vh,640px)] min-h-[420px] flex-col overflow-hidden rounded-2xl border" style={{ background:bg, borderColor:brd }}>
-            {logLoading ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center py-12 text-center text-xs" style={{ color:tx.m }}>日志加载中...</div>
-            ) : operationLogs.length === 0 ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center py-12 text-center text-xs" style={{ color:tx.m }}>暂无符合条件的管理员操作日志</div>
-            ) : (
-              <div className="page-scroll min-h-0 flex-1 overflow-auto">
-                <table className="w-full text-xs">
-                  <thead className="sticky top-0 z-10"><tr className="border-b" style={{ background: 'var(--bg-card)', borderColor:brd }}>
-                    {['时间','管理员','类型','动作','目标','结果','详情','IP'].map(h => <th key={h} className="text-left px-3 py-2.5 font-medium whitespace-nowrap" style={{ color:tx.d }}>{h}</th>)}
-                  </tr></thead>
-                  <tbody>
-                    {operationLogs.map((log, i) => {
-                      const success = log.result === 'SUCCESS' || log.status === 'SUCCESS' || log.success === true
-                      return (
-                        <tr key={log.id || i} className="border-b hover:bg-[var(--bg-hover)]" style={{ borderColor:brd }}>
-                          <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:tx.m }}>{log.createTime ? new Date(log.createTime).toLocaleString() : '-'}</td>
-                          <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:tx.p }}>{log.adminUsername || log.operatorName || log.adminId || '-'}</td>
-                          <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:tx.d }}>{LOG_TYPE_LABELS[log.operationType] || log.operationType || '-'}</td>
-                          <td className="px-3 py-2.5 whitespace-nowrap font-medium" style={{ color:tx.p }}>{log.operation || log.operationName || '-'}</td>
-                          <td className="px-3 py-2.5 font-mono" style={{ color:tx.d }}>{formatLogDetail(log.targetUserIds || log.targetIds || log.targetId)}</td>
-                          <td className="px-3 py-2.5"><span className="px-1.5 py-0.5 rounded" style={{ background: success ? 'rgba(16,185,129,0.12)' : 'rgba(244,63,94,0.12)', color: success ? '#10B981' : '#F43F5E' }}>{success ? '成功' : '失败'}</span></td>
-                          <td className="px-3 py-2.5 max-w-[320px] truncate" title={formatLogDetail(log.operationDetail || log.errorMessage)} style={{ color:tx.d }}>{formatLogDetail(log.operationDetail || log.errorMessage)}</td>
-                          <td className="px-3 py-2.5 whitespace-nowrap font-mono" style={{ color:tx.m }}>{log.ipAddress || log.ip || '-'}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <AdminDataTable columns={logColumns} data={operationLogs} loading={logLoading} emptyMessage="暂无符合条件的管理员操作日志" getRowId={(row, index) => String(row.id || index)} className="min-h-0 flex-1 rounded-none border-0" sizingKey="admin-audit-dense" toolbar={<span className="text-[10px]" style={{ color: tx.m }}>审计日志 · {logTotal} 条 · 列筛选作用于当前页</span>} />
 
             <div className="flex min-h-[68px] shrink-0 flex-col items-stretch justify-center gap-2 border-t px-3 py-3 text-xs sm:flex-row sm:items-center sm:justify-between" style={{ background: 'var(--bg-card)', borderColor: brd, color:tx.d }}>
               <span className="text-center sm:text-left">{logTotal > 0 ? `共 ${logTotal} 条，第 ${logPage}/${Math.ceil(logTotal / logSize)} 页` : (logLoading ? '正在加载日志' : '暂无日志记录')}</span>
@@ -1166,60 +1148,7 @@ export default function AdminPage() {
 
           {/* 数据表格 */}
           <div className="flex h-[min(62vh,640px)] min-h-[420px] flex-col overflow-hidden rounded-2xl" style={{ background: bg, border: `1px solid ${brd}` }}>
-            {finLoading ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center py-12 text-center text-xs" style={{ color: tx.m }}>加载中...</div>
-            ) : finData.records.length === 0 ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center py-12 text-center text-xs" style={{ color: tx.m }}>暂无数据</div>
-            ) : (
-              <div className="page-scroll min-h-0 flex-1 overflow-auto">
-                <table className="w-full text-[11px]">
-                  <thead className="sticky top-0 z-10">
-                    <tr style={{ background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
-                      {finTab === 'orders'
-                        ? ['订单ID', '用户ID', '套餐', '实付¥', '优惠¥', '状态', '生效时间', '到期时间'].map(h => <th key={h} className="px-3 py-2 text-left font-medium" style={{ color: tx.m }}>{h}</th>)
-                        : (finTab === 'consumption'
-                          ? ['ID', '用户ID', '类型', '点数', '点数变动前', '点数变动后', '时间']
-                          : ['ID', '用户ID', '类型', '金额 ¥', '余额变动前', '余额变动后', '时间']
-                        ).map(h => <th key={h} className="px-3 py-2 text-left font-medium" style={{ color: tx.m }}>{h}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {finData.records.map((row, i) => (
-                      <tr key={i} className="border-t" style={{ borderColor: brd }}>
-                        {finTab === 'orders' ? (
-                          <>
-                            <td className="px-3 py-2" style={{ color: tx.d }}>{row.orderId || row.id}</td>
-                            <td className="px-3 py-2" style={{ color: tx.d }}>{row.userId}</td>
-                            <td className="px-3 py-2" style={{ color: tx.p }}>{row.packageName || row.packageCode}</td>
-                            <td className="px-3 py-2 tabular-nums" style={{ color: COLORS[4] }}>{Number(row.pricePaid || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 tabular-nums" style={{ color: tx.d }}>{Number(row.discountAmount || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2"><span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: row.status === 'ACTIVE' ? 'rgba(16,185,129,0.15)' : 'rgba(100,116,139,0.15)', color: row.status === 'ACTIVE' ? '#10b981' : tx.m }}>{row.status}</span></td>
-                            <td className="px-3 py-2" style={{ color: tx.m }}>{row.startTime ? new Date(row.startTime).toLocaleString() : '-'}</td>
-                            <td className="px-3 py-2" style={{ color: tx.m }}>{row.expireTime ? new Date(row.expireTime).toLocaleString() : '永久'}</td>
-                          </>
-                        ) : (
-                          <>
-                            <td className="px-3 py-2" style={{ color: tx.d }}>{row.id}</td>
-                            <td className="px-3 py-2" style={{ color: tx.d }}>{row.userId}</td>
-                            <td className="px-3 py-2" style={{ color: tx.p }}>{row.type === 2 ? '充值' : '扣费'}</td>
-                            <td className="px-3 py-2 tabular-nums" style={{ color: row.type === 2 ? COLORS[3] : COLORS[5] }}>
-                              {finTab === 'consumption' ? `${Number(row.amount || 0).toFixed(2)} 点` : `¥${Number(row.amount || 0).toFixed(2)}`}
-                            </td>
-                            <td className="px-3 py-2 tabular-nums" style={{ color: tx.d }}>
-                              {finTab === 'consumption' ? `${Number(row.balanceBefore || 0).toFixed(2)} 点` : `¥${Number(row.balanceBefore || 0).toFixed(2)}`}
-                            </td>
-                            <td className="px-3 py-2 tabular-nums" style={{ color: tx.d }}>
-                              {finTab === 'consumption' ? `${Number(row.balanceAfter || 0).toFixed(2)} 点` : `¥${Number(row.balanceAfter || 0).toFixed(2)}`}
-                            </td>
-                            <td className="px-3 py-2" style={{ color: tx.m }}>{row.createTime ? new Date(row.createTime).toLocaleString() : '-'}</td>
-                          </>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <AdminDataTable columns={financeColumns} data={finData.records} loading={finLoading} emptyMessage="暂无数据" getRowId={(row, index) => String(row.id || row.orderId || index)} className="min-h-0 flex-1 rounded-none border-0" sizingKey={`admin-finance-${finTab}`} toolbar={<span className="text-[10px]" style={{ color: tx.m }}>计费与订单 · {finData.total} 条 · 列筛选作用于当前页</span>} />
 
           {/* 分页 */}
             <div className="flex min-h-[68px] shrink-0 flex-col items-stretch justify-center gap-2 border-t px-3 py-3 sm:flex-row sm:items-center sm:justify-between" style={{ background: 'var(--bg-card)', borderColor: brd }}>
@@ -1385,6 +1314,17 @@ export default function AdminPage() {
         variant="info"
         onConfirm={() => { if (!roleUpdating) void assignAdmin() }}
         onCancel={() => { if (!roleUpdating) setPendingRoleUser(null) }}
+      />
+
+      <AdminUserDetailDrawer
+        user={selectedUser}
+        dark={dark}
+        isSuperAdmin={isSuperAdmin}
+        onClose={() => setSelectedUser(null)}
+        onAction={(user, action) => { setSelectedUser(null); setUserAction({ user: user as AdminUser, action }) }}
+        onToggleStatus={user => { setSelectedUser(null); requestToggleStatus(user as AdminUser) }}
+        onGrantAdmin={user => { setSelectedUser(null); setPendingRoleUser(user as AdminUser) }}
+        onProfileChanged={loadUsers}
       />
 
       <AdminUserActionDialog

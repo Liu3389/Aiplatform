@@ -1,0 +1,92 @@
+diff --git a/index.html b/index.html
+index 370a11d..0008b6a 100644
+--- a/index.html
++++ b/index.html
+@@ -14,7 +14,7 @@
+   <body>
+     <div id="root"></div>
+     <div id="ra2web-root"></div>
+-    <script src="/libs/fsalib.min.js"></script>
++    <script src="./libs/fsalib.min.js"></script>
+     <script type="module" src="/src/main.tsx"></script>
+   </body>
+-</html> 
+\ No newline at end of file
++</html> 
+\ No newline at end of file
+diff --git a/public/config.ini b/public/config.ini
+index 0000000..0000000 100644
+--- a/public/config.ini
++++ b/public/config.ini
+@@ -3,7 +3,7 @@ discordUrl=https://discord.gg/yxkVn4wBad
+ csfFile = general.csf
+ 
+ # Where game resources are located
+-gameresBaseUrl=//wyhjres2.bun.sh.cn/
++gameresBaseUrl=https://wyhjres.ra2web.cn/
+ mapsBaseUrl=//gameres.chronodivide.com/map/
+ modsBaseUrl=//gameres.chronodivide.com/mod/
+ gameResArchiveUrl=https://download.ra2web.com/full-pack.7z
+diff --git a/src/engine/gameRes/GameRes.ts b/src/engine/gameRes/GameRes.ts
+index 83f8cc4..5df79ab 100644
+--- a/src/engine/gameRes/GameRes.ts
++++ b/src/engine/gameRes/GameRes.ts
+@@ -177,6 +177,16 @@ export class GameRes {
+         console.log('[GameRes] Skipping game file check. currentConfig:', currentConfig, 'rfs:', rfs);
+     }
+ 
++    // The hosted route is intended to be one-click play. When the configured
++    // public CDN is available, prefer it before showing the local folder/archive
++    // picker. The existing loop remains the fallback if the CDN cannot load.
++    if (!currentConfig && this.appConfig.gameresBaseUrl && !this.modName) {
++        currentConfig = new GameResConfig(this.appConfig.gameresBaseUrl);
++        currentConfig.source = GameResSource.Cdn;
++        configRequiresSave = true;
++        console.info('[GameRes] No local files found; using configured CDN automatically.');
++    }
++
+     let modRfsDir: RealFileSystemDir | undefined;
+     if (rfs) {
+         const modDirHandle = await Engine.getModDir();
+diff --git a/vite.config.ts b/vite.config.ts
+index a74a036..6edf5e0 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -3,5 +3,6 @@ import react from '@vitejs/plugin-react'
+ 
+ // https://vitejs.dev/config/
+ export default defineConfig({
++  base: './',
+   plugins: [react()],
+   server: {
+diff --git a/src/Application.ts b/src/Application.ts
+index 0000000..0000000 100644
+--- a/src/Application.ts
++++ b/src/Application.ts
+@@ -151,7 +151,7 @@ export class Application {
+   private async loadConfig(): Promise<void> {
+     console.log('[Application] Attempting to load config.ini...');
+     try {
+-      const response = await fetch('/config.ini'); // Vite serves from public/ directly
++      const response = await fetch(`./config.ini?v=${this.getVersion()}`); // Resolve relative to the mounted game route and bypass stale config caches
+       if (!response.ok) {
+         throw new Error(`Failed to fetch config.ini: ${response.status} ${response.statusText}`);
+       }
+@@ -196,7 +196,7 @@ export class Application {
+     
+     console.log(`[Application] Attempting to load CSF file: ${csfFileName}`);
+     try {
+-      const csfResponse = await fetch(`/${csfFileName}`);
++      const csfResponse = await fetch(`./${csfFileName}`);
+       if (!csfResponse.ok) {
+         throw new Error(`Failed to fetch CSF file ${csfFileName}: ${csfResponse.status} ${csfResponse.statusText}`);
+       }
+@@ -224,7 +224,7 @@ export class Application {
+     console.log(`[Application] Attempting to load JSON locale file: ${jsonLocaleFile}`);
+ 
+     try {
+-        const jsonResponse = await fetch(`/${jsonLocaleFile}`); // Relative to public folder
++        const jsonResponse = await fetch(`./${jsonLocaleFile}`); // Relative to the mounted game route
+         if (!jsonResponse.ok) {
+             throw new Error(`Failed to fetch JSON locale ${jsonLocaleFile}: ${jsonResponse.status} ${jsonResponse.statusText}`);
+         }

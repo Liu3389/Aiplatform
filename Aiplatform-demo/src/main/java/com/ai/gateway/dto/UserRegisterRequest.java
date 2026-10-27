@@ -23,12 +23,20 @@ public class UserRegisterRequest {
     @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$", message = "密码必须包含至少一个大写字母、一个小写字母和一个数字")
     private String password;
 
-    @Schema(description = "旧客户端兼容字段；未通过绑定验证码验证前不会保存", example = "user@example.com", deprecated = true)
+    @Schema(description = "启用邮箱验证码注册时使用的邮箱", example = "user@example.com")
+    @Pattern(regexp = "^$|^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$", message = "邮箱格式不正确")
+    @Size(max = 128, message = "邮箱长度不能超过128个字符")
     private String email;
 
-    @Schema(description = "注册图形验证码标识", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "启用邮箱验证码注册时使用的6位验证码")
+    @Pattern(regexp = "^$|^\\d{6}$", message = "邮箱验证码为6位数字")
+    private String emailCode;
+
+    @Schema(description = "旧注册方式的图形验证码标识")
+    @Pattern(regexp = "^$|^[a-fA-F0-9]{32}$", message = "图形验证码标识不正确")
     private String captchaId;
 
-    @Schema(description = "注册图形验证码答案", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "旧注册方式的图形验证码答案")
+    @Pattern(regexp = "^$|^[a-zA-Z0-9]{1,8}$", message = "图形验证码不正确")
     private String captchaCode;
 }

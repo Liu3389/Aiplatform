@@ -63,6 +63,7 @@ optional = {
     "SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE": "true",
     "VERIFICATION_DELIVERY_MODE": "external",
     "VERIFICATION_ALLOW_LOCAL_CAPTURE": "false",
+    "REGISTRATION_EMAIL_VERIFICATION_REQUIRED": "true",
     "VERIFICATION_EMAIL_FROM": "noreply@example.invalid",
     "VERIFICATION_SMS_URL": "https://sms.example.invalid/send",
     "VERIFICATION_SMS_TOKEN": "test-sms-value",
@@ -122,6 +123,7 @@ default_backend_env = compose_config(required)["services"]["backend"]["environme
 assert default_backend_env.get("RABBITMQ_ENABLED") == "false", "RabbitMQ must remain opt-in by default"
 assert default_backend_env.get("VERIFICATION_DELIVERY_MODE") == "disabled", "external delivery must remain disabled by default"
 assert default_backend_env.get("VERIFICATION_ALLOW_LOCAL_CAPTURE") == "false", "local verification capture must stay off in production"
+assert default_backend_env.get("REGISTRATION_EMAIL_VERIFICATION_REQUIRED") == "false", "email-required signup must remain off until SMTP is configured"
 assert default_backend_env.get("APP_STORAGE_PREFER_LOCAL") == "true", "OSS must remain opt-in until explicitly enabled"
 assert not default_backend_env.get("GOOGLE_OAUTH_CLIENT_ID"), "Google OAuth must remain unconfigured without production credentials"
 assert not default_backend_env.get("GOOGLE_OAUTH_REDIRECT_URI"), "Google OAuth must fail closed without a production callback"

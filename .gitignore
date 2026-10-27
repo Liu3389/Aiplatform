@@ -1,7 +1,56 @@
+# Local secrets and environment files. Commit only example templates.
 .env
 .env.*
 !.env.example
 !.env.*.example
+!.env.*.sample
+*.pem
+*.p12
+*.keystore
+*.key
+
+# Operating system and editor state.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+
+# Dependencies and generated build output.
+**/node_modules/
+**/target/
+**/build/
+**/.vite/
+**/coverage/
+**/.next/
+**/storybook-static/
+**/test-results/
+**/playwright-report/
+**/playwright/.cache/
+Aiplatform-web/dist/
+*.class
+*.jar
+*.war
+*.pid
+
+# Runtime data, uploads, databases, logs, and archives.
+.runtime/
+**/uploads/
+**/logs/
+*.log
+*.rdb
+*.sqlite
+*.sqlite3
 backups/
 *.tar
-.runtime/
+*.tar.gz
+*.tmp
+
+# Design exploration is intentionally local-only; production UI lives in Aiplatform-web/.
+/design-previews/
+/premium-audit.json
+/premium-ui.json
+/docs/operations/internal/*.local.md
+
+# cq666-game is a separate upstream Git checkout, not a nested project in this repository.
+/cq666-game/

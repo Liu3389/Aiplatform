@@ -16,6 +16,18 @@ public class UserInfoVO {
     @Schema(description = "用户名")
     private String username;
 
+    @Schema(description = "用户自定义昵称")
+    private String nickname;
+
+    @Schema(description = "第三方账号展示名称")
+    private String displayName;
+
+    @Schema(description = "第三方账号头像地址")
+    private String avatarUrl;
+
+    @Schema(description = "是否已设置自定义头像")
+    private boolean customAvatar;
+
     @Schema(description = "邮箱")
     private String email;
 

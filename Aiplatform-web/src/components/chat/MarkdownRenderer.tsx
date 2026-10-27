@@ -5,6 +5,7 @@ import rehypeRaw from 'rehype-raw'
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/github-dark.min.css'
 import { useThemeStore } from '@/stores/themeStore'
+import { normalizeCompactListLine, normalizeCompactTableLine } from '@/utils/markdownStructure'
 
 interface Props { content: string; isStreaming?: boolean }
 
@@ -50,42 +51,6 @@ function preprocessMathDelimiters(content: string): string {
  * 这会让 GFM 把它当作普通文本，后续的目录、间距和表格结构也会一起失效。
  * 只在围栏代码块之外修复标题，绝不修改代码内容。
  */
-function normalizeCompactTableLine(line: string): string {
-    if (!line.includes('|') || !/\|\s*:?-{3,}:?\s*(?=\|)/.test(line)) return line
-
-    const firstPipe = line.indexOf('|')
-    if (firstPipe < 0) return line
-    const prefix = line.slice(0, firstPipe).trim()
-    const tablePart = line.slice(firstPipe)
-    const delimiterOffset = tablePart.search(/\|\s*:?-{3,}:?\s*(?=\|)/)
-    if (delimiterOffset < 0) return line
-
-    const headerPart = tablePart.slice(0, delimiterOffset)
-    const delimiterAndBody = tablePart.slice(delimiterOffset)
-    const delimiterMatch = delimiterAndBody.match(/^(?:\|\s*:?-{3,}:?\s*)+\|?/)
-    if (!delimiterMatch) return line
-
-    const headers = headerPart.split('|').map(cell => cell.trim()).filter(Boolean)
-    const separatorCount = (delimiterMatch[0].match(/-{3,}/g) || []).length
-    const columnCount = Math.max(headers.length, separatorCount)
-    if (columnCount < 2) return line
-
-    const body = delimiterAndBody.slice(delimiterMatch[0].length)
-    const bodyCells = body.split('|').map(cell => cell.trim()).filter(Boolean)
-    const rows: string[][] = []
-    for (let index = 0; index + columnCount <= bodyCells.length; index += columnCount) {
-        rows.push(bodyCells.slice(index, index + columnCount))
-    }
-
-    const tableLines = [
-        `| ${Array.from({ length: columnCount }, (_, index) => headers[index] || '').join(' | ')} |`,
-        `| ${Array.from({ length: columnCount }, () => '---').join(' | ')} |`,
-        ...rows.map(row => `| ${row.join(' | ')} |`),
-    ]
-    const table = tableLines.join('\n')
-    return prefix ? `${prefix}\n\n${table}` : table
-}
-
 /**
  * 修复“标题 + 表头”被压在同一行、下一行才出现分隔线的情况：
  * `## 状态码规范|状态码 |语义 |使用场景 |` + `|---|---|---|`。
@@ -168,17 +133,6 @@ function normalizeDisplayMathFences(line: string): string {
     return line
         .replace(/(\S)(\${2,})/g, '$1\n$2')
         .replace(/(\${2,})(?=\S)/g, '$1\n')
-}
-
-/**
- * 模型有时把一个列表的多个条目压成 `- A- B- C`。只对“本身已经是列表且包含
- * 多个短横线边界”的行处理，避免影响普通的连字符、负数和代码内容。
- */
-function normalizeCompactListLine(line: string): string {
-    if (!/^\s*-\s*\S/.test(line) || (line.match(/-/g) || []).length < 2) return line
-    return line
-        .replace(/^\s*-\s*/, '- ')
-        .replace(/([^\n])\s*-\s*(?=[\u4e00-\u9fffA-Za-z*`])/g, '$1\n- ')
 }
 
 /**

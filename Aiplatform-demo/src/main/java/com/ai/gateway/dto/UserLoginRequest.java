@@ -15,10 +15,10 @@ import jakarta.validation.constraints.NotBlank;
 public class UserLoginRequest {
 
     /**
-     * 用户名
+     * 用户名或已验证邮箱
      */
-    @Schema(description = "用户名", example = "admin", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotBlank(message = "用户名不能为空")
+    @Schema(description = "用户名或已验证邮箱", example = "user@example.com", requiredMode = Schema.RequiredMode.REQUIRED)
+    @NotBlank(message = "用户名或邮箱不能为空")
     private String username;
 
     /**

@@ -70,8 +70,9 @@ async function request<T>(
     refreshTokenIfNeeded()
   }
 
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
     ...(options.headers as Record<string, string>),
   };
 
@@ -126,9 +127,12 @@ async function request<T>(
 }
 
 export const authApi = {
+  getRegistrationConfig: () => request<{ emailVerificationRequired: boolean }>('/auth/register/config'),
   getRegisterCaptcha: () => request<{ captchaId: string; image: string; expiresIn: number }>('/auth/register/captcha'),
   getLoginCaptcha: () => request<{ captchaId: string; image: string; expiresIn: number }>('/auth/login/captcha'),
-  register: (data: { username: string; password: string; captchaId: string; captchaCode: string }) =>
+  sendRegistrationEmailCode: (data: { email: string; captchaId: string; captchaCode: string }) =>
+    request<void>('/auth/register/email-code', { method: 'POST', body: JSON.stringify(data) }),
+  register: (data: { username: string; password: string; email?: string; emailCode?: string; captchaId?: string; captchaCode?: string }) =>
     request<{
       id: number;
       username: string;
@@ -144,13 +148,24 @@ export const authApi = {
       userInfo: { id: number; username: string; email: string | null; balance: number; role: string; status: string; freeApiStrategy: string; createTime: string };
     }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
 
+  sendLoginEmailCode: (data: { email: string; captchaId: string; captchaCode: string }) =>
+    request<void>('/auth/login/email-code', { method: 'POST', body: JSON.stringify(data) }),
+
+  loginByEmailCode: (data: { email: string; code: string; twoFactorCode?: string }) =>
+    request<{
+      token: string;
+      deviceId: string;
+      userInfo: { id: number; username: string; email: string | null; emailVerified?: boolean; balance: number; role: string; status: string; freeApiStrategy: string; createTime: string };
+    }>('/auth/login/email', { method: 'POST', body: JSON.stringify(data) }),
+
   logout: () => request<null>('/auth/logout', { method: 'POST' }),
+  getOAuthProviders: () => request<{ qq: boolean; google: boolean; qqReviewStatus?: 'pending' | 'approved' | 'unconfigured' }>('/auth/oauth/providers'),
   getOAuthUrl: (provider: string, purpose: 'login' | 'bind' = 'login') => request<{ url: string; state: string; provider: string; purpose: string }>(`/auth/oauth/url?provider=${encodeURIComponent(provider)}&purpose=${purpose}`),
-  oauthCallback: (provider: string, code: string, state: string) => request<{ mode: 'login' | 'bind'; token?: string; deviceId?: string; userInfo?: { id: number; username: string; email: string | null; balance: number; role: string; status: string; freeApiStrategy: string; createTime: string }; requiresTwoFactor: boolean; challengeToken?: string }>('/auth/oauth/callback', { method: 'POST', body: JSON.stringify({ provider, code, state }) }),
+  oauthCallback: (provider: string | null, code: string, state: string) => request<{ mode: 'login' | 'bind'; provider?: string; token?: string; deviceId?: string; userInfo?: { id: number; username: string; displayName?: string | null; avatarUrl?: string | null; email: string | null; balance: number; role: string; status: string; freeApiStrategy: string; createTime: string }; requiresTwoFactor: boolean; challengeToken?: string; firstLogin: boolean }>('/auth/oauth/callback', { method: 'POST', body: JSON.stringify({ provider, code, state }) }),
   oauthComplete: (challengeToken: string, twoFactorCode: string) => request<{ token: string; deviceId: string; userInfo: { id: number; username: string; email: string | null; balance: number; role: string; status: string; freeApiStrategy: string; createTime: string } }>('/auth/oauth/complete', { method: 'POST', body: JSON.stringify({ challengeToken, twoFactorCode }) }),
   oauthBindings: () => request<{ provider: string; displayName: string; email: string | null }[]>('/auth/oauth/bindings'),
   oauthUnbind: (provider: string) => request<null>('/auth/oauth/unbind', { method: 'POST', body: JSON.stringify({ provider }) }),
-  getUserInfo: () => request<{ id: number; username: string; email: string | null; emailVerified: boolean; phone: string | null; phoneVerified: boolean; balance: number; role: string; status: string; membership: string; createTime: string }>('/auth/userinfo'),
+  getUserInfo: () => request<{ id: number; username: string; displayName?: string | null; avatarUrl?: string | null; email: string | null; emailVerified: boolean; phone: string | null; phoneVerified: boolean; balance: number; role: string; status: string; membership: string; createTime: string }>('/auth/userinfo'),
   getBalance: () => request<number>('/auth/balance'),
 };
 
@@ -175,7 +190,13 @@ export interface UsageAnalytics {
 export const userApi = {
   request: <T>(opts: { method?: string; url: string; headers?: Record<string, string>; data?: any; params?: Record<string, any> }): Promise<T> =>
     request<T>(opts.url, { method: opts.method || 'GET', headers: opts.headers, body: opts.data ? JSON.stringify(opts.data) : undefined }),
-  getInfo: () => request<{ id: number; username: string; email: string | null; emailVerified: boolean; phone: string | null; phoneVerified: boolean; balance: number; role: string; status: string; membership: string; freeApiStrategy: string; freeQuota: number; dailyCallLimit: number; monthlyCallLimit: number; points: number; membershipExpireTime?: string; createTime: string }>('/user/info'),
+  getInfo: () => request<{ id: number; username: string; displayName?: string | null; avatarUrl?: string | null; customAvatar?: boolean; email: string | null; emailVerified: boolean; phone: string | null; phoneVerified: boolean; balance: number; role: string; status: string; membership: string; freeApiStrategy: string; freeQuota: number; dailyCallLimit: number; monthlyCallLimit: number; points: number; membershipExpireTime?: string; createTime: string }>('/user/info'),
+  uploadAvatar: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return request<{ avatarUrl?: string | null; customAvatar?: boolean }>('/user/avatar', { method: 'POST', body })
+  },
+  clearAvatar: () => request<{ avatarUrl?: string | null; customAvatar?: boolean }>('/user/avatar', { method: 'DELETE' }),
   getBalance: () => request<number>('/user/balance'),
   getUsageDaily: (days = 7) => request<{
     days: number
@@ -551,10 +572,24 @@ export const chatApi = {
 };
 
 export type AdminUserInfo = {
-  id: number; username: string; email: string | null; balance: number;
-  role: string; status: string; membership: string; apiKeyCount: number; totalCalls: number;
-    totalPointsConsumed: number; createTime: string;
+  id: number; username: string; nickname?: string | null; displayName?: string | null; avatarUrl?: string | null
+  email: string | null; phone?: string | null; balance: number; points?: number
+  role: string; status: string; membership: string; membershipExpireTime?: string | null
+  apiKeyCount: number; totalCalls: number; totalPointsConsumed: number; createTime: string
+  oauthProviders?: string[]
 };
+
+export type AdminUserDetail = AdminUserInfo & {
+  nickname: string | null
+  displayName: string | null
+  avatarUrl: string | null
+  customAvatar: boolean
+  phone: string | null
+  emailVerified: boolean
+  phoneVerified: boolean
+  lastLoginTime: string | null
+  oauthAccounts: Array<{ provider: string; displayName: string | null; email: string | null; avatarUrl: string | null; createTime: string | null }>
+}
 
 export const adminApi = {
   getStats: () => request<{ totalUsers: number; activeUsers: number; totalApiKeys: number; totalCalls: number; totalPointsConsumed: number; todayCalls: number; todayPointsConsumed: number }>('/admin/stats'),
@@ -569,10 +604,10 @@ export const adminApi = {
     return request<{ records: AdminUserInfo[]; total: number; page: number; size: number }>('/admin/users' + (q ? '?' + q : ''))
   },
   getAdmins: () =>
-    adminApi.getUsers({ size: 100 }).then(r =>
-      (r.records || []).filter(u => u.role === 'ADMIN' || u.role === 'SUPER_ADMIN')
+    adminUserApi.getUsersAdvanced({ size: 100 }).then((r: { records?: AdminUserInfo[] }) =>
+      (r.records || []).filter((u: AdminUserInfo) => u.role === 'ADMIN' || u.role === 'SUPER_ADMIN')
     ),
-  getUserDetail: (userId: number) => request<AdminUserInfo>('/admin/user/' + userId),
+  getUserDetail: (userId: number) => request<AdminUserDetail>('/admin/user/' + userId),
   toggleUserStatus: (userId: number, status: 'ACTIVE' | 'DISABLED') => request<null>('/admin/user/status', { method: 'POST', body: JSON.stringify({ userId, status }) }),
   revokeAdminRole: (userId: number) => request<null>('/admin/revoke-role', { method: 'POST', body: JSON.stringify({ userId }) }),
   assignAdminRole: (userId: number, role: 'ADMIN' | 'SUPER_ADMIN') => request<null>('/admin/assign-role', { method: 'POST', body: JSON.stringify({ userId, role }) }),
@@ -812,6 +847,15 @@ export const adminUserApi = {
   },
   resetPassword: (userId: number, password: string) =>
     request<null>('/admin/reset-password', { method: 'POST', body: JSON.stringify({ userId, password }) }),
+  updateProfile: (userId: number, profile: { nickname: string | null; email: string | null; phone: string | null }) =>
+    request<string[]>('/admin/user/profile', { method: 'PUT', body: JSON.stringify({ userId, ...profile }) }),
+  uploadAvatar: (userId: number, file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return request<{ avatarUrl?: string | null; customAvatar?: boolean }>(`/admin/user/${userId}/avatar`, { method: 'POST', body })
+  },
+  clearAvatar: (userId: number) =>
+    request<{ avatarUrl?: string | null; customAvatar?: boolean }>(`/admin/user/${userId}/avatar`, { method: 'DELETE' }),
   banUser: (userId: number, reason?: string) =>
     request<null>('/admin/user/' + userId + '/ban', { method: 'PUT', body: JSON.stringify({ reason: reason || '管理员操作' }) }),
 };

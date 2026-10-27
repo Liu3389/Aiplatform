@@ -40,40 +40,51 @@ check_running_container() {
   container_id "$name"
 }
 
-declare -A CONTAINER_IDS=()
-declare -A CONTAINER_STARTED_AT=()
+CONTAINER_IDS=()
+CONTAINER_STARTED_AT=()
 check_existing_stack() {
-  local name current_id
-  for name in "${CONTAINERS[@]}"; do
+  local name current_id index
+  for index in "${!CONTAINERS[@]}"; do
+    name="${CONTAINERS[$index]}"
     current_id="$(check_running_container "$name")"
-    if [[ -z "${CONTAINER_IDS[$name]:-}" ]]; then
-      CONTAINER_IDS["$name"]="$current_id"
-      CONTAINER_STARTED_AT["$name"]="$(docker inspect --format '{{.State.StartedAt}}' "$name")"
+    if [[ -z "${CONTAINER_IDS[$index]:-}" ]]; then
+      CONTAINER_IDS[$index]="$current_id"
+      CONTAINER_STARTED_AT[$index]="$(docker inspect --format '{{.State.StartedAt}}' "$name")"
     else
-      [[ "$current_id" == "${CONTAINER_IDS[$name]}" ]] || fail "$name 容器 ID 发生变化"
+      [[ "$current_id" == "${CONTAINER_IDS[$index]}" ]] || fail "$name 容器 ID 发生变化"
     fi
   done
   docker exec "$BACKEND" test -s /app/app.jar
   docker exec "$FRONTEND" test -s /usr/share/nginx/html/index.html
   [[ "$(curl --silent --show-error --fail --max-time 20 "$HEALTH_URL" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status", ""))')" == "UP" ]] || fail "公网 backend health 未返回 UP"
+}
+
+verify_auth_routes() {
   curl --silent --show-error --fail --max-time 20 "$CAPTCHA_URL" \
-    | python3 -c 'import json,sys; p=json.load(sys.stdin); d=p.get("data") or {}; assert str(p.get("code")) in {"0","200"} and d.get("captchaId") and d.get("image"), "captcha response incomplete"'
+    | python3 -c 'import json,sys; p=json.load(sys.stdin); d=p.get("data") or {}; assert str(p.get("code")) in {"0","200"} and d.get("captchaId") and d.get("image"), "login captcha response incomplete"'
+  curl --silent --show-error --fail --max-time 20 "$PUBLIC_BASE/api/auth/oauth/providers" \
+    | python3 -c 'import json,sys; p=json.load(sys.stdin); d=p.get("data") or {}; assert str(p.get("code")) in {"0","200"} and d.get("qq") is True, "QQ OAuth is not configured in backend"'
+  curl --silent --show-error --fail --max-time 20 \
+    "$PUBLIC_BASE/api/auth/oauth/url?provider=qq&purpose=login" \
+    | python3 -c 'import json,sys; from urllib.parse import urlparse,parse_qs; p=json.load(sys.stdin); d=p.get("data") or {}; u=urlparse(d.get("url", "")); q=parse_qs(u.query); assert str(p.get("code")) in {"0","200"} and u.scheme=="https" and u.netloc=="graph.qq.com" and u.path=="/oauth2.0/authorize" and q.get("client_id") and q.get("redirect_uri") and q.get("state"), "QQ OAuth authorization URL is incomplete"'
 }
 
 verify_container_ids_unchanged() {
-  local name after
-  for name in "${CONTAINERS[@]}"; do
+  local name after index
+  for index in "${!CONTAINERS[@]}"; do
+    name="${CONTAINERS[$index]}"
     after="$(container_id "$name")"
-    [[ "$after" == "${CONTAINER_IDS[$name]}" ]] || fail "$name 容器 ID 发生变化"
+    [[ "$after" == "${CONTAINER_IDS[$index]}" ]] || fail "$name 容器 ID 发生变化"
   done
 }
 
 verify_non_backend_containers_not_restarted() {
-  local name started_at
-  for name in "${CONTAINERS[@]}"; do
+  local name started_at index
+  for index in "${!CONTAINERS[@]}"; do
+    name="${CONTAINERS[$index]}"
     [[ "$name" == "$BACKEND" ]] && continue
     started_at="$(docker inspect --format '{{.State.StartedAt}}' "$name")"
-    [[ "$started_at" == "${CONTAINER_STARTED_AT[$name]}" ]] || fail "$name 在发布期间发生重启"
+    [[ "$started_at" == "${CONTAINER_STARTED_AT[$index]}" ]] || fail "$name 在发布期间发生重启"
   done
 }
 
@@ -109,6 +120,8 @@ PY
   done <<< "$assets"
   curl --silent --show-error --fail --max-time 20 -o /dev/null "$PUBLIC_BASE/privacy"
   curl --silent --show-error --fail --max-time 20 -o /dev/null "$PUBLIC_BASE/terms"
+  curl --silent --show-error --fail --max-time 20 -o /dev/null "$PUBLIC_BASE/user?tab=security"
+  curl --silent --show-error --fail --max-time 20 -o /dev/null "$PUBLIC_BASE/brand/icon-macos-default.png"
 }
 
 rollback_on_error() {
@@ -144,7 +157,10 @@ if [[ "$MODE" == "--check" ]]; then
   exit 0
 fi
 
-[[ -s "$RELEASE_DIR/backend.jar" && -s "$RELEASE_DIR/frontend.tar.gz" && -s "$RELEASE_DIR/SHA256SUMS" ]] || fail "发布产物不完整"
+[[ -s "$RELEASE_DIR/backend.jar" && -s "$RELEASE_DIR/frontend.tar.gz" \
+  && -s "$RELEASE_DIR/migration-v19-user-avatar.sql" \
+  && -s "$RELEASE_DIR/migration-v20-user-nickname.sql" \
+  && -s "$RELEASE_DIR/SHA256SUMS" ]] || fail "发布产物不完整"
 (cd "$RELEASE_DIR" && sha256sum --check --status SHA256SUMS) || fail "发布产物校验失败"
 check_existing_stack
 
@@ -154,6 +170,18 @@ docker cp "$BACKEND:/app/app.jar" "$BACKUP_DIR/backend.jar"
 chmod 600 "$BACKUP_DIR/backend.jar"
 docker cp "$FRONTEND:/usr/share/nginx/html/." "$BACKUP_DIR/frontend/"
 [[ -s "$BACKUP_DIR/backend.jar" && -s "$BACKUP_DIR/frontend/index.html" ]] || fail "原版本备份不完整"
+
+# Additive, idempotent schema update: old backend code remains compatible while this column is added.
+docker exec -i lingdian-mysql sh -lc 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot "$MYSQL_DATABASE"' \
+  < "$RELEASE_DIR/migration-v19-user-avatar.sql"
+avatar_column_count="$(docker exec lingdian-mysql sh -lc 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; mysql -N -uroot "$MYSQL_DATABASE" -e "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=0x75736572 AND COLUMN_NAME=0x6176617461725f75726c;"')"
+[[ "$avatar_column_count" == "1" ]] || fail "用户头像数据库迁移未生效"
+
+# Add the user-facing nickname independently; this keeps the stable login username unchanged.
+docker exec -i lingdian-mysql sh -lc 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql -uroot "$MYSQL_DATABASE"' \
+  < "$RELEASE_DIR/migration-v20-user-nickname.sql"
+nickname_column_count="$(docker exec lingdian-mysql sh -lc 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; mysql -N -uroot "$MYSQL_DATABASE" -e "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=0x75736572 AND COLUMN_NAME=0x6e69636b6e616d65;"')"
+[[ "$nickname_column_count" == "1" ]] || fail "用户昵称数据库迁移未生效"
 
 mkdir -m 700 -p "$RELEASE_DIR/frontend"
 tar -xzf "$RELEASE_DIR/frontend.tar.gz" -C "$RELEASE_DIR/frontend"
@@ -181,10 +209,11 @@ docker exec "$FRONTEND" sh -eu -c 'rm -rf /usr/share/nginx/html.previous; mv /us
 verify_container_ids_unchanged
 verify_non_backend_containers_not_restarted
 check_existing_stack
+verify_auth_routes
 verify_web_assets
 docker exec "$FRONTEND" rm -rf /usr/share/nginx/html.previous
 FRONTEND_TOUCHED=0
 BACKEND_TOUCHED=0
 trap - ERR
 echo "应用验收通过：容器 ID 未变；只重启 backend；MySQL、Redis 和其他容器未重启。"
-echo "回滚备份保留在 $BACKUP_DIR（backend.jar 与 frontend/）。"
+echo "回滚备份保留在 ${BACKUP_DIR}（backend.jar 与 frontend/）。"

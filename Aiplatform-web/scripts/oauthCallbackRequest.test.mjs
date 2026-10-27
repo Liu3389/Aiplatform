@@ -41,7 +41,7 @@ test('a failed callback request clears its key so the user can retry', async () 
 
 test('expired state tells the user to restart authorization instead of reusing the callback', () => {
   const message = oauthCallbackErrorMessage({ code: 400, message: 'OAuth state 无效或已过期' })
-  assert.match(message, /重新点击 Google 登录/)
+  assert.match(message, /重新发起登录/)
   assert.match(message, /不要刷新/)
 })
 

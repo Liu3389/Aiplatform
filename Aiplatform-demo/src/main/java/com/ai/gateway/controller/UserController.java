@@ -8,6 +8,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.MediaType;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -65,6 +67,27 @@ public class UserController {
         Long userId = tokenService.getUserIdFromToken(token);
         if (userId == null) return Result.error(401, "Token无效或已过期");
         return Result.success(userService.getUserInfo(userId));
+    }
+
+    @Operation(summary = "上传自定义头像", description = "支持 PNG、JPG、WebP，最大 5 MB")
+    @PostMapping(value = "/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result<?> uploadAvatar(@RequestHeader("X-User-Token") String token,
+                                  @RequestPart("file") MultipartFile file) {
+        Long userId = tokenService.getUserIdFromToken(token);
+        if (userId == null) return Result.error(401, "Token无效或已过期");
+        try {
+            return Result.success("头像已更新", userService.uploadAvatar(userId, file));
+        } catch (IllegalArgumentException e) {
+            return Result.error(400, e.getMessage());
+        }
+    }
+
+    @Operation(summary = "恢复默认头像", description = "清除自定义头像并回退至 QQ 头像或默认头像")
+    @DeleteMapping("/avatar")
+    public Result<?> clearAvatar(@RequestHeader("X-User-Token") String token) {
+        Long userId = tokenService.getUserIdFromToken(token);
+        if (userId == null) return Result.error(401, "Token无效或已过期");
+        return Result.success("已恢复默认头像", userService.clearAvatar(userId));
     }
 
     @Operation(summary = "查询账户余额")

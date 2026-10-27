@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
+import PlatformMark from '@/components/PlatformMark'
 
 interface PageTransitionProps {
   targetPath: string
@@ -51,19 +52,13 @@ export default function PageTransition({ targetPath, children }: PageTransitionP
         >
           <div className="flex flex-col items-center gap-6">
             <motion.div
-              className="w-16 h-16 rounded-2xl flex items-center justify-center"
-              style={{
-                background: 'linear-gradient(135deg, #8B5CF6, #6366F1, #3B82F6)',
-                boxShadow: '0 0 60px rgba(139,92,246,0.4)',
-              }}
+              className="h-16 w-16 rounded-2xl"
               initial={{ scale: 0, rotate: -180 }}
               animate={{ scale: 1, rotate: 0 }}
               exit={{ scale: 0, rotate: 180 }}
               transition={{ duration: 0.6, ease: [0.34, 1.56, 0.64, 1] }}
             >
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-              </svg>
+              <PlatformMark className="h-16 w-16 rounded-2xl" />
             </motion.div>
 
             <motion.div

@@ -26,7 +26,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest(properties = "app.messaging.rabbit-enabled=false")
+@SpringBootTest(properties = {
+        "app.messaging.rabbit-enabled=false",
+        // Tests invoke the recovery scan directly; keep its background trigger from racing test fixtures.
+        "app.messaging.file-parse-poll-ms=3600000"
+})
 class FileParseTaskRecoveryLifecycleTest {
 
     @Autowired private FileParseTaskMapper taskMapper;

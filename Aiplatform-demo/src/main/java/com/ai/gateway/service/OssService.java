@@ -3,6 +3,7 @@ package com.ai.gateway.service;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
 import com.aliyun.oss.model.PutObjectRequest;
+import com.aliyun.oss.model.ObjectMetadata;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -137,6 +138,24 @@ public class OssService {
         return saveBytesToLocal(content, objectName);
     }
 
+    /** 上传带明确 MIME 类型的图片等二进制文件，便于浏览器直接预览。 */
+    public String uploadBytes(byte[] content, String fileName, String folder, String contentType) {
+        String objectName = folder + UUID.randomUUID() + "_" + fileName;
+        if (ossClient != null) {
+            try {
+                ObjectMetadata metadata = new ObjectMetadata();
+                metadata.setContentLength(content.length);
+                metadata.setContentType(contentType);
+                ossClient.putObject(new PutObjectRequest(bucketName, objectName,
+                        new java.io.ByteArrayInputStream(content), metadata));
+                return domain.endsWith("/") ? domain + objectName : domain + "/" + objectName;
+            } catch (Exception e) {
+                log.warn("OSS 图片上传失败，降级为本地存储: objectName={}, reason={}", objectName, e.getMessage());
+            }
+        }
+        return saveBytesToLocal(content, objectName);
+    }
+
     /**
      * 从存储下载文件为字节数组（本地/OSS 自动识别）
      */
@@ -186,7 +205,7 @@ public class OssService {
             return;
         }
 
-        if (ossClient == null) return;
+        if (ossClient == null || domain == null || domain.isBlank() || !fileUrl.startsWith(domain)) return;
         String objectName = fileUrl.replace(domain, "").replaceFirst("^/", "");
         try {
             ossClient.deleteObject(bucketName, objectName);
@@ -194,6 +213,11 @@ public class OssService {
         } catch (Exception e) {
             log.error("OSS 文件删除失败", e);
         }
+    }
+
+    public boolean isManagedStorageReference(String fileUrl) {
+        return fileUrl != null && (fileUrl.startsWith(LOCAL_PREFIX)
+                || (domain != null && !domain.isBlank() && fileUrl.startsWith(domain)));
     }
 
     /**

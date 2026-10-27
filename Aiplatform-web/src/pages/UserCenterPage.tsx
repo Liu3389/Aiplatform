@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useCallback, useRef, type ChangeEvent } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/stores/appStore'
 import { userApi, request, subscriptionApi, pointsApi } from '@/services/api'
 import UsageAnalyticsPanel from '@/components/usage/UsageAnalyticsPanel'
@@ -11,6 +11,8 @@ import { MEMBERSHIP_QUOTAS } from '@/types'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import MembershipIcon from '@/components/MembershipIcon'
 import { getUserDisplayName, isGeneratedOAuthUsername } from '@/utils/userDisplay'
+import UserAvatar from '@/components/UserAvatar'
+import SecurityPage from '@/pages/SecurityPage'
 
 interface Package {
   id: number
@@ -33,7 +35,7 @@ interface Package {
 }
 
 type RecordTab = 'recharge' | 'points' | 'subscription'
-type PageTab = 'overview' | 'records' | 'settings'
+type PageTab = 'overview' | 'records' | 'settings' | 'security'
 
 const MEMBERSHIP_LABELS: Record<string, { zh: string; en: string }> = {
   free: { zh: '普通用户', en: 'Free User' },
@@ -47,10 +49,15 @@ export default function UserCenterPage() {
   const { theme, toggleTheme } = useThemeStore()
   const { lang, toggleLang, t } = useI18nStore()
   const navigate = useNavigate()
+  const location = useLocation()
+  const { showToast } = useToastStore()
   const isDark = theme === 'dark'
   const userDisplayName = getUserDisplayName(user, t('第三方账号', 'External account'))
 
-  const [activeTab, setActiveTab] = useState<PageTab>('overview')
+  const [activeTab, setActiveTab] = useState<PageTab>(() =>
+    new URLSearchParams(window.location.search).get('tab') === 'security' ? 'security' : 'overview')
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
   const [showPw, setShowPw] = useState(false)
   const [oldPw, setOldPw] = useState('')
   const [newPw, setNewPw] = useState('')
@@ -80,6 +87,47 @@ export default function UserCenterPage() {
   const currentMembership = user?.membership || 'free'
   const membershipConfig = MEMBERSHIP_QUOTAS[currentMembership as keyof typeof MEMBERSHIP_QUOTAS] || MEMBERSHIP_QUOTAS.free
   const membershipLabel = MEMBERSHIP_LABELS[currentMembership] || MEMBERSHIP_LABELS.free
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('tab') === 'security') setActiveTab('security')
+  }, [location.search])
+
+  const handleAvatarChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      showToast({ title: lang === 'zh' ? '头像格式不支持' : 'Unsupported image', message: lang === 'zh' ? '请选择 PNG、JPG 或 WebP 图片' : 'Choose a PNG, JPG, or WebP image', type: 'error' })
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast({ title: lang === 'zh' ? '图片过大' : 'Image too large', message: lang === 'zh' ? '头像不能超过 5 MB' : 'Avatar must be 5 MB or smaller', type: 'error' })
+      return
+    }
+    setAvatarUploading(true)
+    try {
+      await userApi.uploadAvatar(file)
+      await fetchUserInfo()
+      showToast({ title: lang === 'zh' ? '头像已更新' : 'Avatar updated', message: lang === 'zh' ? '新头像已同步到所有页面' : 'Your avatar is updated across the platform', type: 'success' })
+    } catch (error) {
+      showToast({ title: lang === 'zh' ? '上传失败' : 'Upload failed', message: (error as Error).message || (lang === 'zh' ? '请稍后重试' : 'Please try again'), type: 'error' })
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
+  const handleRestoreAvatar = async () => {
+    setAvatarUploading(true)
+    try {
+      await userApi.clearAvatar()
+      await fetchUserInfo()
+      showToast({ title: lang === 'zh' ? '已恢复默认头像' : 'Default avatar restored', message: lang === 'zh' ? '已优先显示 QQ 头像（如有）' : 'Your QQ avatar is used when available', type: 'success' })
+    } catch (error) {
+      showToast({ title: lang === 'zh' ? '操作失败' : 'Could not restore avatar', message: (error as Error).message || '', type: 'error' })
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
 
   const getMembershipColor = (label: string) => {
     const colors: Record<string, string> = { free: '#94A3B8', silver: '#C0C0C0', gold: '#F59E0B', diamond: '#8B5CF6' }
@@ -237,16 +285,21 @@ export default function UserCenterPage() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex gap-2 mt-4">
+        <div className="flex flex-wrap gap-2 mt-4">
           {([
             { key: 'overview' as PageTab, labelZh: '账户概览', labelEn: 'Overview' },
             { key: 'records' as PageTab, labelZh: '账单记录', labelEn: 'Records' },
             { key: 'settings' as PageTab, labelZh: '设置', labelEn: 'Settings' },
+            { key: 'security' as PageTab, labelZh: '账户与安全', labelEn: 'Account & Security' },
           ]).map(tab => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className="flex-1 sm:flex-none px-4 py-2 rounded-xl text-sm font-medium transition-all"
+              onClick={() => {
+                setActiveTab(tab.key)
+                if (tab.key === 'security') navigate('/user?tab=security', { replace: true })
+                else if (location.search) navigate('/user', { replace: true })
+              }}
+              className="min-w-[calc(50%-0.25rem)] flex-1 px-3 py-2 rounded-xl text-sm font-medium transition-all sm:min-w-0 sm:flex-none sm:px-4"
               style={{
                 background: activeTab === tab.key ? 'var(--accent-purple)' : 'var(--bg-surface)',
                 color: activeTab === tab.key ? '#fff' : 'var(--text-dim)',
@@ -278,11 +331,26 @@ export default function UserCenterPage() {
               }}
             >
               <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl"
-                  style={{ background: `${getMembershipColor(currentMembership)}20`, color: getMembershipColor(currentMembership) }}
-                >
-                  <MembershipIcon kind={currentMembership} size={24} color={getMembershipColor(currentMembership)} />
+                <div className="flex items-center gap-3">
+                  <input ref={avatarInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleAvatarChange} />
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={avatarUploading}
+                    aria-label={lang === 'zh' ? '更换头像' : 'Change avatar'}
+                    className="group relative rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-60"
+                  >
+                    <UserAvatar name={userDisplayName} avatarUrl={user?.avatarUrl} className="h-16 w-16 border-2 border-white shadow-md" textClassName="text-xl font-bold text-white" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }} />
+                    <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                      {avatarUploading ? <span className="text-[10px]">{lang === 'zh' ? '上传中' : 'Uploading'}</span> : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 5l5 5M4 20l4.5-1 10.8-10.8a2.1 2.1 0 00-3-3L5.5 16 4 20z"/><path d="M13 6l5 5"/></svg>}
+                    </span>
+                  </button>
+                  <div className="flex flex-col gap-1">
+                    <button type="button" onClick={() => avatarInputRef.current?.click()} disabled={avatarUploading} className="text-left text-xs font-medium" style={{ color: 'var(--accent-purple)' }}>
+                      {avatarUploading ? (lang === 'zh' ? '正在上传…' : 'Uploading…') : (lang === 'zh' ? '更换头像' : 'Change avatar')}
+                    </button>
+                    {user?.customAvatar && <button type="button" onClick={() => void handleRestoreAvatar()} disabled={avatarUploading} className="text-left text-xs" style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '恢复 QQ / 默认头像' : 'Restore QQ / default avatar'}</button>}
+                  </div>
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -492,13 +560,13 @@ export default function UserCenterPage() {
           >
             <button
               type="button"
-              onClick={() => navigate('/security')}
+              onClick={() => { setActiveTab('security'); navigate('/user?tab=security', { replace: true }) }}
               className="flex w-full items-center justify-between gap-4 rounded-2xl p-5 text-left transition-all hover:-translate-y-0.5"
               style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
             >
               <span>
                 <span className="block text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{lang === 'zh' ? '安全与登录' : 'Security & sign-in'}</span>
-                <span className="mt-1 block text-xs" style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '管理密码、Google 绑定、两步验证和已验证联系方式' : 'Manage password, Google, 2FA, and verified contacts'}</span>
+                <span className="mt-1 block text-xs" style={{ color: 'var(--text-dim)' }}>{lang === 'zh' ? '管理密码、QQ/Google 绑定、两步验证和已验证联系方式' : 'Manage password, QQ/Google, 2FA, and verified contacts'}</span>
               </span>
               <span aria-hidden="true" className="shrink-0 text-lg" style={{ color: 'var(--accent-purple)' }}>›</span>
             </button>
@@ -640,6 +708,12 @@ export default function UserCenterPage() {
                 </div>
               </div>
             </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'security' && (
+          <motion.div key="security" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+            <SecurityPage embedded />
           </motion.div>
         )}
       </AnimatePresence>

@@ -91,6 +91,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         user: {
           id: info.id,
           username: info.username,
+          displayName: info.displayName,
+          avatarUrl: info.avatarUrl,
+          customAvatar: info.customAvatar === true,
           email: info.email,
           emailVerified: info.emailVerified === true,
           phone: info.phone,

@@ -1,7 +1,7 @@
 #!/bin/bash
 # 验证后端完全启动 + 测试公网访问
-KEY=$HOME/Desktop/fortest.pem
-HOST=root@YOUR_SERVER_IP
+KEY="${LINGDIAN_SSH_KEY:?Set LINGDIAN_SSH_KEY to the SSH private-key file path}"
+HOST="${LINGDIAN_SSH_TARGET:?Set LINGDIAN_SSH_TARGET to user@host}"
 SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"
 
 echo "===== 1. 后端启动日志(查 Started / ERROR) ====="

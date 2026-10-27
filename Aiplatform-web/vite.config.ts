@@ -11,7 +11,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'vite.svg', 'robots.txt', 'apple-touch-icon.png'],
+      includeAssets: ['brand/icon-macos-default.png', 'robots.txt', 'apple-touch-icon.png'],
       manifest: {
         name: '凌点 AI - AI模型调度网关平台',
         short_name: '凌点AI',
@@ -41,7 +41,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         // cacheId 变化会让 sw.js 内容变化，触发 Service Worker 自动更新并重建缓存命名空间，
         // 确保用户浏览器在部署后能拿到最新的静态资源（解决文件名 hash 不变时 SW 不更新的问题）
-        cacheId: 'lingdianai-v13',
+        cacheId: 'lingdianai-v17',
         // 排除后端接口和独立部署的 OpenYRWeb 游戏路径。否则根路径下的
         // AI PWA 会把 /hj666/ 的游戏 index.html 回退成 AI index.html，
         // React Router 随后将它误判为未知页面并跳转到 /welcome。

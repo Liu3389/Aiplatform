@@ -8,6 +8,7 @@ import com.ai.gateway.vo.ConversationStatsVO;
 import com.ai.gateway.vo.DashboardStatsVO;
 import com.ai.gateway.vo.SystemStatsVO;
 import com.ai.gateway.vo.UserStatsVO;
+import com.ai.gateway.vo.AdminUserDetailVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -15,6 +16,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.MediaType;
 
 import java.lang.management.ManagementFactory;
 import java.math.BigDecimal;
@@ -124,11 +127,50 @@ public class AdminController {
     @RequireAdmin
     @Operation(summary = "用户详情")
     @GetMapping("/user/{userId}")
-    public Result<SystemStatsVO.UserStatVO> getUserDetail(
+    public Result<AdminUserDetailVO> getUserDetail(
             @RequestHeader("X-User-Token") String token,
             @PathVariable Long userId) {
-        var detail = adminService.getUserDetail(userId);
+        var detail = adminService.getAdminUserDetail(userId);
         return Result.success(detail);
+    }
+
+    @RequireAdmin
+    @Operation(summary = "管理员编辑用户资料", description = "修改展示昵称、邮箱和手机号；联系方式变更后需要用户重新验证")
+    @PutMapping("/user/profile")
+    public Result<?> updateUserProfile(
+            @RequestHeader("X-User-Token") String token,
+            @Valid @RequestBody AdminUpdateUserProfileRequest request) {
+        java.util.List<String> changedFields = adminService.updateUserProfile(request);
+        if (!changedFields.isEmpty()) {
+            Long adminId = getUserIdFromToken(token);
+            String adminUsername = getUsernameFromToken(token);
+            operationLogService.logSuccess(adminId, adminUsername, "USER_MANAGE", "UPDATE_PROFILE",
+                    java.util.Arrays.asList(request.getUserId()), java.util.Map.of("changedFields", changedFields));
+        }
+        return Result.success("用户资料已更新；联系方式变更后需重新验证", changedFields);
+    }
+
+    @RequireAdmin
+    @Operation(summary = "管理员更换用户头像")
+    @PostMapping(value = "/user/{userId}/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result<?> uploadUserAvatar(
+            @RequestHeader("X-User-Token") String token,
+            @PathVariable Long userId,
+            @RequestParam("file") MultipartFile file) {
+        var profile = userService.uploadAvatar(userId, file);
+        operationLogService.logSuccess(getUserIdFromToken(token), getUsernameFromToken(token), "USER_MANAGE",
+                "UPDATE_AVATAR", java.util.Arrays.asList(userId), null);
+        return Result.success("头像已更新", profile);
+    }
+
+    @RequireAdmin
+    @Operation(summary = "恢复用户默认头像")
+    @DeleteMapping("/user/{userId}/avatar")
+    public Result<?> clearUserAvatar(@RequestHeader("X-User-Token") String token, @PathVariable Long userId) {
+        var profile = userService.clearAvatar(userId);
+        operationLogService.logSuccess(getUserIdFromToken(token), getUsernameFromToken(token), "USER_MANAGE",
+                "CLEAR_AVATAR", java.util.Arrays.asList(userId), null);
+        return Result.success("已恢复第三方头像或默认头像", profile);
     }
 
     @RequireAdmin
@@ -264,6 +306,7 @@ public class AdminController {
         }
         
         userService.resetPassword(request.getUserId(), password);
+        userService.revokeUserSessions(request.getUserId());
         
         Long adminId = getUserIdFromToken(token);
         String adminUsername = getUsernameFromToken(token);

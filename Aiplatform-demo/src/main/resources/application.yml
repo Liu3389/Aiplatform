@@ -119,6 +119,7 @@ app:
     # External delivery is disabled unless explicitly configured; local capture is only for the isolated local stack.
     delivery-mode: ${VERIFICATION_DELIVERY_MODE:disabled}
     allow-local-capture: ${VERIFICATION_ALLOW_LOCAL_CAPTURE:false}
+    registration-email-required: ${REGISTRATION_EMAIL_VERIFICATION_REQUIRED:false}
     sms:
       url: ${VERIFICATION_SMS_URL:}
       token: ${VERIFICATION_SMS_TOKEN:}

@@ -3,10 +3,12 @@ package com.ai.gateway.service;
 import com.ai.gateway.common.ResultCode;
 import com.ai.gateway.dto.UserLoginRequest;
 import com.ai.gateway.dto.UserRegisterRequest;
+import com.ai.gateway.dto.EmailCodeLoginRequest;
 import com.ai.gateway.entity.PlatformStatistics;
 import com.ai.gateway.entity.PointsBill;
 import com.ai.gateway.entity.User;
 import com.ai.gateway.entity.UserContactVerification;
+import com.ai.gateway.entity.UserOAuthIdentity;
 import com.ai.gateway.entity.UserSubscription;
 import com.ai.gateway.exception.BusinessException;
 import com.ai.gateway.exception.TwoFactorRequiredException;
@@ -14,6 +16,7 @@ import com.ai.gateway.mapper.BillingRecordMapper;
 import com.ai.gateway.mapper.PointsBillMapper;
 import com.ai.gateway.mapper.UserContactVerificationMapper;
 import com.ai.gateway.mapper.UserMapper;
+import com.ai.gateway.mapper.UserOAuthIdentityMapper;
 import com.ai.gateway.vo.UserInfoVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -53,6 +56,7 @@ public class UserService {
     private final BillingService billingService;
     private final UserSubscriptionService userSubscriptionService;
     private final UserContactVerificationMapper contactVerificationMapper;
+    private final UserOAuthIdentityMapper userOAuthIdentityMapper;
     private final VerificationCodeDeliveryService verificationCodeDeliveryService;
     private final StringRedisTemplate redisTemplate;
     private final SessionService sessionService;
@@ -65,15 +69,64 @@ public class UserService {
     private final com.ai.gateway.util.RedisScanUtil redisScanUtil;
     // 注入配置了 LocalDateTime 格式的 ObjectMapper（替代裸 new ObjectMapper()）
     private final ObjectMapper objectMapper;
+    private final OssService ossService;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private static final String BIND_CODE_PREFIX = "user:contact:bind:code:v2:";
     private static final String BIND_ATTEMPT_PREFIX = "user:contact:bind:attempt:v2:";
     private static final String BIND_COOLDOWN_PREFIX = "user:contact:bind:cooldown:v2:";
+    private static final String REGISTER_EMAIL_CODE_PREFIX = "auth:register:email:code:v1:";
+    private static final String REGISTER_EMAIL_ATTEMPT_PREFIX = "auth:register:email:attempt:v1:";
+    private static final String REGISTER_EMAIL_COOLDOWN_PREFIX = "auth:register:email:cooldown:v1:";
+    private static final String LOGIN_EMAIL_CODE_PREFIX = "auth:login:email:code:v1:";
+    private static final String LOGIN_EMAIL_ATTEMPT_PREFIX = "auth:login:email:attempt:v1:";
+    private static final String LOGIN_EMAIL_COOLDOWN_PREFIX = "auth:login:email:cooldown:v1:";
     private static final String LOGIN_DEVICE_PREFIX = "login:device:";
     private static final int BIND_CODE_TTL_SECONDS = 10 * 60;
     private static final int BIND_COOLDOWN_SECONDS = 60;
     private static final int BIND_CODE_MAX_ATTEMPTS = 5;
+    private static final int REGISTER_EMAIL_CODE_TTL_SECONDS = 10 * 60;
+    private static final int REGISTER_EMAIL_CODE_MAX_ATTEMPTS = 5;
+    private static final int LOGIN_EMAIL_CODE_TTL_SECONDS = 10 * 60;
+    private static final int LOGIN_EMAIL_CODE_MAX_ATTEMPTS = 5;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final DefaultRedisScript<Long> ACQUIRE_REGISTER_EMAIL_COOLDOWN = new DefaultRedisScript<>("""
+            if redis.call('SET', KEYS[1], '1', 'EX', ARGV[1], 'NX') then return 1 end
+            return 0
+            """, Long.class);
+    private static final DefaultRedisScript<Long> VERIFY_REGISTER_EMAIL_CODE = new DefaultRedisScript<>("""
+            local saved = redis.call('GET', KEYS[1])
+            if not saved then return 0 end
+            if saved == ARGV[1] then
+              redis.call('DEL', KEYS[1], KEYS[2], KEYS[4])
+              return 1
+            end
+            local attempts = redis.call('INCR', KEYS[2])
+            if attempts == 1 then redis.call('EXPIRE', KEYS[2], ARGV[2]) end
+            if attempts >= tonumber(ARGV[3]) then
+              redis.call('DEL', KEYS[1], KEYS[2], KEYS[3], KEYS[4])
+              return -1
+            end
+            return -2
+            """, Long.class);
+    private static final DefaultRedisScript<Long> CHECK_LOGIN_EMAIL_CODE = new DefaultRedisScript<>("""
+            local saved = redis.call('GET', KEYS[1])
+            if not saved then return 0 end
+            if saved == ARGV[1] then return 1 end
+            local attempts = redis.call('INCR', KEYS[2])
+            if attempts == 1 then redis.call('EXPIRE', KEYS[2], ARGV[2]) end
+            if attempts >= tonumber(ARGV[3]) then
+              redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
+              return -1
+            end
+            return -2
+            """, Long.class);
+    private static final DefaultRedisScript<Long> CONSUME_LOGIN_EMAIL_CODE = new DefaultRedisScript<>("""
+            if redis.call('GET', KEYS[1]) == ARGV[1] then
+              redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
+              return 1
+            end
+            return 0
+            """, Long.class);
     private static final DefaultRedisScript<Long> ACQUIRE_BIND_COOLDOWN = new DefaultRedisScript<>("""
             if redis.call('EXISTS', KEYS[1]) == 1 or redis.call('EXISTS', KEYS[2]) == 1 then return 0 end
             redis.call('SET', KEYS[1], '1', 'EX', ARGV[1])
@@ -98,18 +151,70 @@ public class UserService {
 
     @Transactional(rollbackFor = Exception.class)
     public UserInfoVO register(UserRegisterRequest request) {
-        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(User::getUsername, request.getUsername());
-        User existingUser = userMapper.selectOne(wrapper);
+        return createUserAccount(request, null);
+    }
 
-        if (existingUser != null) {
-            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "用户名已存在");
+    public void sendRegistrationEmailCode(String email) {
+        String normalizedEmail = normalizeContactTarget("email", email);
+        ensureRegistrationEmailAvailable(normalizedEmail);
+
+        String codeKey = registrationEmailCodeKey(normalizedEmail);
+        String attemptKey = registrationEmailAttemptKey(normalizedEmail);
+        String cooldownKey = registrationEmailCooldownKey(normalizedEmail);
+        Long acquired = redisTemplate.execute(ACQUIRE_REGISTER_EMAIL_COOLDOWN,
+                List.of(cooldownKey), Integer.toString(BIND_COOLDOWN_SECONDS));
+        if (!Long.valueOf(1L).equals(acquired)) {
+            throw new BusinessException(ResultCode.RATE_LIMIT_EXCEEDED.getCode(), "验证码发送过于频繁，请稍后重试");
         }
-                
+
+        redisTemplate.delete(List.of(codeKey, attemptKey));
+        String code = String.format(Locale.ROOT, "%06d", SECURE_RANDOM.nextInt(1_000_000));
+        redisTemplate.opsForValue().set(codeKey, sha256("register:" + normalizedEmail + ":" + code),
+                REGISTER_EMAIL_CODE_TTL_SECONDS, TimeUnit.SECONDS);
+        try {
+            verificationCodeDeliveryService.deliverRegistrationEmail(normalizedEmail, code);
+        } catch (RuntimeException e) {
+            redisTemplate.delete(List.of(codeKey, attemptKey, cooldownKey));
+            verificationCodeDeliveryService.clearRegistrationLocalCode(normalizedEmail);
+            throw e;
+        }
+        log.info("注册邮箱验证码已投递: targetHash={}", hashForRedis(normalizedEmail).substring(0, 12));
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public UserInfoVO registerWithVerifiedEmail(UserRegisterRequest request) {
+        String normalizedEmail = normalizeContactTarget("email", request.getEmail());
+        ensureUsernameAvailable(request.getUsername());
+        ensureRegistrationEmailAvailable(normalizedEmail);
+
+        String code = request.getEmailCode();
+        if (code == null || !code.matches("\\d{6}")) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "邮箱验证码错误或已过期");
+        }
+        String expected = sha256("register:" + normalizedEmail + ":" + code);
+        Long verified = redisTemplate.execute(VERIFY_REGISTER_EMAIL_CODE,
+                List.of(registrationEmailCodeKey(normalizedEmail), registrationEmailAttemptKey(normalizedEmail),
+                        registrationEmailCooldownKey(normalizedEmail),
+                        VerificationCodeDeliveryService.registrationLocalInboxKey(normalizedEmail)),
+                expected, Integer.toString(REGISTER_EMAIL_CODE_TTL_SECONDS),
+                Integer.toString(REGISTER_EMAIL_CODE_MAX_ATTEMPTS));
+        if (Long.valueOf(-1L).equals(verified)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "验证码错误次数过多，请重新获取");
+        }
+        if (!Long.valueOf(1L).equals(verified)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "邮箱验证码错误或已过期");
+        }
+
+        return createUserAccount(request, normalizedEmail);
+    }
+
+    private UserInfoVO createUserAccount(UserRegisterRequest request, String verifiedEmail) {
+        ensureUsernameAvailable(request.getUsername());
+
         User user = new User();
         user.setUsername(request.getUsername());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        // Email is a verified contact, so signup only records it after the bind-code flow succeeds.
+        user.setEmail(verifiedEmail);
         user.setBalance(BigDecimal.ZERO);
         user.setPoints(BigDecimal.ZERO); // 修复 P0-1: 初始化点数
         user.setStatus(1);
@@ -123,6 +228,18 @@ public class UserService {
 
         userMapper.insert(user);
 
+        if (verifiedEmail != null) {
+            UserContactVerification contact = new UserContactVerification();
+            contact.setUserId(user.getId());
+            contact.setEmail(verifiedEmail);
+            contact.setUpdatedAt(LocalDateTime.now());
+            try {
+                contactVerificationMapper.insert(contact);
+            } catch (org.springframework.dao.DuplicateKeyException e) {
+                throw new BusinessException(409, "该邮箱已注册或绑定其他账号");
+            }
+        }
+
         billingService.syncUserBalanceToRedis(user.getId(), user.getBalance());
 
         log.info("用户注册成功: username={}, userId={}", request.getUsername(), user.getId());
@@ -130,10 +247,185 @@ public class UserService {
         return convertToVO(user);
     }
 
-    public UserInfoVO login(UserLoginRequest request) {
+    private void ensureUsernameAvailable(String username) {
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(User::getUsername, request.getUsername());
-        User user = userMapper.selectOne(wrapper);
+        wrapper.eq(User::getUsername, username);
+        User existingUser = userMapper.selectOne(wrapper);
+
+        if (existingUser != null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "用户名已存在");
+        }
+    }
+
+    private void ensureRegistrationEmailAvailable(String email) {
+        LambdaQueryWrapper<User> profileQuery = new LambdaQueryWrapper<>();
+        profileQuery.eq(User::getEmail, email);
+        if (userMapper.selectCount(profileQuery) > 0) {
+            throw new BusinessException(409, "该邮箱已注册或绑定其他账号");
+        }
+
+        LambdaQueryWrapper<UserContactVerification> verifiedQuery = new LambdaQueryWrapper<>();
+        verifiedQuery.eq(UserContactVerification::getEmail, email);
+        if (contactVerificationMapper.selectCount(verifiedQuery) > 0) {
+            throw new BusinessException(409, "该邮箱已注册或绑定其他账号");
+        }
+    }
+
+    static String registrationEmailCodeKey(String email) {
+        return REGISTER_EMAIL_CODE_PREFIX + hashForRedis(email);
+    }
+
+    static String registrationEmailCooldownKey(String email) {
+        return REGISTER_EMAIL_COOLDOWN_PREFIX + hashForRedis(email);
+    }
+
+    static String registrationEmailAttemptKey(String email) {
+        return REGISTER_EMAIL_ATTEMPT_PREFIX + hashForRedis(email);
+    }
+
+    static String loginEmailCodeKey(String email) {
+        return LOGIN_EMAIL_CODE_PREFIX + hashForRedis(email);
+    }
+
+    static String loginEmailCooldownKey(String email) {
+        return LOGIN_EMAIL_COOLDOWN_PREFIX + hashForRedis(email);
+    }
+
+    static String loginEmailAttemptKey(String email) {
+        return LOGIN_EMAIL_ATTEMPT_PREFIX + hashForRedis(email);
+    }
+
+    /**
+     * 发送邮箱验证码登录验证码。验证码只发给已存在且启用的账号，避免被当作任意邮箱的发信通道。
+     */
+    public void sendLoginEmailCode(String email) {
+        String normalizedEmail = normalizeContactTarget("email", email);
+        User user = findUserByLoginIdentifier(normalizedEmail, true);
+        if (user == null) {
+            throw new BusinessException(404, "该邮箱尚未注册，请先注册或使用用户名登录");
+        }
+        if (user.getStatus() == 0) {
+            throw new BusinessException(ResultCode.USER_DISABLED);
+        }
+
+        String codeKey = loginEmailCodeKey(normalizedEmail);
+        String attemptKey = loginEmailAttemptKey(normalizedEmail);
+        String cooldownKey = loginEmailCooldownKey(normalizedEmail);
+        Long acquired = redisTemplate.execute(ACQUIRE_REGISTER_EMAIL_COOLDOWN,
+                List.of(cooldownKey), Integer.toString(BIND_COOLDOWN_SECONDS));
+        if (!Long.valueOf(1L).equals(acquired)) {
+            throw new BusinessException(ResultCode.RATE_LIMIT_EXCEEDED.getCode(), "验证码发送过于频繁，请稍后重试");
+        }
+
+        redisTemplate.delete(List.of(codeKey, attemptKey));
+        String code = String.format(Locale.ROOT, "%06d", SECURE_RANDOM.nextInt(1_000_000));
+        redisTemplate.opsForValue().set(codeKey, sha256("login:" + normalizedEmail + ":" + code),
+                LOGIN_EMAIL_CODE_TTL_SECONDS, TimeUnit.SECONDS);
+        try {
+            verificationCodeDeliveryService.deliverLoginEmail(normalizedEmail, code);
+        } catch (RuntimeException e) {
+            redisTemplate.delete(List.of(codeKey, attemptKey, cooldownKey));
+            verificationCodeDeliveryService.clearLoginLocalCode(normalizedEmail);
+            throw e;
+        }
+        log.info("登录邮箱验证码已投递: targetHash={}", hashForRedis(normalizedEmail).substring(0, 12));
+    }
+
+    /**
+     * 邮箱验证码登录。验证码验证通过后才签发会话；若账号启用两步验证，则先要求二次验证码，
+     * 二次验证通过后再原子消费邮箱验证码，避免二次验证失败时用户必须重新收信。
+     */
+    public UserInfoVO loginWithEmailCode(EmailCodeLoginRequest request) {
+        String normalizedEmail = normalizeContactTarget("email", request.getEmail());
+        String code = request.getCode();
+        if (code == null || !code.matches("\\d{6}")) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "请输入6位邮箱验证码");
+        }
+
+        String codeKey = loginEmailCodeKey(normalizedEmail);
+        String attemptKey = loginEmailAttemptKey(normalizedEmail);
+        String cooldownKey = loginEmailCooldownKey(normalizedEmail);
+        String expected = sha256("login:" + normalizedEmail + ":" + code);
+        List<String> keys = List.of(codeKey, attemptKey, cooldownKey);
+
+        Long checked = redisTemplate.execute(CHECK_LOGIN_EMAIL_CODE, keys, expected,
+                Integer.toString(LOGIN_EMAIL_CODE_TTL_SECONDS),
+                Integer.toString(LOGIN_EMAIL_CODE_MAX_ATTEMPTS));
+        if (Long.valueOf(-1L).equals(checked)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "验证码错误次数过多，请重新获取邮箱验证码");
+        }
+        if (!Long.valueOf(1L).equals(checked)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "邮箱验证码错误或已过期，请重新获取");
+        }
+
+        User user = findUserByLoginIdentifier(normalizedEmail, true);
+        if (user == null) {
+            throw new BusinessException(ResultCode.LOGIN_ERROR.getCode(), "该邮箱尚未注册或未绑定账号");
+        }
+        if (user.getStatus() == 0) {
+            throw new BusinessException(ResultCode.USER_DISABLED);
+        }
+
+        if (twoFactorService.isEnabled(user.getId())) {
+            String twoFactorCode = request.getTwoFactorCode();
+            if (twoFactorCode == null || twoFactorCode.isBlank()) {
+                throw new TwoFactorRequiredException();
+            }
+            if (!twoFactorService.verifyAndConsumeLoginCode(user.getId(), twoFactorCode)) {
+                throw new BusinessException(ResultCode.LOGIN_ERROR.getCode(), "动态验证码或备用码错误");
+            }
+        }
+
+        Long consumed = redisTemplate.execute(CONSUME_LOGIN_EMAIL_CODE, keys, expected);
+        if (!Long.valueOf(1L).equals(consumed)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR.getCode(), "邮箱验证码已失效，请重新获取");
+        }
+
+        // 能收到该邮箱的验证码即证明邮箱归属；仅在账号尚无其他已验证邮箱时写入验证记录。
+        markLoginEmailVerified(user, normalizedEmail);
+        billingService.syncUserBalanceToRedis(user.getId(), user.getBalance());
+        log.info("邮箱验证码登录成功: userId={}", user.getId());
+        return convertToVO(user);
+    }
+
+    private void markLoginEmailVerified(User user, String email) {
+        UserContactVerification contact = contactVerificationMapper.selectById(user.getId());
+        if (contact != null && !email.equals(contact.getEmail())) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        try {
+            if (contact == null) {
+                contact = new UserContactVerification();
+                contact.setUserId(user.getId());
+                contact.setEmail(email);
+                contact.setUpdatedAt(now);
+                contactVerificationMapper.insert(contact);
+            } else if (!email.equals(user.getEmail())) {
+                user.setEmail(email);
+                user.setUpdateTime(now);
+                userMapper.updateById(user);
+            }
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 并发登录时另一请求已写入同一验证记录；不阻断本次登录。
+            log.warn("登录邮箱验证记录已存在: userId={}", user.getId());
+            return;
+        }
+        if (!email.equals(user.getEmail())) {
+            user.setEmail(email);
+            user.setUpdateTime(now);
+            userMapper.updateById(user);
+        }
+    }
+
+    public UserInfoVO login(UserLoginRequest request) {
+        String loginIdentifier = request.getUsername() == null ? "" : request.getUsername().trim();
+        boolean emailLogin = loginIdentifier.indexOf('@') >= 0;
+        if (emailLogin) {
+            loginIdentifier = normalizeContactTarget("email", loginIdentifier);
+        }
+
+        User user = findUserByLoginIdentifier(loginIdentifier, emailLogin);
 
         if (user == null) {
             throw new BusinessException(ResultCode.LOGIN_ERROR);
@@ -172,9 +464,46 @@ public class UserService {
         // 登录时同步余额到Redis，确保计费系统可以正常使用
         billingService.syncUserBalanceToRedis(user.getId(), user.getBalance());
 
-        log.info("用户登录成功: username={}, userId={}", request.getUsername(), user.getId());
+        log.info("用户登录成功: username={}, userId={}", user.getUsername(), user.getId());
 
         return convertToVO(user);
+    }
+
+    /**
+     * 按登录标识查找账号。
+     *
+     * <p>邮箱登录以 password 校验为准，不要求该邮箱已经完成验证码验证：历史账号的邮箱是在
+     * 验证码机制上线前写入的，若仅允许“已验证邮箱”登录，这批用户会被永久挡在邮箱登录之外。
+     * 邮箱是否已验证只影响 {@code emailVerified} 标记和后续需要验证邮箱的操作，不作为登录门槛。
+     * 若账号资料里的邮箱为空但存在已验证联系方式，也会回退到联系方式表按邮箱查找。</p>
+     */
+    private User findUserByLoginIdentifier(String loginIdentifier, boolean emailLogin) {
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+        if (emailLogin) {
+            wrapper.eq(User::getEmail, loginIdentifier);
+        } else {
+            wrapper.eq(User::getUsername, loginIdentifier);
+        }
+        List<User> matches = userMapper.selectList(wrapper);
+        if (matches.size() > 1) {
+            // 邮箱唯一约束异常时失败关闭，避免用不确定的账号签发会话。
+            log.warn("登录标识匹配到多个账号，拒绝登录: emailLogin={}", emailLogin);
+            return null;
+        }
+        if (!matches.isEmpty()) {
+            return matches.get(0);
+        }
+        if (!emailLogin) {
+            return null;
+        }
+
+        LambdaQueryWrapper<UserContactVerification> contactQuery = new LambdaQueryWrapper<>();
+        contactQuery.eq(UserContactVerification::getEmail, loginIdentifier).last("LIMIT 1");
+        UserContactVerification contact = contactVerificationMapper.selectOne(contactQuery);
+        if (contact == null || contact.getUserId() == null) {
+            return null;
+        }
+        return userMapper.selectById(contact.getUserId());
     }
 
     /**
@@ -195,6 +524,65 @@ public class UserService {
 
         return convertToVO(user);
     }
+
+    @Transactional(rollbackFor = Exception.class)
+    public UserInfoVO uploadAvatar(Long userId, org.springframework.web.multipart.MultipartFile file) {
+        if (file == null || file.isEmpty()) throw new IllegalArgumentException("请选择头像图片");
+        if (file.getSize() > 5L * 1024 * 1024) throw new IllegalArgumentException("头像不能超过 5 MB");
+
+        final byte[] image;
+        try {
+            image = file.getBytes();
+        } catch (java.io.IOException e) {
+            throw new IllegalArgumentException("读取头像失败，请重试", e);
+        }
+        AvatarFormat format = detectAvatarFormat(image);
+        String declaredType = file.getContentType();
+        if (declaredType != null && !declaredType.isBlank() && !format.contentType.equalsIgnoreCase(declaredType)) {
+            throw new IllegalArgumentException("图片格式与文件内容不匹配");
+        }
+
+        User user = userMapper.selectById(userId);
+        if (user == null) throw new BusinessException(ResultCode.USER_NOT_FOUND);
+        String oldAvatar = user.getAvatarUrl();
+        String avatarReference = ossService.uploadBytes(image, "avatar." + format.extension,
+                "avatars/user_" + userId + "/", format.contentType);
+        user.setAvatarUrl(avatarReference);
+        if (userMapper.updateById(user) != 1) {
+            ossService.deleteFile(avatarReference);
+            throw new IllegalStateException("保存头像信息失败");
+        }
+        if (!avatarReference.equals(oldAvatar) && ossService.isManagedStorageReference(oldAvatar)) ossService.deleteFile(oldAvatar);
+        return convertToVO(user);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public UserInfoVO clearAvatar(Long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null) throw new BusinessException(ResultCode.USER_NOT_FOUND);
+        String oldAvatar = user.getAvatarUrl();
+        user.setAvatarUrl(null);
+        if (userMapper.updateById(user) != 1) throw new IllegalStateException("恢复默认头像失败");
+        if (ossService.isManagedStorageReference(oldAvatar)) ossService.deleteFile(oldAvatar);
+        return convertToVO(user);
+    }
+
+    private AvatarFormat detectAvatarFormat(byte[] image) {
+        if (image.length >= 8 && (image[0] & 0xff) == 0x89 && image[1] == 0x50 && image[2] == 0x4e &&
+                image[3] == 0x47 && image[4] == 0x0d && image[5] == 0x0a && image[6] == 0x1a && image[7] == 0x0a) {
+            return new AvatarFormat("png", "image/png");
+        }
+        if (image.length >= 3 && (image[0] & 0xff) == 0xff && (image[1] & 0xff) == 0xd8 && (image[2] & 0xff) == 0xff) {
+            return new AvatarFormat("jpg", "image/jpeg");
+        }
+        if (image.length >= 12 && image[0] == 'R' && image[1] == 'I' && image[2] == 'F' && image[3] == 'F' &&
+                image[8] == 'W' && image[9] == 'E' && image[10] == 'B' && image[11] == 'P') {
+            return new AvatarFormat("webp", "image/webp");
+        }
+        throw new IllegalArgumentException("仅支持 PNG、JPG 或 WebP 图片");
+    }
+
+    private record AvatarFormat(String extension, String contentType) { }
 
     public User getUserEntityById(Long userId) {
         User user = userMapper.selectById(userId);
@@ -1109,6 +1497,25 @@ public class UserService {
         vo.setPhoneVerified(verifiedContact != null
                 && user.getPhone() != null
                 && user.getPhone().equals(verifiedContact.getPhone()));
+        if (user.getNickname() != null && !user.getNickname().isBlank()) {
+            vo.setDisplayName(user.getNickname());
+        }
+        boolean generatedQqUsername = user.getUsername() != null && user.getUsername().startsWith("oauth_qq_");
+        if (generatedQqUsername || vo.getAvatarUrl() == null) {
+            List<UserOAuthIdentity> identities = userOAuthIdentityMapper.selectByUserId(user.getId());
+            UserOAuthIdentity preferred = identities.stream()
+                    .filter(identity -> generatedQqUsername ? "qq".equalsIgnoreCase(identity.getProvider())
+                            : identity.getAvatarUrl() != null && !identity.getAvatarUrl().isBlank())
+                    .findFirst().orElse(identities.isEmpty() ? null : identities.get(0));
+            if (preferred != null) {
+                if (generatedQqUsername && (vo.getDisplayName() == null || vo.getDisplayName().isBlank())) {
+                    vo.setDisplayName(preferred.getDisplayName());
+                }
+                if (vo.getAvatarUrl() == null) vo.setAvatarUrl(preferred.getAvatarUrl());
+            }
+        }
+        vo.setCustomAvatar(user.getAvatarUrl() != null && !user.getAvatarUrl().isBlank());
+        if (vo.getAvatarUrl() != null) vo.setAvatarUrl(ossService.toAccessibleUrl(vo.getAvatarUrl()));
         return vo;
     }
 

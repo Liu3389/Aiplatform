@@ -27,6 +27,7 @@ DROP TABLE IF EXISTS `api_key`;
 DROP TABLE IF EXISTS `coupon_usage_record`;
 DROP TABLE IF EXISTS `coupon`;
 DROP TABLE IF EXISTS `user_subscription`;
+DROP TABLE IF EXISTS `user_oauth_identity`;
 DROP TABLE IF EXISTS `user_contact_verification`;
 DROP TABLE IF EXISTS `user`;
 DROP TABLE IF EXISTS `user_marketplace_key`;
@@ -48,6 +49,8 @@ CREATE TABLE `user`
 (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `username` varchar(64) NOT NULL COMMENT '用户名',
+  `nickname` varchar(64) DEFAULT NULL COMMENT '用户展示昵称',
+  `avatar_url` varchar(500) DEFAULT NULL COMMENT '自定义头像存储引用',
   `password` varchar(128) NOT NULL COMMENT '密码（BCrypt加密存储）',
   `email` varchar(128) DEFAULT NULL COMMENT '邮箱',
   `phone` varchar(32) DEFAULT NULL COMMENT '已验证手机号',
@@ -449,6 +452,7 @@ CREATE TABLE `user_oauth_identity`
   `provider` VARCHAR(32) NOT NULL COMMENT 'OAuth/OIDC 提供方',
   `provider_subject` VARCHAR(255) NOT NULL COMMENT '提供方稳定用户标识',
   `display_name` VARCHAR(255) DEFAULT NULL COMMENT '展示名称',
+  `avatar_url` VARCHAR(500) DEFAULT NULL COMMENT '第三方头像 HTTPS 地址',
   `email` VARCHAR(255) DEFAULT NULL COMMENT '提供方已验证邮箱',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '绑定时间',
   PRIMARY KEY (`id`),

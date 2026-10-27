@@ -67,9 +67,9 @@ public enum ResultCode {
     USER_NOT_FOUND(404, "用户不存在"),
 
     /**
-     * 用户名或密码错误
+     * 用户名/邮箱或密码错误
      */
-    LOGIN_ERROR(401, "用户名或密码错误"),
+    LOGIN_ERROR(401, "用户名/邮箱或密码错误"),
 
     /**
      * 用户已被禁用

@@ -115,8 +115,8 @@ public class OpenAiChatService {
         // 模型权限校验
         validateModelAccess(userId, config.modelConfig);
 
-        // 图片请求自动切换到已配置的视觉模型，兼容旧客户端和未同步视觉模型选择器的页面。
-        config = resolveVisionConfigIfNeeded(request, userId, config);
+        // 图片必须由用户明确选择的视觉模型处理；无视觉能力时在预扣前拒绝。
+        config = resolveVisionConfigIfNeeded(request, config);
 
         // Token限制检查（后台静默检查，不告诉用户）
         validateTokenLimits(userId, request, config);
@@ -302,8 +302,8 @@ public class OpenAiChatService {
         }
 
         try {
-            // 图片请求自动切换到已配置的视觉模型，保证文件对话和普通对话使用同一能力判断。
-            resolvedConfig = resolveVisionConfigIfNeeded(request, userId, resolvedConfig);
+            // 图片必须由用户明确选择的视觉模型处理；无视觉能力时在预扣前拒绝。
+            resolvedConfig = resolveVisionConfigIfNeeded(request, resolvedConfig);
         } catch (BusinessException e) {
             try {
                 Map<String, Object> errData = new HashMap<>();
@@ -1714,49 +1714,19 @@ public class OpenAiChatService {
                 && config.modelConfig.getSupportsVision() == 1;
     }
 
-    /**
-     * 图片请求不能继续使用纯文本模型。优先选择平台约定的 DeepSeek 视觉模型，
-     * 找不到时再回退到其他已启用的视觉模型；最终仍由统一权限校验决定用户是否可用。
-     */
-    private ChatConfig resolveVisionConfigIfNeeded(ChatRequest request, Long userId, ChatConfig config) {
-        // 图片统一使用已经验证可用的 DeepSeek 视觉线路。数据库里其他展示模型
-        // 即使标记了 supports_vision，也可能还没有真实厂商地址，不能直接放行。
-        if (!hasImageMessage(request)) {
-            return config;
+    /** Reject image input against the exact selected model before reserving points. */
+    private ChatConfig resolveVisionConfigIfNeeded(ChatRequest request, ChatConfig config) {
+        if (!hasImageMessage(request)) return config;
+        if (!supportsVision(config)) {
+            String modelName = config.modelConfig == null ? request.getModel() : config.modelConfig.getDisplayName();
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "当前模型「" + modelName + "」不支持视觉识别，请切换到视觉模型后再添加图片");
         }
-
-        PlatformModelConfig visionModel = platformModelService.listEnabledModels().stream()
-                .filter(this::isVisionModel)
-                .sorted(Comparator.comparing((PlatformModelConfig model) ->
-                                !DEFAULT_VISION_MODEL.equals(model.getActualModel()))
-                        .thenComparing(model -> model.getSortOrder() == null ? Integer.MAX_VALUE : model.getSortOrder())
-                        .thenComparing(PlatformModelConfig::getId))
-                .findFirst()
-                .orElse(null);
-
-        if (visionModel == null) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "当前没有可用的视觉模型，暂时无法解析图片");
+        if (config.baseUrl == null || config.baseUrl.isBlank()
+                || config.apiKey == null || config.apiKey.isBlank()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "当前视觉模型的上游地址或 API Key 未配置，请联系管理员");
         }
-
-        validateModelAccess(userId, visionModel);
-        String requestedModel = request.getModel();
-        request.setModel(visionModel.getActualModel());
-        log.info("图片请求自动切换视觉模型: userId={}, requestedModel={}, visionModel={}",
-                userId, requestedModel, visionModel.getActualModel());
-        return new ChatConfig(
-                visionModel.getApiKey(),
-                visionModel.getBaseUrl(),
-                resolveProviderFormat(visionModel.getProvider()),
-                visionModel,
-                false,
-                resolveUpstreamModel(visionModel.getProvider(), visionModel.getActualModel())
-        );
-    }
-
-    private boolean isVisionModel(PlatformModelConfig model) {
-        return model != null
-                && model.getSupportsVision() != null
-                && model.getSupportsVision() == 1;
+        return config;
     }
 
     /**

@@ -1,6 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { aiDocApi } from '@/services/api'
 import ImagePreviewDialog, { type PreviewImage } from '@/components/chat/ImagePreview'
+import { isImageFile, partitionFilesForModel } from '@/utils/chatUploadRules'
+
+export { isImageFile } from '@/utils/chatUploadRules'
 
 export interface UploadedFile {
   file?: File
@@ -19,6 +22,8 @@ interface Props {
   isStreaming: boolean
   disabled?: boolean
   placeholder?: string
+  selectedModelSupportsVision: boolean
+  selectedModelName: string
   lang: string
   t: (zh: string, en: string) => string
 }
@@ -44,12 +49,6 @@ function getUploadErrorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
-export function isImageFile(file: Pick<UploadedFile, 'file' | 'name'>) {
-  if (file.file?.type?.startsWith('image/')) return true
-  const extension = file.name.split('.').pop()?.toLowerCase()
-  return extension === 'png' || extension === 'jpg' || extension === 'jpeg' || extension === 'gif' || extension === 'webp'
-}
-
 function createImagePreviewUrl(file: File) {
   if (!isImageFile({ file, name: file.name })) return undefined
   try {
@@ -63,13 +62,15 @@ function revokeImagePreviewUrl(file?: UploadedFile) {
   if (file?.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(file.previewUrl)
 }
 
-export default function ChatInput({ onSend, onStop, isStreaming, disabled, placeholder, lang, t }: Props) {
+export default function ChatInput({ onSend, onStop, isStreaming, disabled, placeholder,
+  selectedModelSupportsVision, selectedModelName, lang, t }: Props) {
   const [text, setText] = useState('')
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [isFocused, setIsFocused] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [previewImage, setPreviewImage] = useState<PreviewImage | null>(null)
+  const [uploadNotice, setUploadNotice] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const autoCleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -105,6 +106,7 @@ export default function ChatInput({ onSend, onStop, isStreaming, disabled, place
   }, [disabled, isStreaming, isProcessing])
 
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false } }, [])
+  useEffect(() => { setUploadNotice('') }, [selectedModelName, selectedModelSupportsVision])
 
   useEffect(() => {
     if (files.length > 0 && files.every(f => f.status === 'parsed')) {
@@ -147,9 +149,22 @@ export default function ChatInput({ onSend, onStop, isStreaming, disabled, place
   // 公共文件上传逻辑（点击选择和拖拽放下共用）
   const uploadFiles = useCallback(async (fileList: File[]) => {
     if (isUploading || isProcessing) return
+    const { acceptedFiles, unsupportedImages } = partitionFilesForModel(
+      fileList.map(file => ({ file, name: file.name })),
+      selectedModelSupportsVision,
+    )
+    if (unsupportedImages.length > 0) {
+      setUploadNotice(t(
+        `当前模型「${selectedModelName}」不支持视觉识别。请先切换到视觉模型，再添加图片。`,
+        `“${selectedModelName}” does not support image recognition. Switch to a vision model before adding images.`,
+      ))
+    } else {
+      setUploadNotice('')
+    }
+    if (acceptedFiles.length === 0) return
     setIsUploading(true)
     // 追加而非替换：支持多次上传，保留已上传的文件
-    setFiles(prev => [...prev, ...fileList.map(f => ({
+    setFiles(prev => [...prev, ...acceptedFiles.map(({ file: f }) => ({
       file: f,
       previewUrl: createImagePreviewUrl(f),
       name: f.name,
@@ -157,7 +172,7 @@ export default function ChatInput({ onSend, onStop, isStreaming, disabled, place
       status: 'uploading' as const,
     }))])
 
-    for (const f of fileList) {
+    for (const { file: f } of acceptedFiles) {
       try {
         const result = await aiDocApi.upload(f)
         setFiles(prev => prev.map(item =>
@@ -205,7 +220,7 @@ export default function ChatInput({ onSend, onStop, isStreaming, disabled, place
       }
     }
     if (mountedRef.current) setIsUploading(false)
-  }, [isUploading, isProcessing, t])
+  }, [isUploading, isProcessing, selectedModelSupportsVision, selectedModelName, t])
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     // 先复制 FileList；随后清空 input 时，浏览器可能同步清空原始 FileList。
@@ -299,6 +314,18 @@ export default function ChatInput({ onSend, onStop, isStreaming, disabled, place
         </div>
       )}
       {/* Processing status bar */}
+      {uploadNotice && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mb-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-[11px]"
+          style={{ color: '#B45309', background: 'rgba(245,158,11,0.09)', borderColor: 'rgba(245,158,11,0.24)' }}
+        >
+          <span aria-hidden="true">⚠</span>
+          <span>{uploadNotice}</span>
+          <button type="button" onClick={() => setUploadNotice('')} className="ml-auto px-1" aria-label={t('关闭提示', 'Dismiss notice')}>×</button>
+        </div>
+      )}
       {isProcessing && (
         <div className="flex items-center justify-center gap-2 py-2 mb-1 text-[11px] rounded-lg"
           style={{ color: 'var(--text-dim)', background: 'rgba(139,92,246,0.04)' }}>

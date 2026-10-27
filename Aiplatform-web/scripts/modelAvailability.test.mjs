@@ -2,13 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { canUseChatModel, selectChatModel } from '../src/utils/modelAvailability.ts'
 
-const model = (displayName, { accessible = true, chatEnabled = true } = {}) => ({
-  modelId: displayName,
+const model = (displayName, { accessible = true, chatEnabled = true, modelCode, supportsVision = 0, modelId } = {}) => ({
+  modelId: modelId ?? displayName,
   displayName,
-  modelCode: displayName.toLowerCase(),
+  modelCode: modelCode ?? displayName.toLowerCase(),
   provider: 'deepseek',
   fixedPoints: 1,
-  supportsVision: 0,
+  supportsVision,
   sortOrder: 0,
   chatEnabled,
   accessible,
@@ -40,4 +40,18 @@ test('no configured and accessible model produces no selection', () => {
     model('missing-key', { chatEnabled: false }),
     model('locked', { accessible: false }),
   ], 'missing-key'), null)
+})
+
+test('models that share a provider model ID remain independently selectable by display name', () => {
+  const textModel = model('DeepSeek-V4-Flash', { modelCode: 'deepseek-flash', modelId: 1 })
+  const visionModel = model('DeepSeek-V4-Flash-Vision-Exp', {
+    modelCode: 'deepseek-flash',
+    modelId: 16,
+    supportsVision: 1,
+  })
+  const models = [textModel, visionModel]
+
+  assert.equal(selectChatModel(models, 'DeepSeek-V4-Flash-Vision-Exp'), visionModel)
+  assert.equal(selectChatModel(models, 'deepseek-v4-flash-vision-exp'), visionModel)
+  assert.equal(selectChatModel(models, 'deepseek-flash'), textModel)
 })

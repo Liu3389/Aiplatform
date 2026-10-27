@@ -586,21 +586,20 @@ export default function ChatMessages({
                                         )}
                                     </div>
 
-                                    {/* 思考耗时（AI 消息完成后显示，流式中由上方动效显示实时计时） */}
-                                    {!isUser && !(isLast && isStreaming) && msg.thinkingTime && msg.thinkingTime > 0 && (
-                                        <div className="flex items-center gap-1 mt-1.5 text-[10px] tabular-nums" style={{ color: 'var(--text-dim)' }}>
-                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <circle cx="12" cy="12" r="10" />
-                                                <polyline points="12 6 12 12 16 14" />
-                                            </svg>
-                                            <span>{t('思考耗时', 'Thinking')} {msg.thinkingTime.toFixed(1)}s</span>
-                                        </div>
-                                    )}
-
-                                    {!isUser && !(isLast && isStreaming) && pointsConsumed > 0 && (
-                                        <div className="flex items-center gap-1 mt-1.5 text-[10px] tabular-nums" style={{ color: 'var(--text-dim)' }}>
-                                            <PointsIcon size={10} color="#F59E0B" variant="solid" />
-                                            <span>{t('本次消耗', 'Consumed')} {pointsConsumed.toFixed(2)} {t('点', 'pts')}</span>
+                                    {/* 完成后的耗时与点数放在同一行，避免消息卡片元信息纵向拉长。 */}
+                                    {!isUser && !(isLast && isStreaming) && ((msg.thinkingTime ?? 0) > 0 || pointsConsumed > 0) && (
+                                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] tabular-nums" style={{ color: 'var(--text-dim)' }}>
+                                            {(msg.thinkingTime ?? 0) > 0 && <span className="inline-flex items-center gap-1">
+                                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                    <circle cx="12" cy="12" r="10" />
+                                                    <polyline points="12 6 12 12 16 14" />
+                                                </svg>
+                                                <span>{t('思考耗时', 'Thinking')} {msg.thinkingTime!.toFixed(1)}s</span>
+                                            </span>}
+                                            {pointsConsumed > 0 && <span className="inline-flex items-center gap-1">
+                                                <PointsIcon size={10} color="#F59E0B" variant="solid" />
+                                                <span>{t('本次消耗', 'Consumed')} {pointsConsumed.toFixed(2)} {t('点', 'pts')}</span>
+                                            </span>}
                                         </div>
                                     )}
 

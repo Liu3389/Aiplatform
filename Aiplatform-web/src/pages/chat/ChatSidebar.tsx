@@ -6,6 +6,7 @@ import { useI18nStore } from '@/stores/i18nStore'
 import { useThemeStore } from '@/stores/themeStore'
 import NotificationBell from '@/components/NotificationBell'
 import { getUserDisplayName } from '@/utils/userDisplay'
+import UserAvatar from '@/components/UserAvatar'
 
 interface Props {
   conversations: FrontendConversation[]
@@ -321,7 +322,7 @@ export default function ChatSidebar({
               </div>
               <div className="flex items-center gap-1 border-t px-3 py-2" style={{ borderColor: 'var(--border-light)' }}>
                 <button type="button" onClick={() => navigate('/user')} className="motion-interactive flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left hover:bg-[var(--hover-bg)]" title={t('个人中心', 'Profile')}>
-                  <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>{userDisplayName[0]?.toUpperCase() || 'U'}</span>
+                  <UserAvatar name={userDisplayName} avatarUrl={user?.avatarUrl} className="h-7 w-7 text-[10px] font-bold text-white" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }} />
                   <span className="min-w-0">
                     <span className="block truncate text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }} title={userDisplayName}>{userDisplayName || t('当前账户', 'Account')}</span>
                     <span className="block truncate text-[9px]" style={{ color: 'var(--text-dim)' }}>{user?.membership || t('个人工作区', 'Personal workspace')}</span>

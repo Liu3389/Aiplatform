@@ -1,0 +1,54 @@
+# =============================================================================
+# 凌点 AI 平台 - 本地开发环境 (Docker)
+# 仅启动基础设施: MySQL + Redis, 后端/前端在本机原生运行(便于热重载)
+#
+# 用法:
+#   docker-compose up -d          # 启动 MySQL + Redis
+#   docker-compose down           # 停止(保留数据)
+#   docker-compose down -v        # 停止并删除数据(重新初始化)
+# =============================================================================
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: lingdian-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_gateway}
+      TZ: Asia/Shanghai
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 首次启动自动执行建表+测试数据脚本(仅数据目录为空时触发)
+      - ./Aiplatform-demo/src/main/resources/sql/rebuild.sql:/docker-entrypoint-initdb.d/01-rebuild.sql:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD:-123456}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: lingdian-redis
+    restart: unless-stopped
+    ports:
+      # 容器内 6379, 映射到宿主机 6380 (与 application.yml 默认端口一致)
+      - "${REDIS_PORT:-6380}:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  mysql-data:
+  redis-data:

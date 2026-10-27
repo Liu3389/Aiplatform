@@ -113,6 +113,43 @@ class OpenAiChatServiceModelAccessTest {
     }
 
     @Test
+    void imageRequestWithTextOnlyModelIsRejectedBeforeBilling() {
+        PlatformModelConfig textModel = restrictedModel(0);
+        when(platformModelService.getByDisplayName("text-model")).thenReturn(textModel);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> chatService.chat(77L, requestWithImage("text-model")));
+
+        assertTrue(exception.getMessage().contains("不支持视觉识别"));
+        verify(pointsService, never()).preDeductPoints(eq(77L), anyString(), anyString());
+        verifyNoInteractions(billingSettlementCoordinator, callLogService, chatMessageService,
+                springAiClientFactory, chatExecutor);
+    }
+
+    @Test
+    void selectedVisionModelUsesResolvedServerKeyAndItsOwnApiAddress() {
+        PlatformModelConfig visionModel = restrictedModel(0);
+        visionModel.setDisplayName("DeepSeek-V4-Flash-Vision-Exp");
+        visionModel.setProvider("deepseek");
+        visionModel.setActualModel("deepseek-flash");
+        visionModel.setBaseUrl("https://api.deepseek.com");
+        visionModel.setApiKey(" ");
+        visionModel.setSupportsVision(1);
+        when(platformModelService.getByDisplayName("DeepSeek-V4-Flash-Vision-Exp")).thenReturn(visionModel);
+        when(platformModelService.resolveApiKey(visionModel)).thenReturn("server-only-test-key");
+
+        ChatRequest imageRequest = requestWithImage("DeepSeek-V4-Flash-Vision-Exp");
+        OpenAiChatService.ChatConfig config = ReflectionTestUtils.invokeMethod(
+                chatService, "resolveChatConfig", imageRequest, 77L);
+        OpenAiChatService.ChatConfig imageConfig = ReflectionTestUtils.invokeMethod(
+                chatService, "resolveVisionConfigIfNeeded", imageRequest, config);
+
+        assertEquals("server-only-test-key", imageConfig.apiKey);
+        assertEquals("https://api.deepseek.com", imageConfig.baseUrl);
+        assertEquals("deepseek-flash", imageConfig.model);
+    }
+
+    @Test
     void higherTierUserPassesAccessGateButInsufficientPointsStillStopTheRequest() {
         UserSubscription subscription = new UserSubscription();
         subscription.setPackageId(8L);
@@ -204,6 +241,19 @@ class OpenAiChatServiceModelAccessTest {
         ChatRequest.ChatMessage message = new ChatRequest.ChatMessage();
         message.setRole("user");
         message.setContent("hello");
+        request.setMessages(List.of(message));
+        return request;
+    }
+
+    private static ChatRequest requestWithImage(String model) {
+        ChatRequest request = new ChatRequest();
+        request.setModel(model);
+        ChatRequest.ChatMessage message = new ChatRequest.ChatMessage();
+        message.setRole("user");
+        message.setContent(List.of(
+                java.util.Map.of("type", "text", "text", "What is shown?"),
+                java.util.Map.of("type", "image_url", "image_url", java.util.Map.of("url", "data:image/png;base64,AA=="))
+        ));
         request.setMessages(List.of(message));
         return request;
     }

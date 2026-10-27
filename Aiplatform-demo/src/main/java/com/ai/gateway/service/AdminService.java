@@ -3,9 +3,14 @@ package com.ai.gateway.service;
 import com.ai.gateway.entity.ApiKey;
 import com.ai.gateway.entity.PlatformStatistics;
 import com.ai.gateway.entity.User;
+import com.ai.gateway.entity.UserContactVerification;
+import com.ai.gateway.entity.UserOAuthIdentity;
 import com.ai.gateway.entity.UserSubscription;
+import com.ai.gateway.dto.AdminUpdateUserProfileRequest;
+import com.ai.gateway.exception.BusinessException;
 import com.ai.gateway.mapper.*;
 import com.ai.gateway.util.DataMaskUtil;
+import com.ai.gateway.vo.AdminUserDetailVO;
 import com.ai.gateway.vo.SystemStatsVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -32,6 +37,9 @@ public class AdminService {
     private final ApiKeyMapper apiKeyMapper;
     private final CallLogMapper callLogMapper;
     private final UserMapper userMapper;
+    private final UserOAuthIdentityMapper userOAuthIdentityMapper;
+    private final UserContactVerificationMapper contactVerificationMapper;
+    private final OssService ossService;
     private final PointsService pointsService;
     private final StringRedisTemplate redisTemplate;
     private final PlatformStatisticsMapper platformStatisticsMapper;
@@ -156,6 +164,103 @@ public class AdminService {
         return vo;
     }
 
+    public AdminUserDetailVO getAdminUserDetail(Long userId) {
+        User user = userService.getUserEntityById(userId);
+        com.ai.gateway.vo.UserInfoVO profile = userService.getUserInfo(userId);
+        AdminUserDetailVO detail = new AdminUserDetailVO();
+        detail.setId(user.getId());
+        detail.setUsername(user.getUsername());
+        detail.setNickname(user.getNickname());
+        detail.setDisplayName(user.getNickname() != null && !user.getNickname().isBlank()
+                ? user.getNickname() : profile.getDisplayName());
+        detail.setAvatarUrl(profile.getAvatarUrl());
+        detail.setCustomAvatar(profile.isCustomAvatar());
+        detail.setEmail(user.getEmail());
+        detail.setEmailVerified(profile.isEmailVerified());
+        detail.setPhone(user.getPhone());
+        detail.setPhoneVerified(profile.isPhoneVerified());
+        detail.setBalance(user.getBalance());
+        detail.setPoints(user.getPoints());
+        detail.setRole(user.getRole());
+        detail.setStatus(user.getStatus() == 1 ? "ACTIVE" : "DISABLED");
+        detail.setMembership(user.getMembership() == null ? "free" : user.getMembership());
+        detail.setMembershipExpireTime(user.getMembershipExpireTime());
+        detail.setLastLoginTime(user.getLastLoginTime());
+        detail.setCreateTime(user.getCreateTime());
+
+        LambdaQueryWrapper<ApiKey> keyWrapper = new LambdaQueryWrapper<>();
+        keyWrapper.eq(ApiKey::getUserId, userId);
+        detail.setApiKeyCount(apiKeyMapper.selectCount(keyWrapper).intValue());
+        Map<String, Object> callStats = callLogMapper.getUserCallStatsSingle(userId);
+        detail.setTotalCalls(callStats == null ? 0L : ((Number) callStats.get("calls")).longValue());
+        detail.setTotalPointsConsumed(callStats == null ? BigDecimal.ZERO : new BigDecimal(callStats.get("points").toString()));
+        detail.setOauthAccounts(userOAuthIdentityMapper.selectByUserId(userId).stream().map(identity -> {
+            AdminUserDetailVO.OAuthAccount item = new AdminUserDetailVO.OAuthAccount();
+            item.setProvider(identity.getProvider());
+            item.setDisplayName(identity.getDisplayName());
+            item.setEmail(identity.getEmail());
+            item.setAvatarUrl(identity.getAvatarUrl());
+            item.setCreateTime(identity.getCreateTime());
+            return item;
+        }).collect(Collectors.toList()));
+        return detail;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public List<String> updateUserProfile(AdminUpdateUserProfileRequest request) {
+        User user = userMapper.selectById(request.getUserId());
+        if (user == null) throw new BusinessException(com.ai.gateway.common.ResultCode.USER_NOT_FOUND);
+
+        String nickname = request.getNickname() == null ? null : request.getNickname().trim();
+        if (nickname != null && nickname.isEmpty()) nickname = null;
+        String email = request.getEmail() == null ? null : request.getEmail().trim().toLowerCase(Locale.ROOT);
+        if (email != null && email.isEmpty()) email = null;
+        String phone = request.getPhone() == null ? null : request.getPhone().trim();
+        if (phone != null && phone.isEmpty()) phone = null;
+
+        if (email != null && userMapper.selectCount(new LambdaQueryWrapper<User>()
+                .eq(User::getEmail, email).ne(User::getId, user.getId())) > 0) {
+            throw new BusinessException(com.ai.gateway.common.ResultCode.PARAM_ERROR.getCode(), "该邮箱已绑定其他账户");
+        }
+        if (phone != null && userMapper.selectCount(new LambdaQueryWrapper<User>()
+                .eq(User::getPhone, phone).ne(User::getId, user.getId())) > 0) {
+            throw new BusinessException(com.ai.gateway.common.ResultCode.PARAM_ERROR.getCode(), "该手机号已绑定其他账户");
+        }
+
+        List<String> changedFields = new ArrayList<>();
+        com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<User> update =
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<User>().eq(User::getId, user.getId());
+        if (!Objects.equals(user.getNickname(), nickname)) {
+            update.set(User::getNickname, nickname);
+            changedFields.add("nickname");
+        }
+        boolean emailChanged = !Objects.equals(user.getEmail(), email);
+        if (emailChanged) {
+            update.set(User::getEmail, email);
+            changedFields.add("email");
+        }
+        boolean phoneChanged = !Objects.equals(user.getPhone(), phone);
+        if (phoneChanged) {
+            update.set(User::getPhone, phone);
+            changedFields.add("phone");
+        }
+        if (changedFields.isEmpty()) return changedFields;
+        update.set(User::getUpdateTime, LocalDateTime.now());
+        userMapper.update(null, update);
+
+        UserContactVerification verified = contactVerificationMapper.selectById(user.getId());
+        if (verified != null && (emailChanged || phoneChanged)) {
+            com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<UserContactVerification> verificationUpdate =
+                    new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<UserContactVerification>()
+                            .eq(UserContactVerification::getUserId, user.getId());
+            if (emailChanged) verificationUpdate.set(UserContactVerification::getEmail, null);
+            if (phoneChanged) verificationUpdate.set(UserContactVerification::getPhone, null);
+            verificationUpdate.set(UserContactVerification::getUpdatedAt, LocalDateTime.now());
+            contactVerificationMapper.update(null, verificationUpdate);
+        }
+        return changedFields;
+    }
+
     public List<Map<String, Object>> getDailyUsage(int days) {
         LocalDate today = LocalDate.now();
         LocalDate startDate = today.minusDays(days - 1);
@@ -227,8 +332,36 @@ public class AdminService {
 
     public List<Map<String, Object>> getTopUsers() {
         List<Map<String, Object>> result = callLogMapper.getTopUsersByPoints(10);
+        List<Long> userIds = result.stream()
+                .map(item -> item.get("userId"))
+                .filter(Objects::nonNull)
+                .map(value -> ((Number) value).longValue())
+                .distinct()
+                .collect(Collectors.toList());
+        Map<Long, User> usersById = userIds.isEmpty() ? Collections.emptyMap() :
+                userMapper.selectBatchIds(userIds).stream().collect(Collectors.toMap(User::getId, user -> user));
+        Map<Long, List<UserOAuthIdentity>> identitiesByUser = userIds.isEmpty() ? Collections.emptyMap() :
+                userOAuthIdentityMapper.selectByUserIds(userIds).stream()
+                        .collect(Collectors.groupingBy(UserOAuthIdentity::getUserId));
         for (int i = 0; i < result.size(); i++) {
-            result.get(i).put("rank", i + 1);
+            Map<String, Object> item = result.get(i);
+            Long userId = item.get("userId") == null ? null : ((Number) item.get("userId")).longValue();
+            User user = userId == null ? null : usersById.get(userId);
+            List<UserOAuthIdentity> identities = userId == null ? Collections.emptyList() :
+                    identitiesByUser.getOrDefault(userId, Collections.emptyList());
+            String displayName = user != null && user.getNickname() != null && !user.getNickname().isBlank()
+                    ? user.getNickname()
+                    : identities.stream().map(UserOAuthIdentity::getDisplayName)
+                            .filter(value -> value != null && !value.isBlank()).findFirst()
+                            .orElse((String) item.get("username"));
+            String avatar = user == null ? null : user.getAvatarUrl();
+            if (avatar == null || avatar.isBlank()) {
+                avatar = identities.stream().map(UserOAuthIdentity::getAvatarUrl)
+                        .filter(value -> value != null && !value.isBlank()).findFirst().orElse(null);
+            }
+            item.put("displayName", displayName);
+            item.put("avatarUrl", ossService.toAccessibleUrl(avatar));
+            item.put("rank", i + 1);
         }
         return result;
     }
@@ -394,11 +527,18 @@ public class AdminService {
                                                     String startDate, String endDate) {
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         
-        // 搜索条件（用户名或ID）
+        // 搜索平台昵称、登录名、邮箱、手机号、ID 与已绑定的第三方资料。
         if (search != null && !search.isEmpty()) {
-            wrapper.and(w -> w.like(User::getUsername, search)
-                             .or()
-                             .eq(User::getId, tryParseLong(search)));
+            List<Long> oauthMatches = userOAuthIdentityMapper.searchUserIds(search);
+            long parsedId = search.matches("\\d+") ? tryParseLong(search) : -1L;
+            wrapper.and(w -> {
+                w.like(User::getUsername, search)
+                        .or().like(User::getNickname, search)
+                        .or().like(User::getEmail, search)
+                        .or().like(User::getPhone, search)
+                        .or().eq(User::getId, parsedId);
+                if (!oauthMatches.isEmpty()) w.or().in(User::getId, oauthMatches);
+            });
         }
         
         // 会员等级筛选
@@ -453,6 +593,8 @@ public class AdminService {
             Map<String, Object> item = new HashMap<>();
             item.put("id", user.getId());
             item.put("username", user.getUsername());
+            item.put("nickname", user.getNickname());
+            item.put("phone", DataMaskUtil.maskPhone(user.getPhone()));
             item.put("email", DataMaskUtil.maskEmail(user.getEmail()));
             item.put("balance", user.getBalance());
             item.put("points", user.getPoints());
@@ -466,6 +608,35 @@ public class AdminService {
             item.put("createTime", user.getCreateTime() != null ? user.getCreateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null);
             return item;
         }).collect(Collectors.toList());
+
+        if (!userIds.isEmpty()) {
+            Map<Long, Integer> apiKeyCountsByUser = new HashMap<>();
+            for (Map<String, Object> row : apiKeyMapper.countApiKeysByUserIds(userIds)) {
+                apiKeyCountsByUser.put(((Number) row.get("user_id")).longValue(), ((Number) row.get("count")).intValue());
+            }
+            List<UserOAuthIdentity> identities = userOAuthIdentityMapper.selectByUserIds(userIds);
+            Map<Long, List<UserOAuthIdentity>> identitiesByUser = identities.stream()
+                    .collect(Collectors.groupingBy(UserOAuthIdentity::getUserId));
+            Map<Long, User> usersById = result.getRecords().stream().collect(Collectors.toMap(User::getId, user -> user));
+            for (Map<String, Object> item : users) {
+                Long userId = ((Number) item.get("id")).longValue();
+                item.put("apiKeyCount", apiKeyCountsByUser.getOrDefault(userId, 0));
+                List<UserOAuthIdentity> accounts = identitiesByUser.getOrDefault(userId, Collections.emptyList());
+                User user = usersById.get(userId);
+                String avatar = user == null ? null : user.getAvatarUrl();
+                if (avatar == null || avatar.isBlank()) {
+                    avatar = accounts.stream().map(UserOAuthIdentity::getAvatarUrl)
+                            .filter(value -> value != null && !value.isBlank()).findFirst().orElse(null);
+                }
+                item.put("avatarUrl", ossService.toAccessibleUrl(avatar));
+                item.put("displayName", user != null && user.getNickname() != null && !user.getNickname().isBlank()
+                        ? user.getNickname()
+                        : accounts.stream().map(UserOAuthIdentity::getDisplayName)
+                                .filter(value -> value != null && !value.isBlank()).findFirst()
+                                .orElse(user == null ? null : user.getUsername()));
+                item.put("oauthProviders", accounts.stream().map(UserOAuthIdentity::getProvider).distinct().collect(Collectors.toList()));
+            }
+        }
 
         Map<String, Object> pageResult = new HashMap<>();
         pageResult.put("records", users);

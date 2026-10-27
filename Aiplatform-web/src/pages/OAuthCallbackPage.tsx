@@ -6,6 +6,17 @@ import { motion } from 'framer-motion'
 import { runOnceWhilePending } from '@/utils/runOnceWhilePending'
 import { oauthCallbackErrorMessage } from '@/utils/oauthCallbackError'
 
+type OAuthSession = {
+  token: string
+  userInfo: {
+    id: number
+    username: string
+    displayName?: string | null
+    avatarUrl?: string | null
+  }
+  firstLogin?: boolean
+}
+
 export default function OAuthCallbackPage() {
   const [searchParams] = useSearchParams()
   const [error, setError] = useState('')
@@ -14,15 +25,24 @@ export default function OAuthCallbackPage() {
   const [challengeToken, setChallengeToken] = useState('')
   const [twoFactorCode, setTwoFactorCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [welcomeProfile, setWelcomeProfile] = useState<{ displayName: string; avatarUrl: string | null } | null>(null)
   const { setToken, setUserId, fetchUserInfo } = useAppStore()
   const navigate = useNavigate()
 
-  const finishLogin = async (data: { token: string; userInfo: { id: number } }) => {
+  const finishLogin = async (data: OAuthSession, provider?: string) => {
     setToken(data.token)
     setUserId(data.userInfo.id)
     await fetchUserInfo()
     localStorage.removeItem('oauth_provider')
     localStorage.removeItem('oauth_return_to')
+    if (provider === 'qq' && data.firstLogin) {
+      setWelcomeProfile({
+        displayName: data.userInfo.displayName?.trim() || data.userInfo.username,
+        avatarUrl: data.userInfo.avatarUrl || null,
+      })
+      setStatus('登录成功')
+      return
+    }
     setStatus('登录成功，正在跳转…')
     setTimeout(() => navigate('/chat', { replace: true }), 500)
   }
@@ -30,7 +50,9 @@ export default function OAuthCallbackPage() {
   useEffect(() => {
     let active = true
     const handleCallback = async () => {
-      const provider = localStorage.getItem('oauth_provider')
+      const provider = searchParams.get('provider') || (() => {
+        try { return localStorage.getItem('oauth_provider') } catch { return null }
+      })()
       const code = searchParams.get('code')
       const state = searchParams.get('state')
       const providerError = searchParams.get('error')
@@ -39,26 +61,31 @@ export default function OAuthCallbackPage() {
         window.history.replaceState({}, document.title, window.location.pathname)
       }
 
-      if (providerError || !provider || !code || !state) {
+      if (providerError || !code || !state) {
         if (active) {
+          const providerName = provider === 'qq' ? 'QQ' : provider === 'google' ? 'Google' : '第三方'
           setError(providerError
-            ? 'Google 授权未完成或已取消，请返回登录页重新发起。'
-            : '授权信息不完整或已过期，请返回登录页重新发起 Google 登录。')
-          localStorage.removeItem('oauth_provider')
+            ? `${providerName} 授权未完成或已取消，请返回登录页重新发起。`
+            : `授权信息不完整或已过期，请返回登录页重新发起${providerName}登录。`)
+          try { localStorage.removeItem('oauth_provider') } catch {}
         }
         return
       }
 
       try {
-        const data = await runOnceWhilePending(`oauth:${provider}:${state}`, () =>
+        const data = await runOnceWhilePending(`oauth:${provider || 'auto'}:${state}`, () =>
           authApi.oauthCallback(provider, code, state),
         )
         if (!active) return
-        localStorage.removeItem('oauth_provider')
+        const resolvedProvider = data.provider || provider || undefined
+        try { localStorage.removeItem('oauth_provider') } catch {}
         if (data.mode === 'bind') {
           setStatus('第三方账号绑定成功，正在返回…')
-          const returnTo = localStorage.getItem('oauth_return_to')
-          localStorage.removeItem('oauth_return_to')
+          let returnTo: string | null = null
+          try {
+            returnTo = localStorage.getItem('oauth_return_to')
+            localStorage.removeItem('oauth_return_to')
+          } catch {}
           const safeReturnTo = returnTo?.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/chat'
           setTimeout(() => navigate(safeReturnTo, { replace: true }), 500)
           return
@@ -66,15 +93,17 @@ export default function OAuthCallbackPage() {
         if (data.requiresTwoFactor && data.challengeToken) {
           setChallengeToken(data.challengeToken)
           setRequiresTwoFactor(true)
-          setStatus('Google 身份已验证，请完成二次验证。')
+          setStatus(`${resolvedProvider === 'qq' ? 'QQ' : resolvedProvider === 'google' ? 'Google' : '第三方'}身份已验证，请完成二次验证。`)
           return
         }
         if (!data.token || !data.userInfo) throw new Error('登录响应缺少会话信息')
-        await finishLogin(data as { token: string; userInfo: { id: number } })
+        await finishLogin(data as OAuthSession, resolvedProvider)
       } catch (err) {
         if (!active) return
-        localStorage.removeItem('oauth_provider')
-        localStorage.removeItem('oauth_return_to')
+        try {
+          localStorage.removeItem('oauth_provider')
+          localStorage.removeItem('oauth_return_to')
+        } catch {}
         setError(oauthCallbackErrorMessage(err))
       }
     }
@@ -124,6 +153,36 @@ export default function OAuthCallbackPage() {
               {submitting ? '验证中…' : '验证并登录'}
             </button>
           </form>
+        ) : welcomeProfile ? (
+          <div className="space-y-5">
+            {welcomeProfile.avatarUrl ? (
+              <img
+                src={welcomeProfile.avatarUrl}
+                alt={`${welcomeProfile.displayName} 的 QQ 头像`}
+                className="mx-auto h-20 w-20 rounded-full border border-white/10 object-cover"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-violet-600 text-2xl font-semibold text-white" aria-hidden="true">
+                {welcomeProfile.displayName.slice(0, 1).toUpperCase()}
+              </div>
+            )}
+            <div className="space-y-2">
+              <p className="text-xs font-medium tracking-[0.18em] text-violet-300">欢迎来到凌点 AI</p>
+              <h1 className="text-xl font-semibold text-white">{welcomeProfile.displayName}</h1>
+              <p className="text-sm leading-6 text-neutral-400">你的账号已创建，可以开始使用 AI 工作区。</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-neutral-300">
+              登录方式：<span className="font-semibold text-white">QQ 登录</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/chat', { replace: true })}
+              className="w-full rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white transition hover:bg-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:ring-offset-2 focus:ring-offset-[#0B1020]"
+            >
+              进入 AI 工作区
+            </button>
+          </div>
         ) : error ? (
           <div className="space-y-4">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-rose-400/20 bg-rose-400/10 text-rose-300" aria-hidden="true">
@@ -132,10 +191,10 @@ export default function OAuthCallbackPage() {
                 <path d="M12 8v4m0 4h.01" />
               </svg>
             </div>
-            <h1 className="text-white font-semibold">无法完成 Google 登录</h1>
+            <h1 className="text-white font-semibold">无法完成第三方登录</h1>
             <p role="alert" className="text-accent-rose text-sm leading-6">{error}</p>
             <p className="text-neutral-400 text-xs leading-5">
-              授权状态只能使用一次。请重新发起登录；如果仍然失败，请联系管理员检查 Google 登录服务连接。
+              授权状态只能使用一次。请重新发起登录；如果仍然失败，请联系管理员检查对应的第三方登录服务连接。
             </p>
             <button
               type="button"

@@ -7,7 +7,7 @@ import {
 import { useAppStore } from '../stores/appStore'
 import { useToastStore } from '../stores/toastStore'
 
-type ProviderKey = 'google'
+type ProviderKey = 'qq' | 'google'
 
 interface OAuthItem {
   provider: ProviderKey
@@ -24,10 +24,11 @@ interface LoginDevice {
 }
 
 const OAUTH_PROVIDERS: { key: ProviderKey; label: string }[] = [
+  { key: 'qq', label: 'QQ' },
   { key: 'google', label: 'Google' },
 ]
 
-function SecurityPage() {
+function SecurityPage({ embedded = false }: { embedded?: boolean }) {
   const navigate = useNavigate()
   const { token, user, fetchUserInfo, logout } = useAppStore()
   const { showToast } = useToastStore()
@@ -406,7 +407,7 @@ function SecurityPage() {
   ] as const
 
   return (
-    <div className="page-scroll security-page h-full max-w-5xl mx-auto overflow-y-auto px-3 py-5 pb-24 sm:px-6 sm:py-8 sm:pb-8">
+    <div className={embedded ? 'security-page min-w-0' : 'page-scroll security-page h-full max-w-5xl mx-auto overflow-y-auto px-3 py-5 pb-24 sm:px-6 sm:py-8 sm:pb-8'}>
       <div className="mb-6">
         <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>账户安全</h2>
         <p className="mt-1 text-sm" style={{ color: 'var(--text-dim)' }}>管理登录方式、验证联系方式和当前会话。</p>
@@ -517,7 +518,7 @@ function SecurityPage() {
       {tab === 'bind' && (
         <div className="space-y-6">
           <h3 className="text-lg font-semibold mb-2">第三方绑定</h3>
-          {oauthState === 'loading' && <p className="text-sm text-gray-500" role="status">正在读取 Google 绑定状态…</p>}
+          {oauthState === 'loading' && <p className="text-sm text-gray-500" role="status">正在读取第三方绑定状态…</p>}
           {oauthState === 'error' && (
             <div className="flex flex-wrap items-center gap-3 rounded-xl border p-4 text-sm" role="alert">
               <span>{oauthError}</span>
@@ -902,7 +903,7 @@ function SecurityPage() {
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">停用后你将立即退出，且无法继续登录或使用 API。</p>
           </div>
           <div className="rounded-xl bg-white/70 p-4 text-sm leading-6 text-gray-700 dark:bg-black/10 dark:text-gray-300">
-            此操作会撤销所有登录会话。账号资料、手机号与 Google 绑定、历史对话、文件和账务记录会保留；停用不等同于删除账号，数据删除范围仍待确认。
+            此操作会撤销所有登录会话。账号资料、手机号与第三方账号绑定、历史对话、文件和账务记录会保留；停用不等同于删除账号，数据删除范围仍待确认。
           </div>
           <label className="block space-y-1.5 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
             当前密码

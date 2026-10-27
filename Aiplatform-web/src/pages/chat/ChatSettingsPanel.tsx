@@ -88,15 +88,15 @@ export default function ChatSettingsPanel(props: Props) {
             {props.availableModels.length === 0 ? (
               <div className="text-xs py-2" style={{ color: tx.m }}>{props.t('加载中...', 'Loading...')}</div>
             ) : props.availableModels.map((m) => {
-              const modelCode = m.modelCode || m.displayName
-              const isSelected = modelCode === props.model
+              const modelKey = m.displayName || m.modelCode
+              const isSelected = modelKey === props.model
               const isLocked = !m.accessible
               const isUnavailable = !m.chatEnabled
               const isDisabled = !canUseChatModel(m)
               return (
                 <button
                   key={m.modelId}
-                  onClick={() => { if (!isDisabled) props.onModelChange(modelCode) }}
+                  onClick={() => { if (!isDisabled) props.onModelChange(modelKey) }}
                   disabled={isDisabled}
                   className={`w-full text-left px-3 py-2 rounded-xl transition-all ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                   style={{

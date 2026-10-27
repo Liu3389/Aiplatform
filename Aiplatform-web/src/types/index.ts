@@ -1,6 +1,9 @@
 export interface UserInfo {
   id: number
   username: string
+  displayName?: string | null
+  avatarUrl?: string | null
+  customAvatar?: boolean
   email: string | null
   emailVerified: boolean
   phone: string | null

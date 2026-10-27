@@ -21,6 +21,12 @@ public class User implements Serializable {
 
     private String username;
 
+    /** 用户在平台内展示的昵称，不影响用户名/邮箱登录标识。 */
+    private String nickname;
+
+    /** 用户自定义头像的存储引用；未设置时回退到第三方登录头像。 */
+    private String avatarUrl;
+
     private String password;
 
     private String email;

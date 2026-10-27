@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect, useCallback, useId } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { chatApi } from '@/services/api'
 import { useAppStore } from '@/stores/appStore'
+import PlatformMark from '@/components/PlatformMark'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { motion } from 'framer-motion'
 
@@ -19,7 +20,6 @@ function saveHistory(msgs: ChatMsg[]) {
 }
 
 export default function ChatPanel() {
-  const gradientId = useId().replace(/:/g, '')
   const { token } = useAppStore()
   const [messages, setMessages] = useState<ChatMsg[]>(() => loadHistory())
   const [input, setInput] = useState('')
@@ -93,12 +93,7 @@ export default function ChatPanel() {
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-purple/20 to-brand-blue/10 border border-brand-purple/20 flex items-center justify-center mb-4">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={`url(#${gradientId})`} strokeWidth="1.5">
-                <defs><linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#8B5CF6"/><stop offset="100%" stopColor="#3B82F6"/></linearGradient></defs>
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-              </svg>
-            </div>
+            <PlatformMark className="mb-4 h-16 w-16 rounded-2xl" />
             <p className="text-sm text-neutral-400 mb-1">AI Chat Studio</p>
             <p className="text-xs text-neutral-600 mb-6">流式对话 · 自动保存 · 快捷键支持</p>
             <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-[10px] text-neutral-600 mb-1">

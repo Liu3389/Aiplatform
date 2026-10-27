@@ -1,0 +1,352 @@
+.admin-data-table {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: visible;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.admin-data-table__toolbar {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-color);
+  padding: 6px 10px;
+  background: var(--bg-card);
+}
+
+.admin-data-table__tool,
+.admin-data-table__reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 6px 9px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.admin-data-table__tool:hover,
+.admin-data-table__reset:hover {
+  border-color: var(--accent-purple);
+  color: var(--accent-purple);
+}
+
+.admin-data-table__column-menu,
+.admin-data-table__filter-popover,
+.admin-data-table__mobile-filter-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 7px);
+  right: 0;
+  width: 220px;
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+  padding: 10px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: 0 14px 36px rgba(15, 23, 42, .18);
+}
+
+.admin-data-table__menu-title,
+.admin-data-table__filter-popover strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.admin-data-table__column-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.admin-data-table__column-option input {
+  accent-color: var(--accent-purple);
+}
+
+.admin-data-table__reset {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.admin-data-table__mobile-filter-control {
+  display: none;
+}
+
+.admin-data-table__mobile-filter-field {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.admin-data-table__mobile-filter-field input {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  padding: 7px 8px;
+  outline: none;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.admin-data-table__viewport {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  scrollbar-width: none;
+}
+
+.admin-data-table__viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-data-table__viewport table {
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 11px;
+}
+
+.admin-data-table__viewport thead {
+  position: sticky;
+  z-index: 10;
+  top: 0;
+}
+
+.admin-data-table__viewport th {
+  position: relative;
+  height: 36px;
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 10px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  text-align: left;
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.admin-data-table__header-cell {
+  position: relative;
+  display: flex;
+  height: 100%;
+  align-items: center;
+  gap: 5px;
+  overflow: visible;
+}
+
+.admin-data-table__filter {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.admin-data-table__filter:hover,
+.admin-data-table__filter.is-active {
+  background: color-mix(in srgb, var(--accent-purple) 12%, transparent);
+  color: var(--accent-purple);
+}
+
+.admin-data-table__filter-popover {
+  top: calc(100% + 3px);
+  left: 0;
+  right: auto;
+  width: 230px;
+  white-space: normal;
+}
+
+.admin-data-table__filter-popover input {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  padding: 7px 8px;
+  outline: none;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.admin-data-table__filter-popover input:focus {
+  border-color: var(--accent-purple);
+}
+
+.admin-data-table__filter-popover > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.admin-data-table__filter-popover > div button {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.admin-data-table__filter-popover > div button.is-primary {
+  border-color: var(--accent-purple);
+  background: var(--accent-purple);
+  color: #fff;
+}
+
+.admin-data-table__resize {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: -5px;
+  width: 10px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.admin-data-table__resize::after {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 4px;
+  width: 1px;
+  background: var(--border-color);
+  content: '';
+}
+
+.admin-data-table__resize:hover::after {
+  width: 2px;
+  background: var(--accent-purple);
+}
+
+.admin-data-table__viewport td {
+  height: 38px;
+  overflow: hidden;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  padding: 5px 10px;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-data-table__viewport tbody tr:hover td {
+  background: var(--bg-hover);
+}
+
+.admin-data-table__viewport tbody tr.is-clickable {
+  cursor: pointer;
+}
+
+.admin-data-table__empty {
+  height: 128px !important;
+  color: var(--text-muted) !important;
+  text-align: center;
+}
+
+.admin-data-table__filter-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--border-color);
+  padding: 7px 10px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.admin-data-table__filter-summary button {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 3px 6px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.admin-data-table__filter-summary button.clear {
+  margin-left: auto;
+  border-color: transparent;
+  background: transparent;
+  color: var(--accent-purple);
+}
+
+@media (max-width: 640px) {
+  .admin-data-table__toolbar { min-width: 0; gap: 6px; }
+  .admin-data-table__mobile-filter-control { display: block; }
+  .admin-data-table__mobile-filter-menu {
+    position: absolute;
+    z-index: 80;
+    top: calc(100% + 6px);
+    right: 0;
+    width: min(290px, calc(100vw - 24px));
+    max-height: min(65vh, 480px);
+    overflow: auto;
+  }
+  .admin-data-table__viewport { overflow: visible; }
+  .admin-data-table__viewport table { display: block; width: 100% !important; table-layout: auto; }
+  .admin-data-table__viewport colgroup,
+  .admin-data-table__viewport thead { display: none; }
+  .admin-data-table__viewport tbody { display: grid; gap: 8px; padding: 8px; }
+  .admin-data-table__viewport tbody tr {
+    display: block;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-card);
+  }
+  .admin-data-table__viewport tbody tr:hover td { background: transparent; }
+  .admin-data-table__viewport td {
+    display: grid;
+    grid-template-columns: minmax(76px, 30%) minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    width: auto !important;
+    min-height: 32px;
+    height: auto;
+    overflow: visible;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+    padding: 6px 9px;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .admin-data-table__viewport td:last-child { border-bottom: 0; }
+  .admin-data-table__viewport td::before {
+    color: var(--text-muted);
+    content: attr(data-label);
+    font-size: 9px;
+    font-weight: 600;
+  }
+  .admin-data-table__viewport td > * { min-width: 0; }
+  .admin-data-table__viewport .admin-data-table__empty { display: block; }
+}

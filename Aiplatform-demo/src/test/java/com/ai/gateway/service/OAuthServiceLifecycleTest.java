@@ -41,6 +41,7 @@ class OAuthServiceLifecycleTest {
     @Autowired private AuthController authController;
 
     @MockBean private GoogleOidcClient googleOidcClient;
+    @MockBean private QQConnectClient qqConnectClient;
 
     @BeforeEach
     void configureLocalGoogleProvider() {
@@ -48,6 +49,35 @@ class OAuthServiceLifecycleTest {
         when(googleOidcClient.isConfigured()).thenReturn(true);
         when(googleOidcClient.authorizationUrl(anyString(), anyString(), anyString()))
                 .thenAnswer(invocation -> "https://accounts.google.com/oauth?state=" + invocation.getArgument(0));
+        reset(qqConnectClient);
+        when(qqConnectClient.isConfigured()).thenReturn(true);
+        when(qqConnectClient.authorizationUrl(anyString()))
+                .thenAnswer(invocation -> "https://graph.qq.com/oauth2.0/authorize?state=" + invocation.getArgument(0));
+    }
+
+    @Test
+    void qqLoginCreatesProviderScopedAccountAndKeepsTheIdentityBound() {
+        String subject = "local-qq-openid-" + System.nanoTime();
+        when(qqConnectClient.exchange(eq("qq-one-time-code")))
+                .thenReturn(new QQConnectClient.QQIdentity(subject, "本地 QQ 用户", "https://q.qlogo.cn/avatar.png"));
+
+        String browser = oauthService.newBrowserBinding();
+        Map<String, String> authorization = oauthService.begin("qq", "login", null, browser);
+        assertTrue(authorization.get("url").contains("state="));
+        OAuthService.OAuthLoginResult result = oauthService.complete("qq", "qq-one-time-code", authorization.get("state"), browser);
+
+        assertEquals("login", result.mode());
+        assertTrue(result.firstLogin());
+        assertFalse(result.requiresTwoFactor());
+        assertEquals("oauth_qq_" + subjectHashPrefix(subject), result.userInfo().getUsername());
+        assertNull(result.userInfo().getEmail());
+        assertEquals("本地 QQ 用户", result.userInfo().getDisplayName());
+        assertEquals("https://q.qlogo.cn/avatar.png", result.userInfo().getAvatarUrl());
+        UserOAuthIdentity stored = identityMapper.selectByProviderSubject("qq", subject);
+        assertEquals(result.userId(), stored.getUserId());
+        assertEquals("本地 QQ 用户", stored.getDisplayName());
+        assertEquals("https://q.qlogo.cn/avatar.png", stored.getAvatarUrl());
+        assertThrows(OAuthException.class, () -> oauthService.unbind(result.userId(), "qq"));
     }
 
     @Test
@@ -77,6 +107,7 @@ class OAuthServiceLifecycleTest {
         OAuthService.OAuthLoginResult repeatResult = oauthService.complete("google", "one-time-code",
                 repeatAuthorization.get("state"), browser);
         assertEquals(result.userId(), repeatResult.userId());
+        assertFalse(repeatResult.firstLogin());
         assertTrue(repeatResult.userInfo().isEmailVerified());
 
         assertThrows(OAuthException.class,
@@ -105,12 +136,47 @@ class OAuthServiceLifecycleTest {
                 browserBinding);
         assertEquals(200, callback.getCode());
         assertEquals("login", callback.getData().getMode());
+        assertTrue(callback.getData().isFirstLogin());
         assertNotNull(callback.getData().getToken());
 
         Result<OAuthCallbackVO> replay = authController.oauthCallback(
                 Map.of("provider", "google", "code", "controller-code", "state", authorization.getData().get("state")),
                 browserBinding);
         assertEquals(400, replay.getCode());
+    }
+
+    @Test
+    void mobileQqCallbackWorksWhenBrowserDoesNotRestoreLocalStorageOrBindingCookie() {
+        String subject = "local-mobile-qq-sub-" + System.nanoTime();
+        when(qqConnectClient.exchange(eq("mobile-qq-code")))
+                .thenReturn(new QQConnectClient.QQIdentity(subject, "移动端 QQ 用户", "https://q.qlogo.cn/avatar.png"));
+        org.springframework.mock.web.MockHttpServletRequest request = new org.springframework.mock.web.MockHttpServletRequest();
+        org.springframework.mock.web.MockHttpServletResponse response = new org.springframework.mock.web.MockHttpServletResponse();
+
+        Result<Map<String, String>> authorization = authController.getOAuthUrl("qq", "login", null, request, response);
+        assertEquals(200, authorization.getCode());
+        String cookieHeader = response.getHeader("Set-Cookie");
+        String browserBinding = cookieHeader.substring(0, cookieHeader.indexOf(';')).split("=", 2)[1];
+
+        Result<OAuthCallbackVO> callback = authController.oauthCallback(
+                Map.of("code", "mobile-qq-code", "state", authorization.getData().get("state")), null);
+        assertEquals(200, callback.getCode());
+        assertEquals("qq", callback.getData().getProvider());
+        assertEquals("login", callback.getData().getMode());
+        assertNotNull(callback.getData().getToken());
+    }
+
+    @Test
+    void providerStatusExposesOnlyConfigurationFlagsForTheLoginPage() {
+        when(qqConnectClient.isConfigured()).thenReturn(false);
+        org.springframework.mock.web.MockHttpServletResponse response = new org.springframework.mock.web.MockHttpServletResponse();
+
+        when(qqConnectClient.reviewStatus()).thenReturn("unconfigured");
+        Result<Map<String, Object>> result = authController.getOAuthProviders(response);
+
+        assertEquals(200, result.getCode());
+        assertEquals(Map.of("google", true, "qq", false, "qqReviewStatus", "unconfigured"), result.getData());
+        assertEquals("no-store", response.getHeader("Cache-Control"));
     }
 
     @Test

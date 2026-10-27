@@ -16,6 +16,7 @@ public class UserOAuthIdentity {
     private String provider;
     private String providerSubject;
     private String displayName;
+    private String avatarUrl;
     private String email;
     private LocalDateTime createTime;
 }

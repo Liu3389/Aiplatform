@@ -1,3 +1,5 @@
+import PlatformMark from '@/components/PlatformMark'
+
 interface WelcomeScreenProps {
   model: string
   lang: 'zh' | 'en'
@@ -19,15 +21,7 @@ export default function WelcomeScreen({ model, lang, onSuggestionClick }: Welcom
   return (
     <div className="flex flex-col items-center justify-center flex-1 py-10 px-4">
       {/* Logo */}
-      <div className="w-18 h-18 sm:w-20 sm:h-20 rounded-3xl flex items-center justify-center mb-6 sm:mb-8 shadow-2xl animate-float"
-        style={{
-          background: 'linear-gradient(135deg, #8B5CF6, #6366F1, #3B82F6)',
-          boxShadow: '0 16px 48px rgba(139,92,246,0.3), 0 0 0 1px rgba(139,92,246,0.2)',
-        }}>
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="sm:w-10 sm:h-10">
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-        </svg>
-      </div>
+      <PlatformMark className="mb-6 h-20 w-20 rounded-3xl shadow-lg sm:mb-8" />
 
       {/* Heading */}
       <h1 className="text-xl sm:text-2xl font-bold mb-2 text-center tracking-tight"

@@ -19,7 +19,12 @@ const ModelStorePage = lazy(() => import('@/pages/ModelStorePage'))
 const BillingPage = lazy(() => import('@/pages/BillingPage'))
 const RechargePage = lazy(() => import('@/pages/RechargePage'))
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'))
-const SecurityPage = lazy(() => import('@/pages/SecurityPage'))
+const MarkdownRendererLabPage = import.meta.env.DEV
+  ? lazy(() => import('@/pages/MarkdownRendererLabPage'))
+  : null
+const AdminTablePreviewPage = import.meta.env.DEV
+  ? lazy(() => import('@/pages/AdminTablePreviewPage'))
+  : null
 
 function PageLoader() {
   return (
@@ -78,6 +83,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {MarkdownRendererLabPage && <Route path="/markdown-lab" element={<LazyRoute><MarkdownRendererLabPage /></LazyRoute>} />}
+        {AdminTablePreviewPage && <Route path="/admin/table-preview" element={<LazyRoute><AdminTablePreviewPage /></LazyRoute>} />}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/" element={<Navigate to="/welcome" replace />} />
@@ -96,7 +103,7 @@ export default function App() {
           <Route path="store" element={<LazyRoute><ModelStorePage /></LazyRoute>} />
           <Route path="billing" element={<LazyRoute><BillingPage /></LazyRoute>} />
           <Route path="recharge" element={<LazyRoute><RechargePage /></LazyRoute>} />
-          <Route path="security" element={<LazyRoute><SecurityPage /></LazyRoute>} />
+          <Route path="security" element={<Navigate to="/user?tab=security" replace />} />
           <Route path="admin" element={<AdminRoute><LazyRoute><AdminPage /></LazyRoute></AdminRoute>} />
         </Route>
         <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
@@ -108,7 +115,7 @@ export default function App() {
           <Route path="/store" element={<LazyRoute><ModelStorePage /></LazyRoute>} />
           <Route path="/billing" element={<LazyRoute><BillingPage /></LazyRoute>} />
           <Route path="/recharge" element={<LazyRoute><RechargePage /></LazyRoute>} />
-          <Route path="/security" element={<LazyRoute><SecurityPage /></LazyRoute>} />
+          <Route path="/security" element={<Navigate to="/user?tab=security" replace />} />
           <Route path="/admin" element={<AdminRoute><LazyRoute><AdminPage /></LazyRoute></AdminRoute>} />
         </Route>
         <Route path="*" element={<Navigate to="/welcome" replace />} />

@@ -95,7 +95,9 @@ public class IpRateLimitInterceptor implements HandlerInterceptor {
 
     private boolean isCaptchaIssueEndpoint(String servletPath) {
         return "/auth/login/captcha".equals(servletPath)
-                || "/auth/register/captcha".equals(servletPath);
+                || "/auth/register/captcha".equals(servletPath)
+                || "/auth/register/email-code".equals(servletPath)
+                || "/auth/register".equals(servletPath);
     }
 
     private boolean limitCaptchaIssue(String ip, String path, HttpServletResponse response) throws Exception {

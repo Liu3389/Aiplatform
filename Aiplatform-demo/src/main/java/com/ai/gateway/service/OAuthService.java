@@ -46,6 +46,7 @@ public class OAuthService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final GoogleOidcClient googleOidcClient;
+    private final QQConnectClient qqConnectClient;
     private final UserOAuthIdentityMapper identityMapper;
     private final UserMapper userMapper;
     private final UserService userService;
@@ -55,8 +56,10 @@ public class OAuthService {
 
     public Map<String, String> begin(String provider, String purpose, Long authenticatedUserId, String browserBinding) {
         String normalizedProvider = normalizeProvider(provider);
-        if (!"google".equals(normalizedProvider)) throw new OAuthException(400, "当前仅支持 Google OIDC");
-        if (!googleOidcClient.isConfigured()) throw new OAuthException(503, "Google OAuth 尚未配置");
+        requireSupportedProvider(normalizedProvider);
+        if (!isConfigured(normalizedProvider)) {
+            throw new OAuthException(503, providerName(normalizedProvider) + " OAuth 尚未配置");
+        }
         if (browserBinding == null || browserBinding.length() < 32 || browserBinding.length() > 256) {
             throw new OAuthException(400, "浏览器授权状态无效，请重新发起");
         }
@@ -81,16 +84,19 @@ public class OAuthService {
             throw new OAuthException(503, "OAuth 暂不可用，请稍后重试");
         }
 
-        return Map.of("url", googleOidcClient.authorizationUrl(state, nonce, codeChallenge),
+        String authorizationUrl = "google".equals(normalizedProvider)
+                ? googleOidcClient.authorizationUrl(state, nonce, codeChallenge)
+                : qqConnectClient.authorizationUrl(state);
+        return Map.of("url", authorizationUrl,
                 "state", state, "provider", normalizedProvider, "purpose", normalizedPurpose);
     }
 
     @Transactional(rollbackFor = Exception.class)
     public OAuthLoginResult complete(String provider, String code, String state, String browserBinding) {
-        String normalizedProvider = normalizeProvider(provider);
-        if (!"google".equals(normalizedProvider)) throw new OAuthException(400, "当前仅支持 Google OIDC");
+        String normalizedProvider = provider == null || provider.isBlank() ? null : normalizeProvider(provider);
+        if (normalizedProvider != null) requireSupportedProvider(normalizedProvider);
         if (state == null || state.length() < 32 || state.length() > 256
-                || browserBinding == null || browserBinding.length() < 32 || browserBinding.length() > 256) {
+                || (browserBinding != null && (browserBinding.length() < 32 || browserBinding.length() > 256))) {
             throw new OAuthException(400, "OAuth state 无效或已过期");
         }
 
@@ -103,28 +109,37 @@ public class OAuthService {
         } catch (Exception e) {
             throw new OAuthException(400, "OAuth state 无效或已过期");
         }
-        if (!normalizedProvider.equals(flow.provider()) || flow.nonce() == null || flow.codeVerifier() == null
-                || !constantTimeEquals(flow.browserBindingHash(), sha256Hex(browserBinding))) {
+        String stateProvider = normalizeProvider(flow.provider());
+        requireSupportedProvider(stateProvider);
+        boolean browserBindingMismatch = browserBinding != null
+                && !constantTimeEquals(flow.browserBindingHash(), sha256Hex(browserBinding));
+        if ((normalizedProvider != null && !normalizedProvider.equals(stateProvider))
+                || flow.nonce() == null || flow.codeVerifier() == null || browserBindingMismatch) {
             throw new OAuthException(400, "OAuth state 无效或已过期");
         }
+        // Mobile in-app browsers may return to the callback without the origin page's localStorage.
+        // The one-time server-side state is authoritative for the provider in that case.
+        normalizedProvider = stateProvider;
         String storedState = redisTemplate.execute(GET_AND_DELETE, List.of(stateKey));
         if (storedState == null) throw new OAuthException(400, "OAuth state 无效或已过期");
 
-        GoogleOidcClient.GoogleOidcIdentity identity = googleOidcClient.exchangeAndVerify(code, flow.codeVerifier(), flow.nonce());
+        OAuthIdentity identity = exchangeIdentity(normalizedProvider, code, flow);
         if ("bind".equals(flow.purpose())) {
-            bindIdentity(flow.userId(), identity);
-            return new OAuthLoginResult("bind", flow.userId(), userService.getUserInfo(flow.userId()), false, null);
+            bindIdentity(flow.userId(), normalizedProvider, identity);
+            return new OAuthLoginResult("bind", normalizedProvider, flow.userId(), userService.getUserInfo(flow.userId()), false, null, false);
         }
 
         UserOAuthIdentity link = identityMapper.selectByProviderSubject(normalizedProvider, identity.subject());
         User user;
+        boolean firstLogin = link == null;
         if (link == null) {
-            user = createOAuthUser(identity);
+            user = createOAuthUser(normalizedProvider, identity);
             link = new UserOAuthIdentity();
             link.setUserId(user.getId());
             link.setProvider(normalizedProvider);
             link.setProviderSubject(identity.subject());
             link.setDisplayName(identity.displayName());
+            link.setAvatarUrl(identity.avatarUrl());
             link.setEmail(identity.verifiedEmail());
             link.setCreateTime(LocalDateTime.now());
             identityMapper.insert(link);
@@ -132,19 +147,22 @@ public class OAuthService {
         } else {
             user = userMapper.selectById(link.getUserId());
             if (user == null) throw new OAuthException(401, "账号身份已失效，请联系管理员");
+            link.setDisplayName(identity.displayName());
+            link.setAvatarUrl(identity.avatarUrl());
+            link.setEmail(identity.verifiedEmail());
+            identityMapper.updateById(link);
         }
 
-        // Only OAuth-created accounts derive their profile email from the provider.
-        // A Google identity linked to an existing password account must not replace
-        // that account's independently verified contact information.
-        if (user.getUsername() != null && user.getUsername().startsWith("oauth_google_")) {
+        // Only provider-created accounts may populate a verified provider email.
+        // A linked identity must not replace independently verified contact information.
+        if (isOAuthCreatedAccount(user) && identity.verifiedEmail() != null && !identity.verifiedEmail().isBlank()) {
             userService.bindOAuthVerifiedEmail(user.getId(), identity.verifiedEmail());
         }
 
         assertAccountEnabled(user);
         boolean requiresTwoFactor = twoFactorService.isEnabled(user.getId());
         String challenge = requiresTwoFactor ? createTwoFactorChallenge(user.getId()) : null;
-        return new OAuthLoginResult("login", user.getId(), userService.getUserInfo(user.getId()), requiresTwoFactor, challenge);
+        return new OAuthLoginResult("login", normalizedProvider, user.getId(), userService.getUserInfo(user.getId()), requiresTwoFactor, challenge, firstLogin);
     }
 
     public UserInfoVO completeTwoFactor(String challengeToken, String code) {
@@ -198,38 +216,44 @@ public class OAuthService {
         if (link == null) return;
         User user = userMapper.selectById(userId);
         List<UserOAuthIdentity> all = identityMapper.selectByUserId(userId);
-        if (user != null && user.getUsername() != null && user.getUsername().startsWith("oauth_google_") && all.size() <= 1) {
+        if (isOAuthCreatedAccount(user) && all.size() <= 1) {
             throw new OAuthException(409, "请先设置密码或绑定其他登录方式，再解除最后一个登录账号");
         }
         identityMapper.deleteById(link.getId());
     }
 
-    private void bindIdentity(Long userId, GoogleOidcClient.GoogleOidcIdentity identity) {
+    private void bindIdentity(Long userId, String provider, OAuthIdentity identity) {
         if (userId == null) throw new OAuthException(400, "OAuth 绑定状态无效");
         User user = userMapper.selectById(userId);
         assertAccountEnabled(user);
-        UserOAuthIdentity existingProviderIdentity = identityMapper.selectByProviderSubject("google", identity.subject());
+        UserOAuthIdentity existingProviderIdentity = identityMapper.selectByProviderSubject(provider, identity.subject());
         if (existingProviderIdentity != null && !userId.equals(existingProviderIdentity.getUserId())) {
-            throw new OAuthException(409, "该 Google 账号已绑定到其他平台账号");
+            throw new OAuthException(409, "该 " + providerName(provider) + " 账号已绑定到其他平台账号");
         }
-        UserOAuthIdentity existingUserIdentity = identityMapper.selectByUserAndProvider(userId, "google");
+        UserOAuthIdentity existingUserIdentity = identityMapper.selectByUserAndProvider(userId, provider);
         if (existingUserIdentity != null && !identity.subject().equals(existingUserIdentity.getProviderSubject())) {
-            throw new OAuthException(409, "当前平台账号已绑定其他 Google 账号，请先解绑");
+            throw new OAuthException(409, "当前平台账号已绑定其他 " + providerName(provider) + " 账号，请先解绑");
         }
         if (existingUserIdentity == null) {
             UserOAuthIdentity link = new UserOAuthIdentity();
             link.setUserId(userId);
-            link.setProvider("google");
+            link.setProvider(provider);
             link.setProviderSubject(identity.subject());
             link.setDisplayName(identity.displayName());
+            link.setAvatarUrl(identity.avatarUrl());
             link.setEmail(identity.verifiedEmail());
             link.setCreateTime(LocalDateTime.now());
             identityMapper.insert(link);
+        } else {
+            existingUserIdentity.setDisplayName(identity.displayName());
+            existingUserIdentity.setAvatarUrl(identity.avatarUrl());
+            existingUserIdentity.setEmail(identity.verifiedEmail());
+            identityMapper.updateById(existingUserIdentity);
         }
     }
 
-    private User createOAuthUser(GoogleOidcClient.GoogleOidcIdentity identity) {
-        String username = "oauth_google_" + sha256Hex(identity.subject()).substring(0, 32);
+    private User createOAuthUser(String provider, OAuthIdentity identity) {
+        String username = "oauth_" + provider + "_" + sha256Hex(identity.subject()).substring(0, 32);
         User usernameCollision = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
         if (usernameCollision != null) throw new OAuthException(409, "第三方账号映射冲突，请联系管理员");
 
@@ -273,6 +297,41 @@ public class OAuthService {
         return provider.toLowerCase(Locale.ROOT);
     }
 
+    private void requireSupportedProvider(String provider) {
+        if (!"google".equals(provider) && !"qq".equals(provider)) {
+            throw new OAuthException(400, "暂不支持该 OAuth 登录方式");
+        }
+    }
+
+    private boolean isConfigured(String provider) {
+        return "google".equals(provider) ? googleOidcClient.isConfigured() : qqConnectClient.isConfigured();
+    }
+
+    public Map<String, Object> providerAvailability() {
+        return Map.of(
+                "google", googleOidcClient.isConfigured(),
+                "qq", qqConnectClient.isConfigured(),
+                "qqReviewStatus", qqConnectClient.reviewStatus());
+    }
+
+    private String providerName(String provider) {
+        return "qq".equals(provider) ? "QQ" : "Google";
+    }
+
+    private OAuthIdentity exchangeIdentity(String provider, String code, OAuthState flow) {
+        if ("google".equals(provider)) {
+            GoogleOidcClient.GoogleOidcIdentity identity = googleOidcClient.exchangeAndVerify(code, flow.codeVerifier(), flow.nonce());
+            return new OAuthIdentity(identity.subject(), identity.displayName(), null, identity.verifiedEmail());
+        }
+        QQConnectClient.QQIdentity identity = qqConnectClient.exchange(code);
+        return new OAuthIdentity(identity.subject(), identity.displayName(), identity.avatarUrl(), null);
+    }
+
+    private boolean isOAuthCreatedAccount(User user) {
+        if (user == null || user.getUsername() == null) return false;
+        return user.getUsername().startsWith("oauth_google_") || user.getUsername().startsWith("oauth_qq_");
+    }
+
     private static String randomToken(int byteCount) {
         byte[] bytes = new byte[byteCount];
         RANDOM.nextBytes(bytes);
@@ -303,6 +362,8 @@ public class OAuthService {
     private record OAuthState(String provider, String purpose, Long userId, String nonce,
                               String codeVerifier, String browserBindingHash, LocalDateTime createdAt) { }
 
-    public record OAuthLoginResult(String mode, Long userId, UserInfoVO userInfo,
-                                   boolean requiresTwoFactor, String challengeToken) { }
+    private record OAuthIdentity(String subject, String displayName, String avatarUrl, String verifiedEmail) { }
+
+    public record OAuthLoginResult(String mode, String provider, Long userId, UserInfoVO userInfo,
+                                   boolean requiresTwoFactor, String challengeToken, boolean firstLogin) { }
 }

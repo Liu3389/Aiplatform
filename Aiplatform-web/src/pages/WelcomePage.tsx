@@ -11,6 +11,8 @@ import { useI18nStore } from '@/stores/i18nStore'
 import { useAppStore } from '@/stores/appStore'
 import PageTransition from '@/components/PageTransition'
 import { getUserDisplayName } from '@/utils/userDisplay'
+import UserAvatar from '@/components/UserAvatar'
+import PlatformMark from '@/components/PlatformMark'
 
 // ===================== Hooks =====================
 
@@ -1273,13 +1275,7 @@ function FooterSection({ isDark, isMobile, navigate }: { isDark: boolean; isMobi
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 sm:gap-12 mb-8 sm:mb-16">
           <div className="md:col-span-2">
             <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shadow-lg" style={{ 
-                background: 'linear-gradient(135deg, #8B5CF6, #6366F1, #3B82F6)',
-              }}>
-                <svg width="16" height="16" className="sm:w-5 sm:h-5" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                </svg>
-              </div>
+              <PlatformMark className="h-8 w-8 rounded-xl shadow-sm sm:h-10 sm:w-10" />
               <span className="text-base sm:text-xl font-bold" style={{ color: isDark ? '#FFFFFF' : '#0F172A' }}>
                 凌点 AI
               </span>
@@ -1665,14 +1661,7 @@ export default function WelcomePage() {
             whileTap={{ scale: 0.98 }}
             onClick={() => scrollToSection(0)}
           >
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shadow-lg" style={{ 
-              background: 'linear-gradient(135deg, #8B5CF6, #6366F1, #3B82F6)',
-              boxShadow: '0 4px 20px rgba(139,92,246,0.3)',
-            }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-              </svg>
-            </div>
+            <PlatformMark className="h-8 w-8 rounded-xl shadow-sm sm:h-9 sm:w-9" />
             <span className="text-sm sm:text-base font-bold tracking-tight" style={{ color: isDark ? '#FFFFFF' : '#0F172A' }}>
               {t('凌点 AI', 'Lingdian AI')}
             </span>
@@ -1727,12 +1716,10 @@ export default function WelcomePage() {
                   <span className="text-xs sm:text-sm font-medium hidden lg:inline" style={{ color: isDark ? 'rgba(255,255,255,0.8)' : 'rgba(15,23,42,0.7)' }}>
                     {userDisplayName}
                   </span>
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs font-bold" style={{
+                  <UserAvatar name={userDisplayName} avatarUrl={user.avatarUrl} className="h-7 w-7 text-xs font-bold sm:h-8 sm:w-8" style={{
                     background: 'linear-gradient(135deg, #8B5CF6, #6366F1)',
                     color: '#FFFFFF',
-                  }}>
-                    {userDisplayName.charAt(0).toUpperCase()}
-                  </div>
+                  }} />
                 </div>
               </>
             ) : (

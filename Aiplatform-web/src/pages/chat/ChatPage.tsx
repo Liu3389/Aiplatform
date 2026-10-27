@@ -11,7 +11,7 @@ import { modelApi, chatApi, chatFileApi, aiDocApi, userApi, conversationApi } fr
 import { useAppStore } from '@/stores/appStore'
 import { useI18nStore } from '@/stores/i18nStore'
 import type { FrontendConversation, FrontendMessage, AvailableModel, SearchEngine, SearchInfo } from '@/types'
-import { canUseChatModel, selectChatModel } from '@/utils/modelAvailability'
+import { canUseChatModel, modelSelectionKey, selectChatModel } from '@/utils/modelAvailability'
 
 function genTitle(content: string) {
   return content.length > 30 ? content.slice(0, 30) + '...' : content
@@ -332,7 +332,7 @@ export default function ChatPage() {
   const currentHistoryState = historyState[currentConvId] || EMPTY_HISTORY_STATE
 
   const currentModelLabel = useMemo(() => {
-    const selected = availableModels.find(m => m.displayName === model || m.modelCode === model)
+    const selected = selectChatModel(availableModels, model)
     return selected?.displayName || (availableModels.length === 0 && model
       ? model
       : t('暂无可用模型', 'No available model'))
@@ -344,9 +344,13 @@ export default function ChatPage() {
   )
 
   const selectedModelCode = useMemo(() => {
-    const selected = availableModels.find(m => m.displayName === model || m.modelCode === model)
-    return selected?.modelCode || model || DEFAULT_MODEL
+    const selected = selectChatModel(availableModels, model)
+    return selected ? modelSelectionKey(selected) : model || DEFAULT_MODEL
   }, [availableModels, model])
+  const selectedChatModel = useMemo(
+    () => selectChatModel(availableModels, selectedModelCode),
+    [availableModels, selectedModelCode],
+  )
 
   const writeLocalConversations = useCallback((updated: FrontendConversation[]) => {
     try { localStorage.setItem(storageScopeKeyRef.current, JSON.stringify(updated)) } catch {}
@@ -510,8 +514,8 @@ export default function ChatPage() {
         localStorage.removeItem('ld_chat_model')
         return
       }
-      if (selected.modelCode !== latestModelRef.current && selected.displayName !== latestModelRef.current) {
-        const selectedCode = selected.modelCode || selected.displayName || DEFAULT_MODEL
+      if (modelSelectionKey(selected) !== latestModelRef.current) {
+        const selectedCode = modelSelectionKey(selected) || DEFAULT_MODEL
         setModel(selectedCode)
         latestModelRef.current = selectedCode
         localStorage.setItem('ld_chat_model', selectedCode)
@@ -599,34 +603,23 @@ export default function ChatPage() {
       return
     }
 
-    let selectedModel = selectChatModel(availableModels, selectedModelCode)
+    const selectedModel = selectChatModel(availableModels, selectedModelCode)
     if (!selectedModel) return
-    let requestModelCode = selectedModel.modelCode || selectedModel.displayName
-    if (selectedModelCode !== requestModelCode && selectedModelCode !== selectedModel.displayName) {
+    let requestModelCode = modelSelectionKey(selectedModel)
+    if (selectedModelCode !== requestModelCode) {
       setModel(requestModelCode)
       latestModelRef.current = requestModelCode
       localStorage.setItem('ld_chat_model', requestModelCode)
     }
 
-    // 图片必须交给视觉模型；如果用户仍停留在普通文本模型，自动切换并同步选择器。
+    // 图片请求要求用户明确选择视觉模型，避免悄悄按另一模型计费或执行。
     const hasImageFiles = uploadedFiles.some(isImageFile)
-    if (hasImageFiles) {
-      if (!selectedModel || Number(selectedModel.supportsVision) !== 1) {
-        const visionModel = availableModels.find(m =>
-          canUseChatModel(m) && m.modelCode === DEFAULT_VISION_MODEL && Number(m.supportsVision) === 1
-        ) || availableModels.find(m => canUseChatModel(m) && Number(m.supportsVision) === 1)
-
-        if (!visionModel) {
-          setFileProcessStatus(t('当前账号没有已接入且可用的视觉模型，请检查会员等级或联系管理员。', 'No connected vision model is available to this account. Check access level or contact an administrator.'))
-          return
-        }
-
-        selectedModel = visionModel
-        requestModelCode = visionModel.modelCode
-        setModel(requestModelCode)
-        latestModelRef.current = requestModelCode
-        localStorage.setItem('ld_chat_model', requestModelCode)
-      }
+    if (hasImageFiles && Number(selectedModel.supportsVision) !== 1) {
+      setFileProcessStatus(t(
+        `当前模型「${selectedModel.displayName}」不支持视觉识别，请切换到视觉模型后再发送图片。`,
+        `“${selectedModel.displayName}” does not support image recognition. Switch to a vision model before sending images.`,
+      ))
+      return
     }
 
     if (!canUseChatModel(selectedModel)) return
@@ -1390,10 +1383,10 @@ export default function ChatPage() {
                     {availableModels.length === 0 ? (
                       <div className="text-center py-4 text-xs" style={{ color: 'var(--text-dim)' }}>{t('加载模型中...', 'Loading...')}</div>
                     ) : availableModels.map((m) => {
-                      const modelCode = m.modelCode || m.displayName
-      const isLocked = !m.accessible
-      const isUnavailable = !m.chatEnabled
-      const isDisabled = isLocked || isUnavailable || isStreaming
+              const modelCode = modelSelectionKey(m)
+              const isLocked = !m.accessible
+              const isUnavailable = !m.chatEnabled
+              const isDisabled = isLocked || isUnavailable || isStreaming
                       return (
                         <button
                           key={m.modelId}
@@ -1504,6 +1497,8 @@ export default function ChatPage() {
           onStop={stopStreaming}
           isStreaming={isStreaming}
           disabled={!hasUsableChatModel}
+          selectedModelSupportsVision={Number(selectedChatModel?.supportsVision) === 1}
+          selectedModelName={selectedChatModel?.displayName || currentModelLabel}
           placeholder={
             fileProcessStatus
               ? fileProcessStatus

@@ -1,0 +1,49 @@
+# SearXNG 配置 - 凌点AI平台自建聚合搜索
+# 启用百度 + Bing 引擎，返回 JSON 格式供后端调用
+use_default_settings: true
+
+general:
+  instance_name: "凌点AI搜索"
+  debug: false
+
+server:
+  bind_address: "0.0.0.0"
+  port: 8080
+  limiter: false
+  image_proxy: false
+  secret_key: "lingdian-searxng-2026"
+
+search:
+  safe_search: 1
+  autocomplete: ""
+  default_lang: "zh-CN"
+  formats:
+    - html
+    - json
+
+ui:
+  static_use_hash: true
+
+outgoing:
+  request_timeout: 10
+  max_request_timeout: 15
+
+engines:
+  - name: baidu
+    engine: baidu
+    shortcut: bd
+    disabled: false
+    weight: 1.0
+  - name: bing
+    engine: bing
+    shortcut: bi
+    disabled: false
+    weight: 1.0
+  - name: google
+    engine: google
+    shortcut: go
+    disabled: true
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: true

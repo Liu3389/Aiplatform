@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOTE_ROOT="/root/lingdian"
 LEGAL_SOURCE="$ROOT/Aiplatform-web/src/pages/LegalDocumentPage.tsx"
+AVATAR_MIGRATION="$ROOT/Aiplatform-demo/src/main/resources/sql/migration-v19-user-avatar.sql"
 MODE="${1:---plan}"
 
 if (( $# > 1 )) || [[ "$MODE" != "--plan" && "$MODE" != "--apply" ]]; then
@@ -17,7 +18,7 @@ legal_draft_markers_present() {
 
 if [[ "$MODE" == "--plan" ]]; then
   echo "计划模式：不会连接服务器、传输文件或修改容器。"
-  echo "目标：原 lingdian-backend 与 lingdian-frontend 容器；仅替换 JAR/静态文件并重启原 backend。"
+  echo "目标：原 lingdian-backend 与 lingdian-frontend 容器；应用兼容性用户头像迁移后替换 JAR/静态文件并重启原 backend。"
   echo "保持 lingdian-mysql、lingdian-redis 及其余现有容器不变；不加载镜像、不创建或替换容器。"
   if legal_draft_markers_present; then
     echo "当前阻塞：法律页仍含草案/待补充标记，正式页面完成前禁止应用。"
@@ -74,8 +75,9 @@ FRONTEND_DIST="$ROOT/Aiplatform-web/dist"
 }
 
 cp "$BACKEND_JAR" "$LOCAL_STAGE/backend.jar"
+cp "$AVATAR_MIGRATION" "$LOCAL_STAGE/migration-v19-user-avatar.sql"
 tar -C "$FRONTEND_DIST" -czf "$LOCAL_STAGE/frontend.tar.gz" .
-(cd "$LOCAL_STAGE" && shasum -a 256 backend.jar frontend.tar.gz > SHA256SUMS)
+(cd "$LOCAL_STAGE" && shasum -a 256 backend.jar frontend.tar.gz migration-v19-user-avatar.sql > SHA256SUMS)
 
 echo "===== 上传前只读核验现有服务 ====="
 ssh "${SSH_OPTS[@]}" "$HOST" "bash -s -- --check '$STAMP'" \
@@ -86,9 +88,10 @@ ssh "${SSH_OPTS[@]}" "$HOST" "umask 077 && mkdir -p '$REMOTE_STAGE' && chmod 700
 scp "${SSH_OPTS[@]}" \
   "$LOCAL_STAGE/backend.jar" \
   "$LOCAL_STAGE/frontend.tar.gz" \
+  "$LOCAL_STAGE/migration-v19-user-avatar.sql" \
   "$LOCAL_STAGE/SHA256SUMS" \
   "$ROOT/scripts/deploy-existing-containers-remote.sh" \
   "$HOST:$REMOTE_STAGE/"
 ssh "${SSH_OPTS[@]}" "$HOST" "chmod 700 '$REMOTE_STAGE/deploy-existing-containers-remote.sh' && bash '$REMOTE_STAGE/deploy-existing-containers-remote.sh' --apply '$STAMP'"
 
-echo "发布通过：使用原有容器；数据库与 Redis 未重启；备份保存在服务器 /root/lingdian/backups/$STAMP。"
+echo "发布通过：使用原有容器；数据库与 Redis 未重启；应用备份保存在服务器 /root/lingdian/backups/${STAMP}。"

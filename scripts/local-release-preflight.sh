@@ -54,7 +54,14 @@ stop_managed_backend_for_tests
   # shellcheck disable=SC1091
   source "$ROOT/.runtime/local.env"
   set +a
-  mvn -q -Dapp.messaging.rabbit-enabled=false test
+  # Keep lifecycle-test traffic away from the local app's Redis DB and real providers.
+  env -u DEEPSEEK_API_KEY \
+    -u GOOGLE_OAUTH_CLIENT_ID \
+    -u GOOGLE_OAUTH_CLIENT_SECRET \
+    -u GOOGLE_OAUTH_REDIRECT_URI \
+    OPENAI_API_KEY=local-test-placeholder \
+    SPRING_DATA_REDIS_DATABASE=15 \
+    mvn -q -Dapp.messaging.rabbit-enabled=false test
 )
 restore_backend_after_tests
 

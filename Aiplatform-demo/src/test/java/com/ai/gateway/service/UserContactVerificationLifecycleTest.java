@@ -1,7 +1,10 @@
 package com.ai.gateway.service;
 
 import com.ai.gateway.common.Result;
+import com.ai.gateway.controller.AuthController;
 import com.ai.gateway.controller.UserController;
+import com.ai.gateway.dto.RegistrationEmailCodeRequest;
+import com.ai.gateway.dto.UserLoginRequest;
 import com.ai.gateway.dto.UserRegisterRequest;
 import com.ai.gateway.entity.User;
 import com.ai.gateway.entity.UserContactVerification;
@@ -20,6 +23,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -27,11 +31,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest(properties = {
         "app.verification.delivery-mode=local",
-        "app.verification.allow-local-capture=true"
+        "app.verification.allow-local-capture=true",
+        "app.verification.registration-email-required=true"
 })
 class UserContactVerificationLifecycleTest {
 
     @Autowired private UserService userService;
+    @Autowired private AuthController authController;
+    @Autowired private CaptchaService captchaService;
     @Autowired private UserMapper userMapper;
     @Autowired private UserContactVerificationMapper contactMapper;
     @Autowired private UserController userController;
@@ -39,6 +46,90 @@ class UserContactVerificationLifecycleTest {
     @Autowired private SessionService sessionService;
     @Autowired private VerificationCodeDeliveryService deliveryService;
     @Autowired private StringRedisTemplate redisTemplate;
+
+    @Test
+    void signupEmailCodeIsCaptchaGatedSingleUseAndPersistedAsVerified() {
+        String email = "signup_" + System.nanoTime() + "@example.test";
+        Map<String, Object> captcha = captchaService.generateRegisterCaptcha();
+        String captchaId = (String) captcha.get("captchaId");
+        String captchaCode = redisTemplate.opsForValue().get("ai_gateway:captcha:register:" + captchaId);
+        assertNotNull(captchaCode);
+
+        RegistrationEmailCodeRequest sendRequest = new RegistrationEmailCodeRequest();
+        sendRequest.setEmail(email);
+        sendRequest.setCaptchaId(captchaId);
+        sendRequest.setCaptchaCode(captchaCode);
+        assertEquals(200, authController.sendRegistrationEmailCode(sendRequest).getCode());
+
+        String code = deliveryService.registrationCodeForTesting(email);
+        assertTrue(code.matches("\\d{6}"));
+        UserRegisterRequest registration = new UserRegisterRequest();
+        registration.setUsername("signup_" + System.nanoTime());
+        registration.setPassword("SignupEmail123!");
+        registration.setEmail(email);
+        registration.setEmailCode(code);
+
+        String wrongCode = "000000".equals(code) ? "111111" : "000000";
+        registration.setEmailCode(wrongCode);
+        assertThrows(BusinessException.class, () -> authController.register(registration));
+        registration.setEmailCode(code);
+        Result<com.ai.gateway.vo.UserInfoVO> result = authController.register(registration);
+        assertEquals(200, result.getCode());
+        assertEquals(email, result.getData().getEmail());
+        assertTrue(result.getData().isEmailVerified());
+        assertEquals(email, userMapper.selectById(result.getData().getId()).getEmail());
+        assertEquals(email, contactMapper.selectById(result.getData().getId()).getEmail());
+        assertNull(deliveryService.registrationCodeForTesting(email), "successful registration consumes the local code");
+
+        UserLoginRequest emailLogin = new UserLoginRequest();
+        emailLogin.setUsername(email.toUpperCase(java.util.Locale.ROOT));
+        emailLogin.setPassword("SignupEmail123!");
+        assertEquals(result.getData().getId(), userService.login(emailLogin).getId());
+
+        UserLoginRequest usernameLogin = new UserLoginRequest();
+        usernameLogin.setUsername(registration.getUsername());
+        usernameLogin.setPassword("SignupEmail123!");
+        assertEquals(result.getData().getId(), userService.login(usernameLogin).getId());
+        assertThrows(BusinessException.class, () -> authController.register(registration), "a verified email cannot be replayed");
+    }
+
+    @Test
+    void unverifiedProfileEmailCanLoginWithoutBeingMarkedVerified() {
+        UserInfoVO created = registerUser();
+        String unverifiedEmail = "unverified_" + created.getId() + "@example.test";
+        User user = userMapper.selectById(created.getId());
+        user.setEmail(unverifiedEmail);
+        userMapper.updateById(user);
+
+        UserLoginRequest login = new UserLoginRequest();
+        login.setUsername(unverifiedEmail);
+        login.setPassword("ContactVerify123!");
+        UserInfoVO loggedIn = userService.login(login);
+        assertEquals(created.getId(), loggedIn.getId(), "legacy email must remain usable for password login");
+        assertEquals(false, loggedIn.isEmailVerified(), "password login must not mark the email verified");
+    }
+
+    @Test
+    void verifiedContactEmailCanLoginWhenProfileEmailIsEmpty() {
+        UserInfoVO created = registerUser();
+        Long userId = created.getId();
+        String token = issueToken(userId, "contact-login-fallback-" + userId);
+        String email = "fallback_" + userId + "@example.test";
+        userController.sendBindCode(token, Map.of("type", "email", "target", email));
+        String code = deliveryService.localCodeForTesting(userId, "email", email);
+        userController.bindEmail(token, Map.of("email", email, "code", code));
+
+        User user = userMapper.selectById(userId);
+        user.setEmail(null);
+        userMapper.updateById(user);
+
+        UserLoginRequest login = new UserLoginRequest();
+        login.setUsername(email);
+        login.setPassword("ContactVerify123!");
+        assertEquals(userId, userService.login(login).getId(),
+                "verified contact email must be a valid login identifier even if profile email is empty");
+        tokenService.revokeToken(token);
+    }
 
     @Test
     void verifiedEmailAndPhoneArePersistedAndCodesAreSingleUse() {
